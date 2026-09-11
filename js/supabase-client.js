@@ -4,13 +4,30 @@
    ========================================================================== */
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-const SUPABASE_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL)
-  || window.__SPINTO_SUPABASE_URL
-  || '';
+// Sanitize Supabase URL: must be https://<project-ref>.supabase.co with no path
+function sanitizeSupabaseUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  url = url.trim();
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.hostname}`;
+  } catch (e) {
+    console.error('[Supabase] Invalid URL format:', url);
+    return '';
+  }
+}
 
-const SUPABASE_ANON_KEY = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY)
+const SUPABASE_URL = sanitizeSupabaseUrl(
+  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL)
+  || window.__SPINTO_SUPABASE_URL
+  || ''
+);
+
+const SUPABASE_ANON_KEY = (
+  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY)
   || window.__SPINTO_SUPABASE_ANON_KEY
-  || '';
+  || ''
+).trim();
 
 let _client = null;
 

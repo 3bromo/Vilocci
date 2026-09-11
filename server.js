@@ -18,9 +18,28 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Supabase configuration (required for admin auth)
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || '';
+// Sanitize Supabase URL: must be https://<project-ref>.supabase.co with no path
+function sanitizeSupabaseUrl(url) {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url.trim());
+    // Only keep protocol + hostname (strip any path, query, hash)
+    return `${parsed.protocol}//${parsed.hostname}`;
+  } catch (e) {
+    console.error('[Supabase] Invalid URL format:', url);
+    return '';
+  }
+}
+
+const SUPABASE_URL = sanitizeSupabaseUrl(process.env.VITE_SUPABASE_URL || '');
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+if (SUPABASE_URL) {
+  console.log('[Supabase] URL configured:', SUPABASE_URL);
+} else {
+  console.warn('[Supabase] WARNING: VITE_SUPABASE_URL is not set or invalid');
+}
 
 const PUBLIC = process.env.NODE_ENV === 'production' && fs.existsSync(path.join(__dirname, 'dist'))
   ? path.join(__dirname, 'dist')

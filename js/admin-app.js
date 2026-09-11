@@ -8,8 +8,29 @@
   // ========================================================================
   // CONFIG & SUPABASE
   // ========================================================================
-  const SUPABASE_URL = window.__SPINTO_SUPABASE_URL || import.meta?.env?.VITE_SUPABASE_URL || '';
-  const SUPABASE_ANON_KEY = window.__SPINTO_SUPABASE_ANON_KEY || import.meta?.env?.VITE_SUPABASE_ANON_KEY || '';
+
+  // Sanitize Supabase URL: must be https://<project-ref>.supabase.co with no path
+  function sanitizeSupabaseUrl(url) {
+    if (!url || typeof url !== 'string') return '';
+    url = url.trim();
+    // If URL contains a path like /rest/v1/ or /auth/v1/, strip it
+    try {
+      const parsed = new URL(url);
+      return `${parsed.protocol}//${parsed.hostname}`;
+    } catch (e) {
+      console.error('[Supabase] Invalid URL format:', url);
+      return '';
+    }
+  }
+
+  const SUPABASE_URL = sanitizeSupabaseUrl(window.__SPINTO_SUPABASE_URL || import.meta?.env?.VITE_SUPABASE_URL || '');
+  const SUPABASE_ANON_KEY = (window.__SPINTO_SUPABASE_ANON_KEY || import.meta?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+
+  if (SUPABASE_URL) {
+    console.log('[Supabase] Client URL:', SUPABASE_URL);
+  } else {
+    console.warn('[Supabase] WARNING: No valid Supabase URL configured');
+  }
 
   let sb = null;
   function getSB() {
@@ -249,7 +270,10 @@
 
       if (error) {
         // Map Supabase errors to user-friendly messages
-        if (error.message.includes('Invalid login credentials') ||
+        if (error.message.includes('Invalid path') || error.message.includes('Invalid URL')) {
+          state.loginError = 'Authentication service is misconfigured. Please contact the site administrator.';
+          console.error('[Supabase] URL configuration error:', error.message);
+        } else if (error.message.includes('Invalid login credentials') ||
             error.message.includes('invalid_credentials') ||
             error.status === 400) {
           state.loginError = 'Invalid email or password. Please try again.';
