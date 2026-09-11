@@ -65,11 +65,33 @@ app.use(express.static(PUBLIC, { maxAge: 0, etag: false }));
 // Inject Supabase config into admin.html for browser use
 function serveAdminHTML(req, res) {
   let html = fs.readFileSync(path.join(PUBLIC, 'admin.html'), 'utf8');
+  console.log('[Admin] Serving admin page. SUPABASE_URL:', SUPABASE_URL, 'ANON_KEY present:', !!SUPABASE_ANON_KEY);
   html = html.replace('%VITE_SUPABASE_URL%', SUPABASE_URL);
   html = html.replace('%VITE_SUPABASE_ANON_KEY%', SUPABASE_ANON_KEY);
   res.type('html').send(html);
 }
 app.get('/admin.html', serveAdminHTML);
+
+// Diagnostic endpoint to check Supabase configuration (no secrets exposed)
+app.get('/api/admin/diagnose', (req, res) => {
+  const rawUrl = process.env.VITE_SUPABASE_URL || '';
+  const hasAnonKey = !!(process.env.VITE_SUPABASE_ANON_KEY || '');
+  const hasServiceKey = !!(process.env.SUPABASE_SERVICE_ROLE_KEY || '');
+  const urlPattern = /^https:\/\/[a-z0-9]+\.supabase\.co$/i;
+  
+  res.json({
+    rawEnvUrl: rawUrl || '(not set)',
+    sanitizedUrl: SUPABASE_URL || '(empty)',
+    urlIsValid: urlPattern.test(SUPABASE_URL),
+    urlHasPath: rawUrl && new URL(rawUrl).pathname !== '/',
+    anonKeyPresent: hasAnonKey,
+    serviceKeyPresent: hasServiceKey,
+    serverClientAvailable: !!getServerSb(),
+    publicDir: PUBLIC,
+    distExists: fs.existsSync(path.join(__dirname, 'dist')),
+    env: process.env.NODE_ENV || 'development',
+  });
+});
 
 // ---------------------------------------------------------------------------
 // SUPABASE ADMIN AUTH — JWT-verified, no hardcoded passwords

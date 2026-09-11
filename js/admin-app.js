@@ -13,37 +13,60 @@
   function sanitizeSupabaseUrl(url) {
     if (!url || typeof url !== 'string') return '';
     url = url.trim();
+    // Remove any trailing slashes
+    url = url.replace(/\/+$/, '');
     // If URL contains a path like /rest/v1/ or /auth/v1/, strip it
     try {
       const parsed = new URL(url);
-      return `${parsed.protocol}//${parsed.hostname}`;
+      // Only keep protocol + hostname (strip any path, query, hash)
+      const cleanUrl = `${parsed.protocol}//${parsed.hostname}`;
+      if (cleanUrl !== url) {
+        console.warn('[Supabase] URL was sanitized:', url, '→', cleanUrl);
+      }
+      return cleanUrl;
     } catch (e) {
       console.error('[Supabase] Invalid URL format:', url);
       return '';
     }
   }
 
-  const SUPABASE_URL = sanitizeSupabaseUrl(window.__SPINTO_SUPABASE_URL || import.meta?.env?.VITE_SUPABASE_URL || '');
+  const rawSupabaseUrl = window.__SPINTO_SUPABASE_URL || import.meta?.env?.VITE_SUPABASE_URL || '';
+  const SUPABASE_URL = sanitizeSupabaseUrl(rawSupabaseUrl);
   const SUPABASE_ANON_KEY = (window.__SPINTO_SUPABASE_ANON_KEY || import.meta?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
 
+  console.log('[Supabase] Raw URL from server:', rawSupabaseUrl);
+  console.log('[Supabase] Sanitized URL:', SUPABASE_URL);
+  console.log('[Supabase] Anon key present:', !!SUPABASE_ANON_KEY);
+  console.log('[Supabase] window.__SPINTO_SUPABASE_URL:', window.__SPINTO_SUPABASE_URL);
+  
   if (SUPABASE_URL) {
-    console.log('[Supabase] Client URL:', SUPABASE_URL);
+    // Validate URL format
+    const urlPattern = /^https:\/\/[a-z0-9]+\.supabase\.co$/i;
+    if (!urlPattern.test(SUPABASE_URL)) {
+      console.error('[Supabase] WARNING: URL format is invalid. Expected: https://<project-ref>.supabase.co');
+    }
   } else {
-    console.warn('[Supabase] WARNING: No valid Supabase URL configured');
+    console.error('[Supabase] ERROR: No valid Supabase URL configured');
   }
 
   let sb = null;
   function getSB() {
     if (sb) return sb;
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+    console.log('[Supabase] getSB() called, SUPABASE_URL:', SUPABASE_URL, 'ANON_KEY present:', !!SUPABASE_ANON_KEY);
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      console.error('[Supabase] Missing config - URL:', !!SUPABASE_URL, 'KEY:', !!SUPABASE_ANON_KEY);
+      return null;
+    }
     if (!window.supabase || !window.supabase.createClient) {
-      console.error('[Supabase] CDN library not loaded');
+      console.error('[Supabase] CDN library not loaded. window.supabase:', typeof window.supabase);
       return null;
     }
     try {
+      console.log('[Supabase] Creating client with URL:', SUPABASE_URL);
       sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: { persistSession: true, autoRefreshToken: true },
       });
+      console.log('[Supabase] Client created successfully');
     } catch (e) {
       console.error('[Supabase] Failed to create client:', e);
       return null;
