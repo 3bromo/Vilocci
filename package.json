@@ -1,0 +1,35 @@
+{
+  "name": "velocci",
+  "version": "1.0.0",
+  "description": "VELOCCI - Premium automotive key accessories e-commerce",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "vite build",
+    "seed": "node data/seed.js",
+    "postinstall": "node data/seed.js",
+    "test": "node test/smoke.js && node test/admin.js",
+    "test:e2e": "node test/e2e.js",
+    "test:phase3": "node test/phase3_flow.js",
+    "test:phase4": "node test/phase4_flow.js",
+    "shot": "node test/shot.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
+    "@vercel/node": "^12.0.1",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "jsdom": "^29.1.1",
+    "playwright-core": "^1.63.0",
+    "vite": "^5.4.0"
+  }
+}
