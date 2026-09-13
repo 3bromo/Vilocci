@@ -8,8 +8,8 @@
     }
   },
   "redirects": [
-    { "source": "/data/:path*", "statusCode": 404 },
-    { "source": "/dist/:path*", "statusCode": 404 }
+    { "source": "/data/:path*", "destination": "/404", "statusCode": 404 },
+    { "source": "/dist/:path*", "destination": "/404", "statusCode": 404 }
   ],
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/index.js" },
