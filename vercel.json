@@ -1,4 +1,5 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "functions": {
     "api/index.js": {
@@ -6,9 +7,14 @@
       "maxDuration": 10
     }
   },
+  "redirects": [
+    { "source": "/data/:path*", "statusCode": 404 },
+    { "source": "/dist/:path*", "statusCode": 404 }
+  ],
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/index.js" },
     { "source": "/img/asset.svg", "destination": "/api/index.js" },
-    { "source": "/(.*)", "destination": "/api/index.js" }
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/admin/login", "destination": "/admin.html" }
   ]
 }

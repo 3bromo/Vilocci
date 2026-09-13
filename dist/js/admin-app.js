@@ -30,9 +30,11 @@
     }
   }
 
-  const rawSupabaseUrl = window.__SPINTO_SUPABASE_URL || import.meta?.env?.VITE_SUPABASE_URL || '';
-  const SUPABASE_URL = sanitizeSupabaseUrl(rawSupabaseUrl);
-  const SUPABASE_ANON_KEY = (window.__SPINTO_SUPABASE_ANON_KEY || import.meta?.env?.VITE_SUPABASE_ANON_KEY || '').trim();
+  // Config sources, in order: values injected into admin.html (local server),
+  // or fetched from /api/admin/config (see ensureSupabaseConfig).
+  let rawSupabaseUrl = window.__SPINTO_SUPABASE_URL || '';
+  let SUPABASE_URL = sanitizeSupabaseUrl(rawSupabaseUrl);
+  let SUPABASE_ANON_KEY = (window.__SPINTO_SUPABASE_ANON_KEY || '').trim();
 
   console.log('[Supabase] Raw URL from server:', rawSupabaseUrl);
   console.log('[Supabase] Sanitized URL:', SUPABASE_URL);
@@ -47,6 +49,35 @@
     }
   } else {
     console.error('[Supabase] ERROR: No valid Supabase URL configured');
+  }
+
+  function supabaseConfigLooksValid() {
+    return /^https:\/\/[a-z0-9]+\.supabase\.co$/i.test(SUPABASE_URL) && SUPABASE_ANON_KEY.length >= 20;
+  }
+
+  // On Vercel the admin page is served as a plain static file, so the
+  // %VITE_SUPABASE_URL% / %VITE_SUPABASE_ANON_KEY% placeholders in
+  // admin.html are never replaced by the server. When the injected values
+  // are missing (or still raw placeholders), fetch the client-safe config
+  // from the API instead. The anon key is public by design; RLS protects
+  // the data, and the service role key is never sent to the browser.
+  async function ensureSupabaseConfig() {
+    if (supabaseConfigLooksValid()) return;
+    try {
+      const r = await fetch('/api/admin/config', { cache: 'no-store' });
+      if (!r.ok) return;
+      const j = await r.json();
+      if (j && j.url && j.anonKey) {
+        rawSupabaseUrl = j.url;
+        SUPABASE_URL = sanitizeSupabaseUrl(j.url);
+        SUPABASE_ANON_KEY = String(j.anonKey).trim();
+        window.__SPINTO_SUPABASE_URL = SUPABASE_URL;
+        window.__SPINTO_SUPABASE_ANON_KEY = SUPABASE_ANON_KEY;
+        console.log('[Supabase] config loaded from /api/admin/config:', SUPABASE_URL);
+      }
+    } catch (e) {
+      console.warn('[Supabase] could not fetch config from /api/admin/config:', e);
+    }
   }
 
   let sb = null;
@@ -98,9 +129,19 @@
   function fmtDateTime(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
   function uid(p) { return (p||'id') + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 
-  // Local API to existing server (for backward compat & fallback)
+  // Local API to existing server (for backward compat & fallback).
+  // Attaches the Supabase access token as a Bearer header so the server can
+  // verify the admin session (the browser client does not share its session
+  // cookie with this API).
   async function api(method, url, body) {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    try {
+      const s = getSB();
+      if (s) {
+        const { data: { session } } = await s.auth.getSession();
+        if (session && session.access_token) opts.headers.Authorization = 'Bearer ' + session.access_token;
+      }
+    } catch (e) { /* proceed unauthenticated */ }
     if (body) opts.body = JSON.stringify(body);
     const r = await fetch(url, opts);
     const j = await r.json();
@@ -248,7 +289,7 @@
           }
 
           state.view = 'dashboard';
-          render();
+          if (!state.data) await loadData(); else render();
           return;
         }
 
@@ -2271,6 +2312,10 @@
   // INIT
   // ========================================================================
 
+  (async function init() {
+    // Resolve Supabase config first (injected values, or /api/admin/config).
+    await ensureSupabaseConfig();
+
   // Hash change listener — handles browser back/forward and direct URL navigation
   window.addEventListener('hashchange', () => {
     const route = getAdminRoute();
@@ -2312,7 +2357,7 @@
             }
             if (state.view === 'login') {
               state.view = 'dashboard';
-              render();
+              if (!state.data) loadData(); else render();
             }
           }
         });
@@ -2324,4 +2369,5 @@
   })();
 
   checkAuth();
+  })();
 })();

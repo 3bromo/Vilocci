@@ -70,7 +70,8 @@ function read(url) {
   function check(name, cond) { if (cond) { pass++; console.log('  ✓', name); } else { fail++; console.log('  ✗', name); } }
 
   console.log('\n== HOME ==');
-  check('app rendered header logo', text('.logo .word') === 'VELOCCI');
+  const expectedLogo = (data.settings && data.settings.logo && data.settings.logo.value) || (data.settings && data.settings.shopName);
+  check('app rendered header logo', !!expectedLogo && text('.logo .word') === expectedLogo);
   check('hero headline present', /LUXURY|KEY/i.test(text('.hero-copy h1')));
   check('promo bar visible', !!document.querySelector('.promo'));
   check('countdown cells present', document.querySelectorAll('.count .cell').length === 4);
@@ -100,9 +101,12 @@ function read(url) {
   const addBtn = document.querySelector('#addbtn');
   if (addBtn) { click(addBtn); await new Promise(r => setTimeout(r, 60)); }
   check('cart badge incremented', text('#cart-badge') === '1');
+  // add-to-cart shows a toast; the drawer opens via the header cart button
+  click(document.querySelector('#cart-btn'));
+  await new Promise(r => setTimeout(r, 40));
   check('drawer opened', document.querySelector('#cart-drawer').classList.contains('open'));
   check('drawer item rendered', !!document.querySelector('.drawer-item'));
-  check('drawer recommendations rendered', !!document.querySelector('.drawer-reco') || !!document.querySelector('.drawer-bundle'));
+  check('drawer total row rendered', !!document.querySelector('.row.total'));
 
   console.log('\n== LANGUAGE SWITCH ==');
   click(document.querySelector('[data-lang="ar"]'));
