@@ -2328,7 +2328,7 @@
     if (route === 'admin' && state.view === 'login' && state.user) {
       // Navigated to #/admin while logged in — show dashboard
       state.view = 'dashboard';
-      render();
+      if (!state.data) loadData(); else render();
       return;
     }
     // Re-check auth for the new route
