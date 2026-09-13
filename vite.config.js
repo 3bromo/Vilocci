@@ -1,46 +1,53 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
-import { copyFileSync, mkdirSync, existsSync, readdirSync, statSync, cpSync } from 'fs';
+import { copyFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'fs';
 
-// Custom plugin to copy static assets (js, img) to dist/
+// ---------------------------------------------------------------------------
+// Static site layout
+//
+// The site is served as plain static files by Vercel (see vercel.json):
+//   public/  -> Vercel static output root (index.html, css/, js/, img/)
+//   dist/    -> vite build output (kept in sync with the same static files)
+//
+// IMPORTANT: data/ (the JSON database) is NEVER copied into a deployable
+// directory — it is only bundled into the serverless function via require().
+// ---------------------------------------------------------------------------
+
+function copyDir(src, dest) {
+  if (!existsSync(dest)) mkdirSync(dest, { recursive: true });
+  for (const entry of readdirSync(src)) {
+    const srcPath = resolve(src, entry);
+    const destPath = resolve(dest, entry);
+    if (statSync(srcPath).isDirectory()) copyDir(srcPath, destPath);
+    else copyFileSync(srcPath, destPath);
+  }
+}
+
+function copyFileTo(src, dest) {
+  mkdirSync(resolve('.', dest, '..'), { recursive: true });
+  copyFileSync(src, dest);
+}
+
 function copyStaticAssets() {
   return {
     name: 'copy-static-assets',
     writeBundle() {
-      const copyDir = (src, dest) => {
-        if (!existsSync(dest)) mkdirSync(dest, { recursive: true });
-        const entries = readdirSync(src);
-        for (const entry of entries) {
-          const srcPath = resolve(src, entry);
-          const destPath = resolve(dest, entry);
-          if (statSync(srcPath).isDirectory()) {
-            copyDir(srcPath, destPath);
-          } else {
-            copyFileSync(srcPath, destPath);
-          }
-        }
-      };
-
-      // Copy js/ directory
+      // --- dist/ (vite build output) ---
+      if (existsSync('css')) copyDir('css', 'dist/css');
       if (existsSync('js')) copyDir('js', 'dist/js');
-      // Copy img/ directory
       if (existsSync('img')) copyDir('img', 'dist/img');
-      // Copy admin.html
-      if (existsSync('admin.html')) copyFileSync('admin.html', 'dist/admin.html');
-      // Copy admin.css
-      if (existsSync('css/admin.css')) {
-        if (!existsSync('dist/css')) mkdirSync('dist/css', { recursive: true });
-        copyFileSync('css/admin.css', 'dist/css/admin.css');
-      }
-      // Copy data/ directory
-      if (existsSync('data')) copyDir('data', 'dist/data');
-      // Copy lib/ directory
-      if (existsSync('lib')) copyDir('lib', 'dist/lib');
+      if (existsSync('admin.html')) copyFileTo('admin.html', 'dist/admin.html');
+
+      // --- public/ (Vercel static root) — kept in sync with the source files ---
+      if (existsSync('index.html')) copyFileTo('index.html', 'public/index.html');
+      if (existsSync('admin.html')) copyFileTo('admin.html', 'public/admin.html');
+      if (existsSync('css')) copyDir('css', 'public/css');
+      if (existsSync('js')) copyDir('js', 'public/js');
+      if (existsSync('img')) copyDir('img', 'public/img');
     }
   };
 }
 
-// Vite config for VELOCCI - builds static assets while preserving Express server
 export default defineConfig({
   root: '.',
   build: {

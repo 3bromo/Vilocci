@@ -62,15 +62,36 @@ app.get('/img/asset.svg', (req, res) => {
 
 app.use(express.static(PUBLIC, { maxAge: 0, etag: false }));
 
-// Inject Supabase config into admin.html for browser use
+// Inject Supabase config into admin.html for browser use.
+// Tries several locations so it works locally (repo root / dist) and inside
+// the serverless bundle alike.
 function serveAdminHTML(req, res) {
-  let html = fs.readFileSync(path.join(PUBLIC, 'admin.html'), 'utf8');
-  console.log('[Admin] Serving admin page. SUPABASE_URL:', SUPABASE_URL, 'ANON_KEY present:', !!SUPABASE_ANON_KEY);
+  const candidates = [
+    path.join(PUBLIC, 'admin.html'),
+    path.join(__dirname, 'admin.html'),
+  ];
+  const file = candidates.find(f => fs.existsSync(f));
+  if (!file) {
+    console.error('[Admin] admin.html not found in:', candidates.join(', '));
+    return res.status(404).send('Admin page not found');
+  }
+  let html = fs.readFileSync(file, 'utf8');
+  console.log('[Admin] Serving admin page from', file, '| SUPABASE_URL:', SUPABASE_URL, 'ANON_KEY present:', !!SUPABASE_ANON_KEY);
   html = html.replace('%VITE_SUPABASE_URL%', SUPABASE_URL);
   html = html.replace('%VITE_SUPABASE_ANON_KEY%', SUPABASE_ANON_KEY);
   res.type('html').send(html);
 }
 app.get('/admin.html', serveAdminHTML);
+
+// Client-safe Supabase configuration for the admin SPA.
+// On Vercel the admin page is served as a static file, so the
+// %VITE_SUPABASE_URL% / %VITE_SUPABASE_ANON_KEY% placeholders in admin.html
+// are not replaced by the server. The admin SPA fetches this endpoint in
+// that case. The anon key is a public key by design (RLS protects data);
+// the service role key is never exposed here.
+app.get('/api/admin/config', (req, res) => {
+  res.json({ url: SUPABASE_URL || '', anonKey: SUPABASE_ANON_KEY || '' });
+});
 
 // Diagnostic endpoint to check Supabase configuration (no secrets exposed)
 app.get('/api/admin/diagnose', (req, res) => {
