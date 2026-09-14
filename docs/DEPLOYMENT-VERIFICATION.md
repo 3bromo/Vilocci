@@ -108,3 +108,125 @@ pointing `lib/store.js` at a real database (e.g. Supabase tables — see
 3. (For durable storefront data) migrate `lib/store.js` reads/writes to Supabase
    so orders/edits persist across serverless cold starts.
 4. Re-run this checklist after the above.
+
+---
+
+## 6. 2026-09-14 15:38 UTC — Production re-deploy trigger + config hand-off
+
+**Scope:** documentation only. No application code, no data, no Vercel project
+settings, no storefront design/behaviour were changed by this commit. It exists to
+(a) record the exact production configuration the deployment still needs and
+(b) act as the push-to-`main` event that makes Vercel's GitHub integration build a
+new **Production** deployment of `main`.
+
+### 6.1 Pipeline state at trigger time
+
+| Item | Value |
+| --- | --- |
+| Repository | https://github.com/3bromo/Vilocci (production branch: `main`) |
+| Previously deployed production commit | `d99be2b` |
+| Vercel team | `3bromos-projects` |
+| Production URL used as reference | https://vilocci-b31u.vercel.app |
+| Vercel projects linked to this repo (each builds `main` into Production) | `vilocci-b31u`, `velocciiiii`, `vilocciii3bro`, `vilocci-i54t`, `vilocci-pvpw`, `01a07cb5-b190-7e92-ac8e-aefc65395914-4` |
+
+> Every push to `main` currently builds **all six** linked projects. Keeping only
+> one project linked (Vercel → Project → Settings → Git → "Connected Git
+> Repository" → Disconnect on the extras) is an operator decision; nothing was
+> unlinked or deleted automatically.
+
+### 6.2 Vercel environment variables still missing
+
+Live probe of the deployed Production function —
+`GET https://vilocci-b31u.vercel.app/api/admin/diagnose`:
+
+```json
+{"rawEnvUrl":"(not set)","sanitizedUrl":"(empty)","urlIsValid":false,"urlHasPath":"",
+ "anonKeyPresent":false,"serviceKeyPresent":false,"serverClientAvailable":false,
+ "publicDir":"/var/task/dist","distExists":true,"env":"production"}
+```
+
+`GET /api/admin/config` → `{"url":"","anonKey":""}` (browser side of the admin SPA).
+
+| Variable | Scope | Value | Needed for |
+| --- | --- | --- | --- |
+| `VITE_SUPABASE_URL` | Production (all environments) | `https://<project-ref>.supabase.co` — root URL only, no trailing path/slash | admin HTML injection + server JWT verification |
+| `VITE_SUPABASE_ANON_KEY` | Production | the project's **anon/public** key | browser sign-in (`/admin` login form) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Production, **server only** | the project's **service_role** key | `requireAdmin` guard, `/api/admin/*` |
+
+Not required by the deployed code: `ADMIN_PASS`, `SESSION_SECRET` (legacy
+password/session path is no longer used — admin auth is Supabase JWT only).
+`SESSION_SECRET` is still listed in `.env.example`; it is inert.
+
+Env-var changes only apply to a **new** deployment: after saving them, either push
+to `main` or use Vercel → Deployments → `⋯` → **Redeploy** (enable "Override
+Environment Variables" if offered).
+
+### 6.3 Supabase SQL (run once, in Supabase → SQL Editor)
+
+Requires the admin login to already exist in Supabase → Authentication → Users
+(email confirmation temporarily off, or the user confirmed).
+
+```sql
+-- 1) schema + RLS + policies (idempotent)
+--    run the whole of supabase-schema.sql, or at minimum the admin_users part:
+create table if not exists public.admin_users (
+  id uuid references auth.users(id) on delete cascade primary key,
+  email text unique not null,
+  full_name text,
+  role text default 'admin',
+  created_at timestamptz default now()
+);
+alter table public.admin_users enable row level security;
+create or replace function public.is_admin()
+returns boolean as $$
+  select exists (select 1 from public.admin_users where id = auth.uid());
+$$ language sql security definer stable;
+drop policy if exists "Admin full access" on public.admin_users;
+create policy "Admin full access" on public.admin_users
+  for all using (public.is_admin()) with check (public.is_admin());
+
+-- 2) link the admin account BY EMAIL (do not hardcode a uuid)
+insert into public.admin_users (id, email, full_name, role)
+select u.id, u.email, 'Admin', 'admin'
+from auth.users u
+where u.email = '3brosnfroo15@gmail.com'
+on conflict (id) do update
+  set email = excluded.email, full_name = excluded.full_name, role = excluded.role;
+
+-- 3) must return exactly one row, otherwise /admin login will be rejected
+select id, email, role from public.admin_users;
+```
+
+`supabase-admin-setup.sql` / `supabase-admin-auth-setup.sql` /
+`supabase-migration-admin-user.sql` in the repo root insert the admin row with a
+**hardcoded** uuid (`363fc336-…`); use them only if that uuid really matches the
+auth user, otherwise use the block above.
+
+### 6.4 Verification checklist after the production build goes Ready
+
+```
+GET /                        → 200, <title>SPINTO — Luxury Key Accessories for Your Car</title>
+GET /api/data                → 200 JSON with settings/languages/brands/bundles/products (117 active products)
+GET /css/admin.css           → 200 (static asset served by Vercel CDN from dist/)
+GET /admin                   → 200 admin SPA; "Authentication Not Configured" until 6.2 is done
+GET /api/admin/diagnose      → urlIsValid:true, anonKeyPresent:true, serviceKeyPresent:true, serverClientAvailable:true
+GET /api/admin/data          → 401 {"error":"Unauthorized — no token"} when logged out
+GET /data/velocci-db.json    → 404 (vercel.json blocks the datastore)
+```
+
+### 6.5 Known blocker found while verifying (reported, not changed)
+
+`server.js` verifies the admin JWT with `sb.auth.admin.getUserByToken(token)`.
+That method does not exist in the installed `@supabase/supabase-js@2.116.0`
+(`typeof sb.auth.admin.getUserByToken === 'undefined'`), so the call throws a
+`TypeError`, which the `catch` turns into `401 {"error":"Authentication failed"}`
+for **every** admin API request — including `/api/admin/session`, which then
+always answers `{"authenticated":false}`. Verified locally with
+`VITE_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` set to valid-format values,
+using a patched copy outside the repo: replacing the two call sites with
+`sb.auth.getUser(token)` changes the response from "Authentication failed" to
+"Invalid session" (i.e. the Supabase call is actually issued).
+
+Consequence: `/admin` login cannot succeed in production until (1) §6.2 env vars
+are set, (2) §6.3 SQL is run, **and** (3) these two lines are fixed. No code was
+changed here, per the "do not modify the working site" instruction.
