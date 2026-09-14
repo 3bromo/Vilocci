@@ -158,8 +158,11 @@ async function requireAdmin(req, res, next) {
   if (!sb) return res.status(503).json({ error: 'Supabase not configured on server' });
 
   try {
-    // Verify the JWT and get user
-    const { data: { user }, error } = await sb.auth.admin.getUserByToken(token);
+    // Verify the JWT and get user.
+    // NOTE: supabase-js v2 exposes this as auth.getUser(jwt). The v1-era
+    // auth.admin.getUserByToken does not exist in the installed
+    // @supabase/supabase-js@2.x and throws TypeError (caught → 401).
+    const { data: { user }, error } = await sb.auth.getUser(token);
     if (error || !user) return res.status(401).json({ error: 'Invalid session' });
 
     // Check admin_users table
@@ -187,7 +190,8 @@ app.get('/api/admin/session', async (req, res) => {
   if (!sb) return res.json({ authenticated: false });
 
   try {
-    const { data: { user } } = await sb.auth.admin.getUserByToken(token);
+    // See note in requireAdmin: auth.getUser(jwt) is the v2 API.
+    const { data: { user } } = await sb.auth.getUser(token);
     if (!user) return res.json({ authenticated: false });
 
     const { data: adminRecord } = await sb
