@@ -30,16 +30,24 @@
     }
   }
 
+  // admin.html writes these as %VITE_SUPABASE_URL% / %VITE_SUPABASE_ANON_KEY%
+  // and only a server that injects them replaces the token. An unsubstituted
+  // placeholder is not a configured value, so treat it as empty: it must never
+  // be used as config, and never be reported as if it were a real value.
+  function unplaceholder(value) {
+    const s = String(value == null ? '' : value).trim();
+    return /^%[A-Z0-9_]+%$/i.test(s) ? '' : s;
+  }
+
   // Config sources, in order: values injected into admin.html (local server),
   // or fetched from /api/admin/config (see ensureSupabaseConfig).
-  let rawSupabaseUrl = window.__SPINTO_SUPABASE_URL || '';
+  let rawSupabaseUrl = unplaceholder(window.__SPINTO_SUPABASE_URL);
   let SUPABASE_URL = sanitizeSupabaseUrl(rawSupabaseUrl);
-  let SUPABASE_ANON_KEY = (window.__SPINTO_SUPABASE_ANON_KEY || '').trim();
+  let SUPABASE_ANON_KEY = unplaceholder(window.__SPINTO_SUPABASE_ANON_KEY);
 
   console.log('[Supabase] Raw URL from server:', rawSupabaseUrl);
   console.log('[Supabase] Sanitized URL:', SUPABASE_URL);
   console.log('[Supabase] Anon key present:', !!SUPABASE_ANON_KEY);
-  console.log('[Supabase] window.__SPINTO_SUPABASE_URL:', window.__SPINTO_SUPABASE_URL);
   
   if (SUPABASE_URL) {
     // Validate URL format
@@ -333,20 +341,35 @@
       const { data, error } = await s.auth.signInWithPassword({ email, password });
 
       if (error) {
-        // Map Supabase errors to user-friendly messages
-        if (error.message.includes('Invalid path') || error.message.includes('Invalid URL')) {
-          state.loginError = 'Authentication service is misconfigured. Please contact the site administrator.';
-          console.error('[Supabase] URL configuration error:', error.message);
-        } else if (error.message.includes('Invalid login credentials') ||
-            error.message.includes('invalid_credentials') ||
-            error.status === 400) {
+        // Truthful error mapping — report the cause Supabase Auth actually
+        // returned. supabase-js v2 exposes the stable cause in error.code,
+        // while error.status is a coarse HTTP code (invalid credentials,
+        // unconfirmed email, rate limits and other failures are all HTTP 400).
+        // Specific causes are therefore checked first, so a 400 is never
+        // reported as "invalid password" when the real cause is different.
+        const code = String(error.code || '').toLowerCase();
+        const message = String(error.message || '');
+        const msg = message.toLowerCase();
+        const says = (...needles) => needles.some(n => msg.includes(n));
+
+        console.error('[Supabase] sign-in rejected:', { code: error.code, status: error.status, message });
+
+        if (code === 'invalid_credentials' || says('invalid login credentials')) {
           state.loginError = 'Invalid email or password. Please try again.';
-        } else if (error.message.includes('Email not confirmed')) {
-          state.loginError = 'Please verify your email address before signing in.';
-        } else if (error.message.includes('Too many requests')) {
+        } else if (code === 'email_not_confirmed' || says('email not confirmed')) {
+          state.loginError = 'This email address has not been confirmed yet. Please confirm it, then sign in again.';
+        } else if (code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit' ||
+            error.status === 429 || says('too many requests', 'rate limit')) {
           state.loginError = 'Too many attempts. Please wait a moment and try again.';
+        } else if (code === 'invalid_url' || code === 'invalid_path' || says('invalid path', 'invalid url', 'invalid api key')) {
+          state.loginError = 'Authentication service is misconfigured. Please contact the site administrator.';
+        } else if (says('failed to fetch', 'networkerror', 'network request failed')) {
+          state.loginError = 'Could not reach the authentication service. Please check your connection and try again.';
+        } else if (message) {
+          // Anything else: show Supabase's own wording instead of a guess.
+          state.loginError = message;
         } else {
-          state.loginError = error.message || 'Login failed. Please check your credentials.';
+          state.loginError = 'Login failed. Please try again.';
         }
         state.loading = false;
         render();
@@ -381,7 +404,12 @@
       render();
     } catch (e) {
       console.error('[Login error]', e);
-      state.loginError = e.message || 'An unexpected error occurred. Please try again.';
+      // A thrown (not returned) failure is usually the auth endpoint being
+      // unreachable — say that instead of showing a bare raw fetch error.
+      const detail = String((e && e.message) || '');
+      state.loginError = /failed to fetch|networkerror|network request failed|load failed/i.test(detail)
+        ? 'Could not reach the authentication service. Please check your connection and try again.'
+        : (detail || 'An unexpected error occurred. Please try again.');
       state.loading = false;
       state.view = 'login';
       render();
@@ -487,7 +515,7 @@
         <form class="login-form" id="login-form">
           <div class="field">
             <label>Email</label>
-            <input name="email" type="email" placeholder="admin@spinto.com" autocomplete="email" required>
+            <input name="email" type="email" autocomplete="email" required>
           </div>
           <div class="field">
             <label>Password</label>
