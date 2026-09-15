@@ -46,6 +46,10 @@ const ONLY = (argv.find((a) => a.startsWith('--only=')) || '').slice(7);
 
 // ---------------------------------------------------------------------------
 // content mapping — every row comes from data/velocci-db.json
+//
+// buildContentPlan() is exported (module.exports at the bottom) so other
+// tooling maps the data with the EXACT same rules — in particular
+// scripts/generate-full-seed.js, which renders supabase/full_database_seed.sql.
 // ---------------------------------------------------------------------------
 function loadSource() {
   if (!fs.existsSync(DB_FILE)) {
@@ -473,6 +477,10 @@ function printSql() {
 
 // ---------------------------------------------------------------------------
 (async function main() {
+  // Only run when invoked as a CLI (node scripts/migrate.js). When this file
+  // is require()d by other tooling (e.g. scripts/generate-full-seed.js) it
+  // just exports the plan builders and must not execute anything.
+  if (require.main !== module) return;
   try {
     let code;
     if (PRINT_SQL) code = printSql();
@@ -485,3 +493,5 @@ function printSql() {
     process.exit(1);
   }
 }());
+
+module.exports = { loadSource, buildContentPlan, verifyAgainstSource, MIGRATIONS, DB_FILE, ROOT };

@@ -19,6 +19,8 @@
     "test:phase4": "node test/phase4_flow.js",
     "shot": "node test/shot.js",
     "test:db": "node test/supabase_e2e.js",
+    "test:bundle": "node test/full_bundle.js",
+    "seed:sql": "node scripts/generate-full-seed.js",
     "test:admin": "node test/admin_cms.js",
     "test:fallback": "node test/db_fallback.js"
   },
