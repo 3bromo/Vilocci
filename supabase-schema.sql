@@ -273,84 +273,110 @@ returns boolean as $$
 $$ language sql security definer stable;
 
 -- ADMIN: full access
+drop policy if exists "Admin full access" on public.admin_users;
 create policy "Admin full access" on public.admin_users
   for all using (public.is_admin());
 
 -- PRODUCTS: public read active, admin full
+drop policy if exists "Public read active products" on public.products;
 create policy "Public read active products" on public.products
   for select using (active = true);
+drop policy if exists "Admin full products" on public.products;
 create policy "Admin full products" on public.products
   for all using (public.is_admin());
 
 -- CATEGORIES: public read active, admin full
+drop policy if exists "Public read active categories" on public.categories;
 create policy "Public read active categories" on public.categories
   for select using (active = true);
+drop policy if exists "Admin full categories" on public.categories;
 create policy "Admin full categories" on public.categories
   for all using (public.is_admin());
 
 -- BRANDS: public read active, admin full
+drop policy if exists "Public read active brands" on public.brands;
 create policy "Public read active brands" on public.brands
   for select using (active = true);
+drop policy if exists "Admin full brands" on public.brands;
 create policy "Admin full brands" on public.brands
   for all using (public.is_admin());
 
 -- BUNDLES: public read active, admin full
+drop policy if exists "Public read active bundles" on public.bundles;
 create policy "Public read active bundles" on public.bundles
   for select using (active = true);
+drop policy if exists "Admin full bundles" on public.bundles;
 create policy "Admin full bundles" on public.bundles
   for all using (public.is_admin());
 
 -- ORDERS: admin only
+drop policy if exists "Admin full orders" on public.orders;
 create policy "Admin full orders" on public.orders
   for all using (public.is_admin());
 
 -- PRE-ORDERS: admin only
+drop policy if exists "Admin full preorders" on public.preorders;
 create policy "Admin full preorders" on public.preorders
   for all using (public.is_admin());
 
 -- MESSAGES: admin only
+drop policy if exists "Admin full messages" on public.messages;
 create policy "Admin full messages" on public.messages
   for all using (public.is_admin());
 
 -- DISCOUNT CODES: public read active, admin full
+drop policy if exists "Public read active discounts" on public.discount_codes;
 create policy "Public read active discounts" on public.discount_codes
   for select using (active = true);
+drop policy if exists "Admin full discounts" on public.discount_codes;
 create policy "Admin full discounts" on public.discount_codes
   for all using (public.is_admin());
 
 -- WEBSITE CONTENT: public read, admin write
+drop policy if exists "Public read content" on public.website_content;
 create policy "Public read content" on public.website_content
   for select using (true);
+drop policy if exists "Admin full content" on public.website_content;
 create policy "Admin full content" on public.website_content
   for all using (public.is_admin());
 
 -- WEBSITE IMAGES: public read, admin write
+drop policy if exists "Public read images" on public.website_images;
 create policy "Public read images" on public.website_images
   for select using (true);
+drop policy if exists "Admin full images" on public.website_images;
 create policy "Admin full images" on public.website_images
   for all using (public.is_admin());
 
 -- SETTINGS: public read, admin write
+drop policy if exists "Public read settings" on public.settings;
 create policy "Public read settings" on public.settings
   for select using (true);
+drop policy if exists "Admin full settings" on public.settings;
 create policy "Admin full settings" on public.settings
   for all using (public.is_admin());
 
 -- HERO SLIDES: public read active, admin full
+drop policy if exists "Public read active slides" on public.hero_slides;
 create policy "Public read active slides" on public.hero_slides
   for select using (active = true);
+drop policy if exists "Admin full slides" on public.hero_slides;
 create policy "Admin full slides" on public.hero_slides
   for all using (public.is_admin());
 
 -- HOME SECTIONS: public read enabled, admin full
+drop policy if exists "Public read enabled sections" on public.home_sections;
 create policy "Public read enabled sections" on public.home_sections
   for select using (enabled = true);
+drop policy if exists "Admin full sections" on public.home_sections;
 create policy "Admin full sections" on public.home_sections
   for all using (public.is_admin());
 
 -- PROMO BAR: public read enabled, admin write
+drop policy if exists "Public read promo" on public.promo_bar;
 create policy "Public read promo" on public.promo_bar
   for select using (enabled = true);
+drop policy if exists "Admin full promo" on public.promo_bar;
 create policy "Admin full promo" on public.promo_bar
   for all using (public.is_admin());
 
@@ -367,21 +393,27 @@ begin
 end;
 $$ language plpgsql;
 
+drop trigger if exists products_updated_at on public.products;
 create trigger products_updated_at before update on public.products
   for each row execute function public.set_updated_at();
 
+drop trigger if exists categories_updated_at on public.categories;
 create trigger categories_updated_at before update on public.categories
   for each row execute function public.set_updated_at();
 
+drop trigger if exists brands_updated_at on public.brands;
 create trigger brands_updated_at before update on public.brands
   for each row execute function public.set_updated_at();
 
+drop trigger if exists bundles_updated_at on public.bundles;
 create trigger bundles_updated_at before update on public.bundles
   for each row execute function public.set_updated_at();
 
+drop trigger if exists content_updated_at on public.website_content;
 create trigger content_updated_at before update on public.website_content
   for each row execute function public.set_updated_at();
 
+drop trigger if exists settings_updated_at on public.settings;
 create trigger settings_updated_at before update on public.settings
   for each row execute function public.set_updated_at();
 

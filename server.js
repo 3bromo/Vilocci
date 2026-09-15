@@ -2,6 +2,8 @@
 // SPINTO — Application server
 // Serves the storefront + admin SPA and exposes a single data API.
 // Admin authentication uses Supabase Auth (JWT-verified, no hardcoded passwords).
+// Data is read/written through lib/db.js (Supabase), with the JSON store as a
+// fallback when no database is configured.
 // ============================================================================
 'use strict';
 
@@ -9,6 +11,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const db = require('./lib/db');
 const store = require('./lib/store');
 
 const { seed } = require('./data/seed');
@@ -40,6 +43,7 @@ if (SUPABASE_URL) {
 } else {
   console.warn('[Supabase] WARNING: VITE_SUPABASE_URL is not set or invalid');
 }
+console.log('[data] driver:', db.DRIVER);
 
 const PUBLIC = process.env.NODE_ENV === 'production' && fs.existsSync(path.join(__dirname, 'dist'))
   ? path.join(__dirname, 'dist')
@@ -49,8 +53,10 @@ app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// ensure data is present on boot (seed once, non-destructive)
-seed();
+// ensure data is present on boot (seed once, non-destructive).
+// Only needed for the JSON fallback driver — with a database configured the
+// database is the source of truth and seeding it from a file would be wrong.
+if (db.DRIVER === 'json') seed();
 
 // On-the-fly premium product / hero SVG imagery
 app.get('/img/asset.svg', (req, res) => {
@@ -76,7 +82,6 @@ function serveAdminHTML(req, res) {
     return res.status(404).send('Admin page not found');
   }
   let html = fs.readFileSync(file, 'utf8');
-  console.log('[Admin] Serving admin page from', file, '| SUPABASE_URL:', SUPABASE_URL, 'ANON_KEY present:', !!SUPABASE_ANON_KEY);
   html = html.replace('%VITE_SUPABASE_URL%', SUPABASE_URL);
   html = html.replace('%VITE_SUPABASE_ANON_KEY%', SUPABASE_ANON_KEY);
   res.type('html').send(html);
@@ -99,15 +104,19 @@ app.get('/api/admin/diagnose', (req, res) => {
   const hasAnonKey = !!(process.env.VITE_SUPABASE_ANON_KEY || '');
   const hasServiceKey = !!(process.env.SUPABASE_SERVICE_ROLE_KEY || '');
   const urlPattern = /^https:\/\/[a-z0-9]+\.supabase\.co$/i;
-  
+  let urlHasPath = false;
+  try { urlHasPath = !!rawUrl && new URL(rawUrl).pathname !== '/'; } catch (e) { urlHasPath = false; }
+
   res.json({
     rawEnvUrl: rawUrl || '(not set)',
     sanitizedUrl: SUPABASE_URL || '(empty)',
     urlIsValid: urlPattern.test(SUPABASE_URL),
-    urlHasPath: rawUrl && new URL(rawUrl).pathname !== '/',
+    urlHasPath,
     anonKeyPresent: hasAnonKey,
     serviceKeyPresent: hasServiceKey,
     serverClientAvailable: !!getServerSb(),
+    dataDriver: db.DRIVER,
+    dataDriverDetail: db.info(),
     publicDir: PUBLIC,
     distExists: fs.existsSync(path.join(__dirname, 'dist')),
     env: process.env.NODE_ENV || 'development',
@@ -123,7 +132,6 @@ let _serverSb = null;
 function getServerSb() {
   if (_serverSb) return _serverSb;
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
-  // Dynamic import to avoid bundling issues
   try {
     const { createClient } = require('@supabase/supabase-js');
     _serverSb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
@@ -138,10 +146,8 @@ function getServerSb() {
 
 // Extract Supabase JWT from request (cookie or Authorization header)
 function getAuthToken(req) {
-  // Check cookie first (set by Supabase client)
   const cookieToken = req.cookies && req.cookies['sb-access-token'];
   if (cookieToken) return cookieToken;
-  // Check Authorization header
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.slice(7);
@@ -149,8 +155,22 @@ function getAuthToken(req) {
   return null;
 }
 
+// Local-only admin hook for the automated test suite. It is inert unless
+// ADMIN_DEV_TOKEN is set AND no real Supabase project is configured, so it can
+// never open the production admin panel.
+function devAdminUser(req) {
+  const token = process.env.ADMIN_DEV_TOKEN;
+  if (!token) return null;
+  if (/\.supabase\.co$/i.test(SUPABASE_URL)) return null;
+  const supplied = req.headers['x-admin-dev-token'];
+  return supplied && supplied === token ? { id: 'dev-admin', email: 'dev@localhost' } : null;
+}
+
 // Guard: verify Supabase JWT and admin_users membership
 async function requireAdmin(req, res, next) {
+  const dev = devAdminUser(req);
+  if (dev) { req.adminUser = dev; return next(); }
+
   const token = getAuthToken(req);
   if (!token) return res.status(401).json({ error: 'Unauthorized — no token' });
 
@@ -158,14 +178,10 @@ async function requireAdmin(req, res, next) {
   if (!sb) return res.status(503).json({ error: 'Supabase not configured on server' });
 
   try {
-    // Verify the JWT and get user.
-    // NOTE: supabase-js v2 exposes this as auth.getUser(jwt). The v1-era
-    // auth.admin.getUserByToken does not exist in the installed
-    // @supabase/supabase-js@2.x and throws TypeError (caught → 401).
+    // supabase-js v2 exposes this as auth.getUser(jwt).
     const { data: { user }, error } = await sb.auth.getUser(token);
     if (error || !user) return res.status(401).json({ error: 'Invalid session' });
 
-    // Check admin_users table
     const { data: adminRecord } = await sb
       .from('admin_users')
       .select('id')
@@ -183,6 +199,9 @@ async function requireAdmin(req, res, next) {
 
 // Admin session check (for the admin SPA to verify auth on load)
 app.get('/api/admin/session', async (req, res) => {
+  const dev = devAdminUser(req);
+  if (dev) return res.json({ authenticated: true, email: dev.email });
+
   const token = getAuthToken(req);
   if (!token) return res.json({ authenticated: false });
 
@@ -190,7 +209,6 @@ app.get('/api/admin/session', async (req, res) => {
   if (!sb) return res.json({ authenticated: false });
 
   try {
-    // See note in requireAdmin: auth.getUser(jwt) is the v2 API.
     const { data: { user } } = await sb.auth.getUser(token);
     if (!user) return res.json({ authenticated: false });
 
@@ -209,261 +227,271 @@ app.get('/api/admin/session', async (req, res) => {
 // ---------------------------------------------------------------------------
 // PUBLIC DATA API — everything the storefront needs in one payload
 // ---------------------------------------------------------------------------
-function publicPayload() {
-  const db = store.load();
-  const langs = db.languages;
-  return {
-    settings: db.settings,
-    languages: langs,
-    promoBar: db.promoBar && db.promoBar.enabled ? db.promoBar : null,
-    heroSlides: db.heroSlides.filter(s => s.active).sort((a,b)=>a.order-b.order),
-    homeSections: db.homeSections.filter(s=>s.enabled).sort((a,b)=>a.order-b.order),
-    brands: db.brands.filter(b=>b.active).sort((a,b)=>a.order-b.order),
-    bundles: db.bundles.filter(b=>b.active),
-    products: db.products.filter(p=>p.active),
-  };
-}
-
-app.get('/api/data', (req, res) => {
-  res.json(publicPayload());
+app.get('/api/data', async (req, res) => {
+  try {
+    const catalog = await db.getCatalog();
+    res.set('Cache-Control', 'no-store');
+    res.json(db.publicPayload(catalog));
+  } catch (e) {
+    console.error('[api/data]', e.message);
+    res.status(500).json({ error: 'Failed to load store data.' });
+  }
 });
 
 // ---------------------------------------------------------------------------
 // ORDERS (guest checkout, COD only)
 // ---------------------------------------------------------------------------
-app.post('/api/orders', (req, res) => {
-  const db = store.load();
-  const body = req.body || {};
-  const { customer, cart, totals } = body;
+app.post('/api/orders', async (req, res) => {
+  try {
+    const catalog = await db.getCatalog();
+    const body = req.body || {};
+    const { customer, cart } = body;
 
-  if (!customer || !customer.fullName || !customer.phone || !customer.city || !customer.address) {
-    return res.status(400).json({ error: 'Missing required order fields.' });
-  }
-  // Server-side character limit validation
-  const limits = { fullName: 60, phone: 20, city: 40, address: 200, area: 40, notes: 300 };
-  for (const [field, max] of Object.entries(limits)) {
-    if (customer[field] && String(customer[field]).length > max) {
-      return res.status(400).json({ error: `${field} exceeds maximum length of ${max} characters.` });
+    if (!customer || !customer.fullName || !customer.phone || !customer.city || !customer.address) {
+      return res.status(400).json({ error: 'Missing required order fields.' });
     }
-  }
-  if (!Array.isArray(cart) || !cart.length) {
-    return res.status(400).json({ error: 'Your cart is empty.' });
-  }
-
-  // Validate against real store + recalculate totals server-side (never trust client)
-  const validItems = [];
-  let subtotal = 0;
-  let bundleDiscount = 0;
-  let deliveryFee = 0;
-
-  for (const item of cart) {
-    const p = db.products.find(x => x.id === item.productId);
-    if (!p) continue;
-    const qty = Math.max(1, parseInt(item.qty) || 1);
-    // shape must be available
-    let shape = item.keyShape || '';
-    const shapeAvailable = (p.keyShapes || []).find(sh => sh.shape === shape && sh.available);
-    if (!shapeAvailable) shape = '';
-    const linePrice = p.price * qty;
-    subtotal += linePrice;
-    const fit = (item.fitment && (item.fitment.brand || item.fitment.model || item.fitment.year))
-      ? { brand: item.fitment.brand || '', model: item.fitment.model || '', year: (item.fitment.year != null ? String(item.fitment.year) : '') }
-      : null;
-    validItems.push({
-      productId: p.id, name_en: p.name_en, name_ar: p.name_ar,
-      slug: p.slug, category: p.category, brandSlug: p.brandSlug,
-      keyShape: shape, qty,
-      price: p.price, lineTotal: linePrice,
-      image: (p.images && p.images[0]) || '/img/detail_a.png',
-      fitment: fit,
-    });
-  }
-
-  if (!validItems.length) return res.status(400).json({ error: 'Your cart is empty.' });
-
-  // Bundle discount — a full brand set (Key Case + Key Holder + Medal) present
-  // in the cart unlocks the bundle price. Otherwise no discount.
-  const bundleApplied = {};
-  for (const item of validItems) {
-    if (bundleApplied[item.brandSlug]) continue;
-    const b = db.bundles.find(x => x.brandSlug === item.brandSlug && x.active);
-    if (!b) continue;
-    const owned = validItems.filter(v => v.brandSlug === item.brandSlug);
-    const hasCase = owned.some(v => v.category === 'keycase');
-    const hasHolder = owned.some(v => v.category === 'keyholder');
-    const hasMedal = owned.some(v => v.category === 'medal');
-    const fullSet = hasCase && hasHolder && hasMedal;
-    if (fullSet) {
-      bundleApplied[item.brandSlug] = { bundleId: b.id, discount: Math.max(0, b.normalTotal - b.bundlePrice) };
+    // Server-side character limit validation
+    const limits = { fullName: 60, phone: 20, city: 40, address: 200, area: 40, notes: 300 };
+    for (const [field, max] of Object.entries(limits)) {
+      if (customer[field] && String(customer[field]).length > max) {
+        return res.status(400).json({ error: `${field} exceeds maximum length of ${max} characters.` });
+      }
     }
+    if (!Array.isArray(cart) || !cart.length) {
+      return res.status(400).json({ error: 'Your cart is empty.' });
+    }
+
+    // Validate against real store + recalculate totals server-side (never trust client)
+    const validItems = [];
+    let subtotal = 0;
+
+    for (const item of cart) {
+      const p = catalog.products.find(x => x.id === item.productId);
+      if (!p) continue;
+      const qty = Math.max(1, parseInt(item.qty) || 1);
+      let shape = item.keyShape || '';
+      const shapeAvailable = (p.keyShapes || []).find(sh => sh.shape === shape && sh.available);
+      if (!shapeAvailable) shape = '';
+      const linePrice = p.price * qty;
+      subtotal += linePrice;
+      const fit = (item.fitment && (item.fitment.brand || item.fitment.model || item.fitment.year))
+        ? { brand: item.fitment.brand || '', model: item.fitment.model || '', year: (item.fitment.year != null ? String(item.fitment.year) : '') }
+        : null;
+      validItems.push({
+        productId: p.id, name_en: p.name_en, name_ar: p.name_ar,
+        slug: p.slug, category: p.category, brandSlug: p.brandSlug,
+        keyShape: shape, qty,
+        price: p.price, lineTotal: linePrice,
+        image: (p.images && p.images[0]) || '/img/detail_a.png',
+        fitment: fit,
+      });
+    }
+
+    if (!validItems.length) return res.status(400).json({ error: 'Your cart is empty.' });
+
+    // Bundle discount — a full brand set (Key Case + Key Holder + Medal) present
+    // in the cart unlocks the bundle price. Otherwise no discount.
+    const bundleApplied = {};
+    for (const item of validItems) {
+      if (bundleApplied[item.brandSlug]) continue;
+      const b = catalog.bundles.find(x => x.brandSlug === item.brandSlug && x.active !== false);
+      if (!b) continue;
+      const owned = validItems.filter(v => v.brandSlug === item.brandSlug);
+      const hasCase = owned.some(v => v.category === 'keycase');
+      const hasHolder = owned.some(v => v.category === 'keyholder');
+      const hasMedal = owned.some(v => v.category === 'medal');
+      if (hasCase && hasHolder && hasMedal) {
+        bundleApplied[item.brandSlug] = { bundleId: b.id, discount: Math.max(0, b.normalTotal - b.bundlePrice) };
+      }
+    }
+    const bundleDiscount = Object.values(bundleApplied).reduce((s, x) => s + x.discount, 0);
+
+    const settings = catalog.settings || {};
+    const freeShipThreshold = settings.freeShippingThreshold || 0;
+    const deliveryFee = (settings.shippingFee || 0) && subtotal >= freeShipThreshold ? 0 : (settings.shippingFee || 0);
+    const total = subtotal - bundleDiscount + deliveryFee;
+
+    const nowIso = new Date().toISOString();
+    const order = {
+      id: 'ORD-' + Date.now().toString().slice(-8),
+      createdAt: nowIso,
+      customer: {
+        fullName: customer.fullName, phone: customer.phone,
+        email: customer.email || '',
+        city: customer.city, area: customer.area || '',
+        address: customer.address, notes: customer.notes || '',
+      },
+      items: validItems,
+      subtotal: Math.round(subtotal),
+      bundleDiscount: Math.round(bundleDiscount),
+      deliveryFee,
+      total: Math.round(total),
+      status: 'Pending',
+      statusHistory: [{ status: 'Pending', at: nowIso }],
+      payment: 'Cash on Delivery',
+      currency: settings.currency || 'EGP',
+      source: 'storefront',
+    };
+
+    // Durable write: orders + order_items in Supabase.
+    await db.createOrder(order);
+    res.json({ ok: true, orderId: order.id, total: Math.round(total) });
+  } catch (e) {
+    console.error('[api/orders]', e.message);
+    res.status(500).json({ error: 'Could not save the order.' });
   }
-  bundleDiscount = Object.values(bundleApplied).reduce((s, x) => s + x.discount, 0);
-
-  const freeShipThreshold = db.settings.freeShippingThreshold || 0;
-  deliveryFee = (db.settings.shippingFee || 0) && subtotal >= freeShipThreshold ? 0 : (db.settings.shippingFee || 0);
-
-  const total = subtotal - bundleDiscount + deliveryFee;
-
-  const order = {
-    id: 'ORD-' + Date.now().toString().slice(-8),
-    createdAt: new Date().toISOString(),
-    customer: {
-      fullName: customer.fullName, phone: customer.phone,
-      city: customer.city, area: customer.area || '',
-      address: customer.address, notes: customer.notes || '',
-    },
-    items: validItems,
-    subtotal: Math.round(subtotal),
-    bundleDiscount: Math.round(bundleDiscount),
-    deliveryFee,
-    total: Math.round(total),
-    status: 'Pending',
-    statusHistory: [{ status: 'Pending', at: new Date().toISOString() }],
-    payment: 'Cash on Delivery',
-  };
-
-  db.orders.push(order);
-  store.save();
-  res.json({ ok: true, orderId: order.id, total: Math.round(total) });
 });
 
 // ---------------------------------------------------------------------------
 // PRE-ORDERS (no payment collected)
 // ---------------------------------------------------------------------------
-app.post('/api/preorders', (req, res) => {
-  const db = store.load();
-  const body = req.body || {};
-  const { productId, keyShape, customer } = body;
-  if (!productId || !customer || !customer.fullName || !customer.phone) {
-    return res.status(400).json({ error: 'Missing required pre-order fields.' });
-  }
-  // Server-side character limit validation for preorders
-  const preLimits = { fullName: 60, phone: 20, city: 40, address: 200 };
-  for (const [field, max] of Object.entries(preLimits)) {
-    if (customer[field] && String(customer[field]).length > max) {
-      return res.status(400).json({ error: `${field} exceeds maximum length of ${max} characters.` });
+app.post('/api/preorders', async (req, res) => {
+  try {
+    const catalog = await db.getCatalog();
+    const body = req.body || {};
+    const { productId, keyShape, customer } = body;
+    if (!productId || !customer || !customer.fullName || !customer.phone) {
+      return res.status(400).json({ error: 'Missing required pre-order fields.' });
     }
+    const preLimits = { fullName: 60, phone: 20, city: 40, address: 200 };
+    for (const [field, max] of Object.entries(preLimits)) {
+      if (customer[field] && String(customer[field]).length > max) {
+        return res.status(400).json({ error: `${field} exceeds maximum length of ${max} characters.` });
+      }
+    }
+    const p = catalog.products.find(x => x.id === productId);
+    if (!p) return res.status(404).json({ error: 'Product not found.' });
+    const rec = {
+      id: 'PRE-' + Date.now().toString().slice(-8),
+      createdAt: new Date().toISOString(),
+      productId, name_en: p.name_en, name_ar: p.name_ar, brandSlug: p.brandSlug,
+      keyShape: keyShape || '',
+      customer: { fullName: customer.fullName, phone: customer.phone, city: customer.city || '', address: customer.address || '' },
+      status: 'Pending',
+    };
+    await db.saveRecord('preorders', rec);
+    res.json({ ok: true, preorderId: rec.id });
+  } catch (e) {
+    console.error('[api/preorders]', e.message);
+    res.status(500).json({ error: 'Could not save the pre-order.' });
   }
-  const p = db.products.find(x => x.id === productId);
-  if (!p) return res.status(404).json({ error: 'Product not found.' });
-  const rec = {
-    id: 'PRE-' + Date.now().toString().slice(-8),
-    createdAt: new Date().toISOString(),
-    productId, name_en: p.name_en, name_ar: p.name_ar, brandSlug: p.brandSlug,
-    keyShape: keyShape || '',
-    customer: { fullName: customer.fullName, phone: customer.phone, city: customer.city||'', address: customer.address||'' },
-    status: 'Pending',
-  };
-  db.preorders.push(rec);
-  store.save();
-  res.json({ ok: true, preorderId: rec.id });
 });
 
 // ---------------------------------------------------------------------------
 // CONTACT / NEWSLETTER MESSAGES
 // ---------------------------------------------------------------------------
-app.post('/api/messages', (req, res) => {
-  const db = store.load();
-  const body = req.body || {};
-  db.messages.push(Object.assign({ id:'MSG-'+Date.now().toString().slice(-6), createdAt:new Date().toISOString() }, body));
-  store.save();
-  res.json({ ok: true });
+app.post('/api/messages', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const rec = Object.assign({ id: 'MSG-' + Date.now().toString().slice(-6), createdAt: new Date().toISOString() }, body);
+    await db.saveRecord('messages', rec);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[api/messages]', e.message);
+    res.status(500).json({ error: 'Could not save the message.' });
+  }
 });
 
 // ---------------------------------------------------------------------------
 // ADMIN DATA MANAGEMENT
-// A generic, validated upsert/reorder/delete API over the shared store.
+// Every write goes through lib/db.js, so the storefront and the admin panel
+// always read the same rows.
 // ---------------------------------------------------------------------------
-const COLLECTIONS = {
-  products: { array: 'products', key: 'id' },
-  brands: { array: 'brands', key: 'id' },
-  bundles: { array: 'bundles', key: 'id' },
-  heroSlides: { array: 'heroSlides', key: 'id' },
-  homeSections: { array: 'homeSections', key: 'id' },
-};
-
-app.get('/api/admin/data', requireAdmin, (req, res) => {
-  const db = store.load();
-  res.json({
-    products: db.products, brands: db.brands, bundles: db.bundles,
-    heroSlides: db.heroSlides, homeSections: db.homeSections,
-    orders: db.orders, preorders: db.preorders, messages: db.messages,
-    settings: db.settings, promoBar: db.promoBar,
-  });
-});
-
-app.post('/api/admin/save', requireAdmin, (req, res) => {
-  const db = store.load();
-  const { collection, record } = req.body || {};
-  const cfg = COLLECTIONS[collection];
-  if (!cfg) return res.status(400).json({ error: 'Unknown collection.' });
-  const arr = db[cfg.array];
-  const existing = arr.find(x => x[cfg.key] === record[cfg.key]);
-  if (existing) Object.assign(existing, record);
-  else arr.push(record);
-  store.save();
-  res.json({ ok: true, record: existing || record });
-});
-
-app.post('/api/admin/delete', requireAdmin, (req, res) => {
-  const db = store.load();
-  const { collection, id } = req.body || {};
-  const cfg = COLLECTIONS[collection];
-  if (!cfg) return res.status(400).json({ error: 'Unknown collection.' });
-  const idx = db[cfg.array].findIndex(x => x[cfg.key] === id);
-  if (idx >= 0) db[cfg.array].splice(idx, 1);
-  store.save();
-  res.json({ ok: true });
-});
-
-app.post('/api/admin/reorder', requireAdmin, (req, res) => {
-  const db = store.load();
-  const { collection, ids } = req.body || {};
-  if (collection === 'heroSlides' || collection === 'homeSections') {
-    const cfg = COLLECTIONS[collection];
-    ids.forEach((id, i) => {
-      const item = db[cfg.array].find(x => x.id === id);
-      if (item) item.order = i + 1;
-    });
-    store.save();
-    return res.json({ ok: true });
+app.get('/api/admin/data', requireAdmin, async (req, res) => {
+  try {
+    res.json(await db.getAdminData());
+  } catch (e) {
+    console.error('[api/admin/data]', e.message);
+    res.status(500).json({ error: 'Failed to load admin data.' });
   }
-  if (collection === 'brands') {
-    ids.forEach((id, i) => {
-      const item = db.brands.find(x => x.id === id);
-      if (item) item.order = i + 1;
-    });
-    store.save();
-    return res.json({ ok: true });
-  }
-  if (collection === 'products') {
-    ids.forEach((id, i) => {
-      const item = db.products.find(x => x.id === id);
-      if (item) item.order = i + 1;
-    });
-    store.save();
-    return res.json({ ok: true });
-  }
-  res.status(400).json({ error: 'Unknown collection.' });
 });
 
-app.post('/api/admin/settings', requireAdmin, (req, res) => {
-  const db = store.load();
-  const { settings, promoBar } = req.body || {};
-  if (settings) db.settings = Object.assign(db.settings, settings);
-  if (promoBar) db.promoBar = Object.assign(db.promoBar||{}, promoBar);
-  store.save();
-  res.json({ ok: true });
+// Light-weight polling endpoint so the Orders page can pick up new customer
+// orders without re-downloading the whole catalog.
+app.get('/api/admin/orders', requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
+    res.json({ orders: await db.getOrders({ limit }) });
+  } catch (e) {
+    console.error('[api/admin/orders]', e.message);
+    res.status(500).json({ error: 'Failed to load orders.' });
+  }
 });
 
-app.post('/api/admin/lang', requireAdmin, (req, res) => {
-  const db = store.load();
-  const { dict } = req.body || {};
-  if (dict) {
-    db.languages = Object.assign(db.languages, dict);
-    store.save();
+app.get('/api/admin/order/:id', requireAdmin, async (req, res) => {
+  try {
+    const order = await db.getOrder(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
+    res.json(order);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load order.' });
   }
-  res.json({ ok: true });
+});
+
+app.post('/api/admin/save', requireAdmin, async (req, res) => {
+  try {
+    const { collection, record } = req.body || {};
+    if (!record || !record.id) return res.status(400).json({ error: 'Record and record.id are required.' });
+    const saved = await db.saveRecord(collection, record);
+    res.json({ ok: true, record: saved });
+  } catch (e) {
+    console.error('[api/admin/save]', e.message);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Partial update: patches the given fields and keeps everything else.
+app.post('/api/admin/update', requireAdmin, async (req, res) => {
+  try {
+    const { collection, id, updates } = req.body || {};
+    if (!id) return res.status(400).json({ error: 'id is required.' });
+    const saved = await db.patchRecord(collection, id, updates || {});
+    res.json({ ok: true, record: saved });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/delete', requireAdmin, async (req, res) => {
+  try {
+    const { collection, id } = req.body || {};
+    await db.deleteRecord(collection, id);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/reorder', requireAdmin, async (req, res) => {
+  try {
+    const { collection, ids } = req.body || {};
+    if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids must be an array.' });
+    await db.reorder(collection, ids);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/settings', requireAdmin, async (req, res) => {
+  try {
+    const { settings, promoBar } = req.body || {};
+    if (settings) await db.saveSettings(settings);
+    if (promoBar) await db.savePromoBar(promoBar);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/lang', requireAdmin, async (req, res) => {
+  try {
+    const { dict } = req.body || {};
+    if (dict) await db.saveLanguages(dict);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // Upload an image (base64 data URL) and return a served URL. Used by the
@@ -476,39 +504,44 @@ app.post('/api/admin/upload', requireAdmin, (req, res) => {
   const rawExt = m[1].toLowerCase();
   const ext = rawExt === 'svg+xml' ? 'svg' : rawExt === 'jpeg' ? 'jpg' : rawExt;
   const buf = Buffer.from(m[2], 'base64');
-  const dir = path.join(PUBLIC, 'img', 'uploads');
-  fs.mkdirSync(dir, { recursive: true });
-  const fn = 'up_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7) + '.' + ext;
-  fs.writeFileSync(path.join(dir, fn), buf);
-  res.json({ ok: true, url: '/img/uploads/' + fn });
+  try {
+    const dir = path.join(PUBLIC, 'img', 'uploads');
+    fs.mkdirSync(dir, { recursive: true });
+    const fn = 'up_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7) + '.' + ext;
+    fs.writeFileSync(path.join(dir, fn), buf);
+    res.json({ ok: true, url: '/img/uploads/' + fn });
+  } catch (e) {
+    // Serverless filesystems are read-only: the admin can still paste any
+    // public image URL, which is the durable option there.
+    res.status(507).json({ error: 'File uploads are not writable on this host — paste a public image URL instead.' });
+  }
 });
 
-app.post('/api/admin/order-status', requireAdmin, (req, res) => {
-  const db = store.load();
-  const { id, status } = req.body || {};
-  const order = db.orders.find(o => o.id === id);
-  if (!order) return res.status(404).json({ error: 'Order not found.' });
-  order.status = status;
-  order.statusHistory = order.statusHistory || [];
-  order.statusHistory.push({ status, at: new Date().toISOString() });
-  store.save();
-  res.json({ ok: true });
+app.post('/api/admin/order-status', requireAdmin, async (req, res) => {
+  try {
+    const { id, status } = req.body || {};
+    const n = await db.setOrderStatus(id, status);
+    if (!n) return res.status(404).json({ error: 'Order not found.' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
-app.post('/api/admin/preorder-status', requireAdmin, (req, res) => {
-  const db = store.load();
-  const { id, status } = req.body || {};
-  const rec = db.preorders.find(o => o.id === id);
-  if (!rec) return res.status(404).json({ error: 'Pre-order not found.' });
-  rec.status = status;
-  store.save();
-  res.json({ ok: true });
+app.post('/api/admin/preorder-status', requireAdmin, async (req, res) => {
+  try {
+    const { id, status } = req.body || {};
+    const n = await db.updateRow('preorders', id, { status });
+    if (!n) return res.status(404).json({ error: 'Pre-order not found.' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // ---------------------------------------------------------------------------
 // SPA fallbacks
 // ---------------------------------------------------------------------------
-// Serve admin SPA for both /admin and /admin/login (client-side routing via hash)
 app.get('/admin/login', serveAdminHTML);
 app.get('/admin', serveAdminHTML);
 app.get(/^\/(?!api|img|css|js|admin).*/, (req, res) => res.sendFile(path.join(PUBLIC, 'index.html')));
@@ -519,7 +552,9 @@ app.get(/^\/(?!api|img|css|js|admin).*/, (req, res) => res.sendFile(path.join(PU
 if (require.main === module) {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`SPINTO running on http://0.0.0.0:${PORT}`);
+    if (db.DRIVER === 'json') console.warn('[data] no database configured — using the JSON store fallback.');
   });
 }
 
 module.exports = app;
+module.exports.store = store;

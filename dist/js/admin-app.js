@@ -156,49 +156,47 @@
     return { ok: r.ok, status: r.status, j };
   }
 
-  // Supabase-safe fetch
-  async function sbQuery(table, opts = {}) {
-    const s = getSB();
-    if (!s) return api('GET', '/api/admin/data').then(r => r.j);
-    let q = s.from(table).select('*');
-    if (opts.limit) q = q.limit(opts.limit);
-    if (opts.order) q = q.order(opts.order.col, { ascending: opts.order.asc !== false });
-    if (opts.filter) q = q.eq(opts.filter.col, opts.filter.val);
-    const { data, error } = await q;
-    if (error) { console.error('[SB]', error); return []; }
-    return data;
+  // ------------------------------------------------------------------------
+  // DATA WRITES — always through the server (lib/db.js)
+  // ------------------------------------------------------------------------
+  // The browser talks to Supabase only for authentication. Every catalog /
+  // order write goes through the server, which owns the app-shape <-> SQL-row
+  // mapping (brandSlug -> brand_slug, oldPrice -> old_price, inventory -> stock)
+  // and keeps the normalized children in step (product_images, product_prices,
+  // order_items). Writing straight to PostgREST from here would send camelCase
+  // keys that do not match any column and would skip those children.
+  const TABLE_TO_COLLECTION = {
+    products: 'products', categories: 'categories', brands: 'brands', bundles: 'bundles',
+    hero_slides: 'heroSlides', heroSlides: 'heroSlides',
+    home_sections: 'homeSections', homeSections: 'homeSections',
+    website_images: 'websiteImages', websiteImages: 'websiteImages',
+    website_content: 'websiteContent', websiteContent: 'websiteContent',
+    orders: 'orders', preorders: 'preorders', messages: 'messages',
+  };
+  const collectionOf = (table) => TABLE_TO_COLLECTION[table] || table;
+
+  async function apiOrThrow(method, url, body) {
+    const { ok, j } = await api(method, url, body);
+    if (!ok) throw new Error((j && j.error) || `${method} ${url} failed`);
+    return j;
   }
 
   async function sbInsert(table, row) {
-    const s = getSB();
-    if (!s) return api('POST', '/api/admin/save', { collection: table === 'products' ? 'products' : table, record: row });
-    const { data, error } = await s.from(table).insert(row).select();
-    if (error) throw error;
-    return data?.[0] || row;
+    return apiOrThrow('POST', '/api/admin/save', { collection: collectionOf(table), record: row });
   }
 
+  // Partial update — the server merges the patch into the stored row, so
+  // changing one field never blanks out the others.
   async function sbUpdate(table, id, updates) {
-    const s = getSB();
-    if (!s) return api('POST', '/api/admin/save', { collection: table === 'products' ? 'products' : table, record: { id, ...updates } });
-    const { data, error } = await s.from(table).update(updates).eq('id', id).select();
-    if (error) throw error;
-    return data?.[0];
+    return apiOrThrow('POST', '/api/admin/update', { collection: collectionOf(table), id, updates });
   }
 
   async function sbDelete(table, id) {
-    const s = getSB();
-    if (!s) return api('POST', '/api/admin/delete', { collection: table === 'products' ? 'products' : table, id });
-    const { error } = await s.from(table).delete().eq('id', id);
-    if (error) throw error;
-    return true;
+    return apiOrThrow('POST', '/api/admin/delete', { collection: collectionOf(table), id });
   }
 
   async function sbUpsert(table, row) {
-    const s = getSB();
-    if (!s) return api('POST', '/api/admin/save', { collection: table === 'products' ? 'products' : table, record: row });
-    const { data, error } = await s.from(table).upsert(row).select();
-    if (error) throw error;
-    return data?.[0] || row;
+    return apiOrThrow('POST', '/api/admin/save', { collection: collectionOf(table), record: row });
   }
 
   // ========================================================================
@@ -501,6 +499,11 @@
 
     bindGlobal();
     bindPage();
+
+    // Orders (and the dashboard's recent orders) refresh themselves from
+    // Supabase so new customer checkouts appear without a manual reload.
+    stopOrderPolling();
+    if (state.view === 'orders' || state.view === 'dashboard') startOrderPolling();
   }
 
   function renderLoginPage() {
@@ -908,47 +911,49 @@
   // CATEGORIES
   // ========================================================================
   function renderCategories() {
-    const categories = state.data?.categories || inferCategories();
+    const categories = (state.data?.categories || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+    const search = (state.catSearch || '').toLowerCase();
+    const filtered = search
+      ? categories.filter(c => (c.name_en || '').toLowerCase().includes(search) || (c.slug || '').toLowerCase().includes(search))
+      : categories;
+
     return `
     <div class="toolbar">
       <div class="search-box">
         <span class="search-icon">🔍</span>
-        <input type="text" placeholder="Search categories..." id="cat-search">
+        <input type="text" placeholder="Search categories..." value="${esc(state.catSearch || '')}" id="cat-search">
       </div>
       <button class="btn btn-primary" id="btn-add-category">+ Add Category</button>
     </div>
     <div class="card">
-      <div class="card-body" style="padding:0;">
-        ${categories.length ? `
+      <div class="card-body" style="padding:0;overflow-x:auto;">
+        ${filtered.length ? `
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Slug</th><th>Products</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th style="width:70px;">Image</th><th>Name</th><th>Slug</th><th>Description</th><th>Products</th><th>Order</th><th>Status</th><th style="width:140px;">Actions</th></tr></thead>
           <tbody>
-            ${categories.map(c => `<tr>
-              <td><strong>${esc(c.name_en || c.name)}</strong></td>
+            ${filtered.map(c => `<tr>
+              <td>${c.image ? `<img src="${esc(c.image)}" alt="" style="width:48px;height:36px;object-fit:cover;border-radius:6px;background:var(--cream);">` : '<div style="width:48px;height:36px;background:var(--cream);border-radius:6px;display:flex;align-items:center;justify-content:center;">🏷️</div>'}</td>
+              <td>
+                <div style="font-weight:600;font-size:13px;">${esc(c.name_en || c.name || '—')}</div>
+                ${c.name_ar ? `<div style="font-size:11px;color:var(--text-muted);" dir="rtl">${esc(c.name_ar)}</div>` : ''}
+              </td>
               <td>${esc(c.slug || '')}</td>
-              <td>${c.product_count || '—'}</td>
+              <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:12px;">${esc(c.description_en || '—')}</td>
+              <td>${c.product_count != null ? c.product_count : '—'}</td>
+              <td>
+                <input type="number" step="0.25" value="${c.order || 0}" data-cat-order="${esc(c.id)}" style="width:70px;" title="Lower numbers appear first">
+              </td>
               <td>${c.active !== false ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-inactive">Inactive</span>'}</td>
               <td>
-                <button class="btn btn-ghost btn-sm" data-edit-cat="${esc(c.id)}">✏️</button>
-                <button class="btn btn-ghost btn-sm" data-delete-cat="${esc(c.id)}"></button>
+                <button class="btn btn-ghost btn-sm" data-edit-cat="${esc(c.id)}" title="Edit">✏️</button>
+                <button class="btn btn-ghost btn-sm" data-toggle-cat="${esc(c.id)}" title="${c.active !== false ? 'Hide from storefront' : 'Show on storefront'}">${c.active !== false ? '🙈' : '👁'}</button>
+                <button class="btn btn-ghost btn-sm" data-delete-cat="${esc(c.id)}" title="Delete">🗑</button>
               </td>
             </tr>`).join('')}
           </tbody>
         </table>` : '<div class="empty-state"><div class="empty-icon">🏷️</div><h4>No categories</h4><p>Add your first category to organize products.</p></div>'}
       </div>
     </div>`;
-  }
-
-  function inferCategories() {
-    const products = state.data?.products || [];
-    const cats = {};
-    products.forEach(p => {
-      if (p.category) {
-        if (!cats[p.category]) cats[p.category] = { id: p.category, name_en: p.category, slug: p.category, product_count: 0, active: true };
-        cats[p.category].product_count++;
-      }
-    });
-    return Object.values(cats);
   }
 
   // ========================================================================
@@ -994,56 +999,95 @@
   // ========================================================================
   // ORDERS
   // ========================================================================
+  // ------------------------------------------------------------------------
+  // ORDERS — full list. New customer orders arrive from Supabase by polling
+  // /api/admin/orders, so they appear without a manual reload.
+  // ------------------------------------------------------------------------
+  let orderPollTimer = null;
+  function stopOrderPolling() {
+    if (orderPollTimer) { clearInterval(orderPollTimer); orderPollTimer = null; }
+  }
+  function startOrderPolling() {
+    stopOrderPolling();
+    orderPollTimer = setInterval(async () => {
+      if (document.hidden) return;
+      try {
+        const { ok, j } = await api('GET', '/api/admin/orders');
+        if (!ok || !j || !Array.isArray(j.orders)) return;
+        const before = (state.data?.orders || []).length;
+        state.data = state.data || {};
+        state.data.orders = j.orders;
+        state.ordersUpdatedAt = new Date();
+        if (j.orders.length !== before) toast('New customer order received', 'success');
+        // Don't repaint while the admin is typing or has a panel open.
+        if (document.querySelector('.modal-overlay')) return;
+        if (document.activeElement && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+        if (state.view === 'orders' || state.view === 'dashboard') render();
+      } catch (e) { /* keep the last known list while offline */ }
+    }, 10000);
+  }
+
+  const ORDER_STATUSES = ['New', 'Pending', 'Confirmed', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
+
   function renderOrders() {
     const orders = state.data?.orders || [];
     const search = state.orderSearch || '';
     const filterStatus = state.orderStatusFilter || '';
 
-    let filtered = orders;
+    let filtered = orders.slice();
     if (search) {
       const q = search.toLowerCase();
-      filtered = filtered.filter(o => (o.id || '').toLowerCase().includes(q) || (o.customer?.fullName || '').toLowerCase().includes(q) || (o.customer?.phone || '').includes(q));
+      filtered = filtered.filter(o =>
+        (o.id || '').toLowerCase().includes(q) ||
+        (o.customer?.fullName || '').toLowerCase().includes(q) ||
+        (o.customer?.phone || '').includes(q) ||
+        (o.customer?.address || '').toLowerCase().includes(q));
     }
     if (filterStatus) filtered = filtered.filter(o => o.status === filterStatus);
 
-    filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    filtered.sort((a, b) => new Date(b.createdAt || b.created_at) - new Date(a.createdAt || a.created_at));
 
     return `
     <div class="toolbar">
       <div class="search-box">
         <span class="search-icon">🔍</span>
-        <input type="text" placeholder="Search orders..." value="${esc(search)}" id="order-search">
+        <input type="text" placeholder="Search order ID, customer, phone or address..." value="${esc(search)}" id="order-search">
       </div>
       <select class="filter-select" id="order-status-filter">
         <option value="">All Statuses</option>
-        ${['New','Pending','Confirmed','Processing','Shipped','Delivered','Cancelled'].map(s => `<option value="${s}" ${filterStatus === s ? 'selected' : ''}>${s}</option>`).join('')}
+        ${ORDER_STATUSES.map(s => `<option value="${s}" ${filterStatus === s ? 'selected' : ''}>${s}</option>`).join('')}
       </select>
+      <button class="btn btn-secondary" id="btn-refresh-orders" title="Reload from Supabase">↻ Refresh</button>
     </div>
+    <p style="font-size:11px;color:var(--text-muted);margin:-6px 0 14px;">
+      Auto-refreshes every 10 seconds from Supabase${state.ordersUpdatedAt ? ` · last checked ${fmtDateTime(state.ordersUpdatedAt)}` : ''}
+    </p>
 
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-icon blue">📋</div><div class="stat-value">${orders.length}</div><div class="stat-label">Total Orders</div></div>
-      <div class="stat-card"><div class="stat-icon gold">🆕</div><div class="stat-value">${orders.filter(o=>o.status==='New'||o.status==='Pending').length}</div><div class="stat-label">New/Pending</div></div>
-      <div class="stat-card"><div class="stat-icon green">✅</div><div class="stat-value">${orders.filter(o=>o.status==='Delivered').length}</div><div class="stat-label">Delivered</div></div>
-      <div class="stat-card"><div class="stat-icon red"></div><div class="stat-value">${orders.filter(o=>o.status==='Cancelled').length}</div><div class="stat-label">Cancelled</div></div>
+      <div class="stat-card"><div class="stat-icon gold">🆕</div><div class="stat-value">${orders.filter(o => o.status === 'New' || o.status === 'Pending').length}</div><div class="stat-label">New/Pending</div></div>
+      <div class="stat-card"><div class="stat-icon green">✅</div><div class="stat-value">${orders.filter(o => o.status === 'Delivered').length}</div><div class="stat-label">Delivered</div></div>
+      <div class="stat-card"><div class="stat-icon red">✕</div><div class="stat-value">${orders.filter(o => o.status === 'Cancelled').length}</div><div class="stat-label">Cancelled</div></div>
     </div>
 
     <div class="card">
       <div class="card-body" style="padding:0;overflow-x:auto;">
         ${filtered.length ? `
         <table class="data-table">
-          <thead><tr><th>Order ID</th><th>Customer</th><th>Phone</th><th>Date</th><th>Items</th><th>Total</th><th>Status</th><th style="width:120px;">Actions</th></tr></thead>
+          <thead><tr><th>Order ID</th><th>Date</th><th>Customer</th><th>Phone</th><th>Address</th><th>Items</th><th>Total</th><th>Status</th><th style="width:120px;">Actions</th></tr></thead>
           <tbody>
             ${filtered.map(o => `<tr>
               <td><strong>${esc(o.id)}</strong></td>
+              <td>${fmtDateTime(o.createdAt || o.created_at)}</td>
               <td>${esc(o.customer?.fullName || '—')}</td>
               <td>${esc(o.customer?.phone || '—')}</td>
-              <td>${fmtDate(o.createdAt)}</td>
+              <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:12px;">${esc(o.customer?.address || '—')}${o.customer?.city ? ', ' + esc(o.customer.city) : ''}</td>
               <td>${(o.items || []).length}</td>
               <td><strong>${money(o.total)}</strong></td>
               <td>${statusBadge(o.status)}</td>
               <td>
-                <button class="btn btn-ghost btn-sm" data-view-order="${esc(o.id)}">👁</button>
-                <button class="btn btn-ghost btn-sm" data-delete-order="${esc(o.id)}">🗑</button>
+                <button class="btn btn-ghost btn-sm" data-view-order="${esc(o.id)}" title="Open">👁</button>
+                <button class="btn btn-ghost btn-sm" data-delete-order="${esc(o.id)}" title="Delete">🗑</button>
               </td>
             </tr>`).join('')}
           </tbody>
@@ -1262,7 +1306,46 @@
     const homeSections = state.data?.homeSections || [];
     const promoBar = state.data?.promoBar || {};
 
+    const content = state.data?.websiteContent || [];
+    const contentSearch = (state.contentSearch || '').toLowerCase();
+    const filteredContent = contentSearch
+      ? content.filter(c => (c.key || '').toLowerCase().includes(contentSearch)
+          || (c.value_en || '').toLowerCase().includes(contentSearch)
+          || (c.value_ar || '').includes(contentSearch))
+      : content;
+
     return `
+    <div class="card">
+      <div class="card-header"><h3>🌐 Website Content Sections</h3></div>
+      <div class="card-body">
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px;">
+          Every editable text on the storefront, stored in Supabase (<code>website_content</code>).
+          Changing a value here updates the live site.
+        </p>
+        <div class="toolbar" style="margin-bottom:12px;">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" placeholder="Search ${content.length} content strings..." value="${esc(state.contentSearch || '')}" id="content-search">
+          </div>
+          <span style="font-size:12px;color:var(--text-muted);">${filteredContent.length} shown</span>
+        </div>
+        ${filteredContent.length ? `
+        <div style="max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:8px;">
+        <table class="data-table" style="font-size:12px;">
+          <thead><tr><th>Key</th><th>English</th><th>Arabic</th><th style="width:60px;"></th></tr></thead>
+          <tbody>
+            ${filteredContent.slice(0, 200).map(c => `<tr>
+              <td><code style="font-size:11px;">${esc(c.key)}</code></td>
+              <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.value_en || '—')}</td>
+              <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" dir="rtl">${esc(c.value_ar || '—')}</td>
+              <td><button class="btn btn-ghost btn-sm" data-edit-content="${esc(c.key)}">✏️</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        </div>` : '<p style="color:var(--text-muted);font-size:13px;">No content strings found.</p>'}
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-header"><h3>📝 Hero Section</h3></div>
       <div class="card-body">
@@ -1292,6 +1375,7 @@
               <div style="font-weight:600;">${esc(s.title_en || s.type || 'Section')}</div>
               <div style="font-size:12px;color:var(--text-muted);">Type: ${esc(s.type)}</div>
             </div>
+            <button class="btn btn-ghost btn-sm" data-edit-section-title="${esc(s.id)}" title="Edit title">✏️</button>
             <label class="toggle">
               <input type="checkbox" data-toggle-section="${esc(s.id)}" ${s.enabled ? 'checked' : ''}>
               <span class="toggle-slider"></span>
@@ -1348,8 +1432,13 @@
         <div class="image-upload-zone" id="upload-zone">
           <div class="upload-icon">📤</div>
           <p><strong>Click to upload</strong> or drag and drop</p>
-          <p style="font-size:11px;color:var(--text-muted);margin-top:4px;">PNG, JPG, WEBP up to 5MB</p>
+          <p style="font-size:11px;color:var(--text-muted);margin-top:4px;">PNG, JPG, WEBP up to 5MB. Serverless hosts have a read-only disk — use "Add by URL" there.</p>
           <input type="file" id="image-file-input" accept="image/*" style="display:none;" multiple>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+          <input id="image-url-input" placeholder="https://…/image.jpg or /img/uploads/…" style="flex:1;min-width:220px;">
+          <input id="image-name-input" placeholder="Name" style="width:160px;">
+          <button class="btn btn-secondary" id="btn-image-by-url">+ Add by URL</button>
         </div>
         ${images.length ? `
         <div class="image-preview-grid" style="margin-top:20px;">
@@ -1627,19 +1716,32 @@
     }));
   }
 
+  // ------------------------------------------------------------------------
+  // PRODUCT EDITOR — details, prices and images
+  // ------------------------------------------------------------------------
   function showProductEditor(id) {
     const p = id ? state.data.products.find(x => x.id === id) : null;
     const brands = state.data.brands || [];
-    const categories = [...new Set((state.data.products || []).map(x => x.category).filter(Boolean))];
+    const categories = (state.data.categories || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+    // products.category stores the category ID ('keycase'), not the slug
+    // ('keycases') — the option values must be the ids or the current category
+    // would never preselect and saving would move the product.
+    const fallbackCats = [...new Set((state.data.products || []).map(x => x.category).filter(Boolean))];
+    const catList = categories.length ? categories : fallbackCats.map(id => ({ id, name_en: id }));
+    const libraryImages = state.data.website_images || [];
+
+    // Working copy of the gallery so edits can be cancelled.
+    let images = (p?.images && p.images.length ? p.images.slice() : (p?.main_image ? [p.main_image] : []));
 
     showModal(`
-      <div class="modal" style="max-width:700px;">
+      <div class="modal" style="max-width:780px;">
         <div class="modal-header">
           <h3>${p ? 'Edit Product' : 'Add Product'}</h3>
           <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
         </div>
         <div class="modal-body">
           <form id="product-form">
+            <div class="editor-section-title">Basics</div>
             <div class="form-row">
               <div class="form-group">
                 <label>Product Name (EN) *</label>
@@ -1647,7 +1749,7 @@
               </div>
               <div class="form-group">
                 <label>Product Name (AR)</label>
-                <input name="name_ar" value="${esc(p?.name_ar || '')}">
+                <input name="name_ar" value="${esc(p?.name_ar || '')}" dir="rtl">
               </div>
             </div>
             <div class="form-row">
@@ -1659,10 +1761,8 @@
                 <label>Category *</label>
                 <select name="category" required>
                   <option value="">Select category</option>
-                  ${categories.map(c => `<option value="${esc(c)}" ${p?.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
-                  <option value="keycase" ${p?.category === 'keycase' ? 'selected' : ''}>Key Case</option>
-                  <option value="keyholder" ${p?.category === 'keyholder' ? 'selected' : ''}>Key Holder</option>
-                  <option value="medal" ${p?.category === 'medal' ? 'selected' : ''}>Medal</option>
+                  ${catList.map(c => `<option value="${esc(c.id)}" ${p?.category === c.id ? 'selected' : ''}>${esc(c.name_en || c.id)}</option>`).join('')}
+                  ${p?.category && !catList.some(c => c.id === p.category) ? `<option value="${esc(p.category)}" selected>${esc(p.category)}</option>` : ''}
                 </select>
               </div>
             </div>
@@ -1679,34 +1779,81 @@
                 <input name="sku" value="${esc(p?.sku || '')}">
               </div>
             </div>
+
+            <div class="editor-section-title">Details</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Short description (EN)</label>
+                <input name="short_en" value="${esc(p?.short_en || '')}">
+              </div>
+              <div class="form-group">
+                <label>Short description (AR)</label>
+                <input name="short_ar" value="${esc(p?.short_ar || '')}" dir="rtl">
+              </div>
+            </div>
             <div class="form-group">
               <label>Description (EN)</label>
               <textarea name="description_en" rows="3">${esc(p?.description_en || '')}</textarea>
             </div>
+            <div class="form-group">
+              <label>Description (AR)</label>
+              <textarea name="description_ar" rows="3" dir="rtl">${esc(p?.description_ar || '')}</textarea>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Material (EN)</label>
+                <input name="material_en" value="${esc(p?.material_en || '')}">
+              </div>
+              <div class="form-group">
+                <label>Material (AR)</label>
+                <input name="material_ar" value="${esc(p?.material_ar || '')}" dir="rtl">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Warranty (EN)</label>
+                <input name="warranty_en" value="${esc(p?.warranty_en || '')}">
+              </div>
+              <div class="form-group">
+                <label>Badge (EN)</label>
+                <input name="badge_en" value="${esc(p?.badge_en || '')}" placeholder="Limited Edition">
+              </div>
+            </div>
+
+            <div class="editor-section-title">Pricing</div>
             <div class="form-row">
               <div class="form-group">
                 <label>Price (EGP) *</label>
-                <input name="price" type="number" value="${p?.price || 0}" min="0" required>
+                <input name="price" id="pf-price" type="number" step="1" value="${p?.price || 0}" min="0" required>
               </div>
               <div class="form-group">
-                <label>Sale Price (EGP)</label>
-                <input name="sale_price" type="number" value="${p?.sale_price || ''}" min="0">
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Stock</label>
-                <input name="stock" type="number" value="${p?.stock || 0}" min="0">
+                <label>Old price (EGP)</label>
+                <input name="oldPrice" id="pf-oldprice" type="number" step="1" value="${p?.oldPrice || ''}" min="0">
               </div>
               <div class="form-group">
                 <label>Discount %</label>
-                <input name="discount_pct" type="number" value="${p?.discount_pct || 0}" min="0" max="100">
+                <input name="discount" id="pf-discount" type="number" step="1" value="${p?.discount || 0}" min="0" max="100">
               </div>
             </div>
+            <p style="font-size:11px;color:var(--text-muted);margin:-6px 0 12px;">The discount % is recalculated automatically when you change the price or the old price.</p>
+
+            <div class="editor-section-title">Images</div>
+            <div class="form-group">
+              <div id="product-images-list"></div>
+              <div style="display:flex;gap:8px;margin-top:8px;">
+                <input id="pf-new-image" placeholder="/img/asset.svg?... or https://..." style="flex:1;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-add-image">+ Add image</button>
+              </div>
+              ${libraryImages.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                ${libraryImages.slice(0, 12).map(img => `<img src="${esc(img.url)}" data-lib-pick="${esc(img.url)}" title="${esc(img.name || '')}" style="width:52px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+              </div>` : ''}
+            </div>
+
+            <div class="editor-section-title">Stock &amp; visibility</div>
             <div class="form-row">
               <div class="form-group">
-                <label>Main Image URL</label>
-                <input name="main_image" value="${esc(p?.main_image || '')}" placeholder="/img/uploads/...">
+                <label>Stock</label>
+                <input name="inventory" type="number" value="${p?.inventory != null ? p.inventory : (p?.stock || 0)}" min="0">
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;gap:16px;">
                 <label class="toggle" style="margin-bottom:0;">
@@ -1717,15 +1864,12 @@
               </div>
             </div>
             <div style="display:flex;gap:12px;flex-wrap:wrap;">
-              <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
-                <input type="checkbox" name="featured" ${p?.featured ? 'checked' : ''}> Featured
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
-                <input type="checkbox" name="new_arrival" ${p?.new_arrival ? 'checked' : ''}> New Arrival
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
-                <input type="checkbox" name="hero_product" ${p?.hero_product ? 'checked' : ''}> Hero Product
-              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="featured" ${p?.featured ? 'checked' : ''}> Featured</label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="bestSeller" ${p?.bestSeller ? 'checked' : ''}> Best seller</label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="newArrival" ${p?.newArrival ? 'checked' : ''}> New arrival</label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="limitedEdition" ${p?.limitedEdition ? 'checked' : ''}> Limited edition</label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="heroProduct" ${p?.heroProduct ? 'checked' : ''}> Hero product</label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="preorder" ${p?.preorder ? 'checked' : ''}> Pre-order</label>
             </div>
           </form>
         </div>
@@ -1735,35 +1879,105 @@
         </div>
       </div>`);
 
+    // ---- image list (first image is the main one) ----
+    const listEl = $('#product-images-list');
+    function renderImageList() {
+      if (!listEl) return;
+      listEl.innerHTML = images.length ? images.map((url, i) => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--bg);border-radius:8px;margin-bottom:6px;">
+          <img src="${esc(url)}" alt="" style="width:48px;height:40px;object-fit:cover;border-radius:6px;background:var(--cream);">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-muted);">${i === 0 ? 'MAIN IMAGE' : 'Image ' + (i + 1)}</div>
+            <div style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(url)}</div>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" data-img-up="${i}" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-img-down="${i}" title="Move down" ${i === images.length - 1 ? 'disabled' : ''}>↓</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-img-del="${i}" title="Remove">🗑</button>
+        </div>`).join('')
+        : '<p style="font-size:12px;color:var(--text-muted);">No images yet — the storefront falls back to the generated artwork.</p>';
+
+      $$('[data-img-del]', listEl).forEach(b => b.addEventListener('click', () => { images.splice(Number(b.dataset.imgDel), 1); renderImageList(); }));
+      $$('[data-img-up]', listEl).forEach(b => b.addEventListener('click', () => {
+        const i = Number(b.dataset.imgUp); if (i > 0) { [images[i - 1], images[i]] = [images[i], images[i - 1]]; renderImageList(); }
+      }));
+      $$('[data-img-down]', listEl).forEach(b => b.addEventListener('click', () => {
+        const i = Number(b.dataset.imgDown); if (i < images.length - 1) { [images[i + 1], images[i]] = [images[i], images[i + 1]]; renderImageList(); }
+      }));
+    }
+    renderImageList();
+
+    const addImage = (url) => {
+      const clean = String(url || '').trim();
+      if (!clean) return;
+      if (images.includes(clean)) { toast('That image is already in the gallery', 'error'); return; }
+      images.push(clean);
+      renderImageList();
+    };
+    $('#btn-add-image').addEventListener('click', () => { const i = $('#pf-new-image'); addImage(i.value); i.value = ''; });
+    $$('[data-lib-pick]').forEach(el => el.addEventListener('click', () => addImage(el.dataset.libPick)));
+
+    // ---- discount auto-calculation ----
+    const priceEl = $('#pf-price');
+    const oldEl = $('#pf-oldprice');
+    const discEl = $('#pf-discount');
+    function recalcDiscount() {
+      const price = parseFloat(priceEl.value) || 0;
+      const old = parseFloat(oldEl.value) || 0;
+      if (old > price && price > 0) discEl.value = Math.round(((old - price) / old) * 100);
+    }
+    priceEl.addEventListener('input', recalcDiscount);
+    oldEl.addEventListener('input', recalcDiscount);
+
     $('#btn-save-product').addEventListener('click', async () => {
       const form = $('#product-form');
+      const val = (n) => form.querySelector(`[name=${n}]`).value.trim();
+      const numVal = (n) => parseFloat(form.querySelector(`[name=${n}]`).value);
+      const checked = (n) => form.querySelector(`[name=${n}]`).checked;
+
+      const nameEn = val('name_en');
+      const category = val('category');
+      const brandSlug = val('brandSlug');
+      if (!nameEn || !category || !brandSlug) { toast('Please fill the required fields', 'error'); return; }
+
+      const price = numVal('price') || 0;
+      const oldPrice = numVal('oldPrice') || null;
       const data = {
-        id: p?.id || uid('prod'),
-        name_en: form.querySelector('[name=name_en]').value.trim(),
-        name_ar: form.querySelector('[name=name_ar]').value.trim(),
-        slug: form.querySelector('[name=slug]').value.trim() || form.querySelector('[name=name_en]').value.trim().toLowerCase().replace(/\s+/g, '-'),
-        category: form.querySelector('[name=category]').value,
-        brandSlug: form.querySelector('[name=brandSlug]').value,
-        description_en: form.querySelector('[name=description_en]').value.trim(),
-        sku: form.querySelector('[name=sku]').value.trim(),
-        price: parseFloat(form.querySelector('[name=price]').value) || 0,
-        sale_price: parseFloat(form.querySelector('[name=sale_price]').value) || null,
-        stock: parseInt(form.querySelector('[name=stock]').value) || 0,
-        discount_pct: parseFloat(form.querySelector('[name=discount_pct]').value) || 0,
-        main_image: form.querySelector('[name=main_image]').value.trim(),
-        active: form.querySelector('[name=active]').checked,
-        featured: form.querySelector('[name=featured]').checked,
-        new_arrival: form.querySelector('[name=new_arrival]').checked,
-        hero_product: form.querySelector('[name=hero_product]').checked,
-        images: p?.images || [],
+        id: p?.id || ('prod_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+        name_en: nameEn,
+        name_ar: val('name_ar'),
+        slug: val('slug') || nameEn.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        category,
+        brandSlug,
+        sku: val('sku'),
+        short_en: val('short_en'),
+        short_ar: val('short_ar'),
+        description_en: val('description_en'),
+        description_ar: val('description_ar'),
+        material_en: val('material_en'),
+        material_ar: val('material_ar'),
+        warranty_en: val('warranty_en'),
+        badge_en: val('badge_en'),
+        price,
+        oldPrice,
+        discount: numVal('discount') || 0,
+        inventory: parseInt(form.querySelector('[name=inventory]').value, 10) || 0,
+        images,
+        main_image: images[0] || '',
+        active: checked('active'),
+        featured: checked('featured'),
+        bestSeller: checked('bestSeller'),
+        newArrival: checked('newArrival'),
+        limitedEdition: checked('limitedEdition'),
+        heroProduct: checked('heroProduct'),
+        preorder: checked('preorder'),
+        // preserved untouched: key shapes, fitment, models/years, specs, order
         keyShapes: p?.keyShapes || [],
+        models: p?.models || [],
+        years: p?.years || [],
+        specs: p?.specs || [],
+        vehicles: p?.vehicles || [],
         order: p?.order || 0,
       };
-
-      if (!data.name_en || !data.category || !data.brandSlug) {
-        toast('Please fill required fields', 'error');
-        return;
-      }
 
       try {
         await sbUpsert('products', data);
@@ -1779,56 +1993,146 @@
     });
   }
 
-  function bindCategories() {
-    const addBtn = $('#btn-add-category');
-    if (addBtn) addBtn.addEventListener('click', () => {
-      showModal(`
-        <div class="modal">
-          <div class="modal-header"><h3>Add Category</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div>
-          <div class="modal-body">
-            <form id="cat-form">
-              <div class="form-group"><label>Name (EN) *</label><input name="name_en" required></div>
-              <div class="form-group"><label>Slug *</label><input name="slug" required></div>
-              <div class="form-group"><label>Description</label><textarea name="description_en" rows="3"></textarea></div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
-            <button class="btn btn-primary" id="btn-save-cat">Create Category</button>
-          </div>
-        </div>`);
-      $('#btn-save-cat').addEventListener('click', async () => {
-        const form = $('#cat-form');
-        const data = {
-          id: uid('cat'),
-          name_en: form.querySelector('[name=name_en]').value.trim(),
-          slug: form.querySelector('[name=slug]').value.trim(),
-          description_en: form.querySelector('[name=description_en]').value.trim(),
-          active: true,
-          product_count: 0,
-          order: (state.data.categories || []).length,
-        };
-        if (!data.name_en || !data.slug) { toast('Fill required fields', 'error'); return; }
-        try {
-          await sbInsert('categories', data);
-          if (!state.data.categories) state.data.categories = [];
-          state.data.categories.push(data);
-          toast('Category created', 'success');
-          closeAllModals();
-          render();
-        } catch (e) { toast('Failed: ' + e.message, 'error'); }
-      });
+  // ------------------------------------------------------------------------
+  // CATEGORY EDITOR — name, image, description, order
+  // ------------------------------------------------------------------------
+  function showCategoryEditor(id) {
+    const c = id ? (state.data.categories || []).find(x => x.id === id) : null;
+    const libraryImages = state.data.website_images || [];
+
+    showModal(`
+      <div class="modal" style="max-width:640px;">
+        <div class="modal-header">
+          <h3>${c ? 'Edit Category' : 'Add Category'}</h3>
+          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+        </div>
+        <div class="modal-body">
+          <form id="cat-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Name (EN) *</label>
+                <input name="name_en" value="${esc(c?.name_en || '')}" required>
+              </div>
+              <div class="form-group">
+                <label>Name (AR)</label>
+                <input name="name_ar" value="${esc(c?.name_ar || '')}" dir="rtl">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Slug *</label>
+                <input name="slug" value="${esc(c?.slug || '')}" placeholder="keycases" required>
+              </div>
+              <div class="form-group">
+                <label>Order</label>
+                <input name="order" type="number" step="0.25" value="${c?.order || 0}">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Image URL</label>
+              <input name="image" id="cat-image-input" value="${esc(c?.image || '')}" placeholder="/img/asset.svg?... or https://...">
+              ${libraryImages.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                ${libraryImages.slice(0, 12).map(img => `<img src="${esc(img.url)}" data-cat-pick="${esc(img.url)}" title="${esc(img.name || '')}" style="width:52px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);">`).join('')}
+              </div>` : ''}
+              <div style="margin-top:8px;">${c?.image ? `<img id="cat-image-preview" src="${esc(c.image)}" style="max-height:90px;border-radius:8px;background:var(--cream);">` : '<img id="cat-image-preview" style="display:none;max-height:90px;border-radius:8px;background:var(--cream);">'}</div>
+            </div>
+            <div class="form-group">
+              <label>Description (EN)</label>
+              <textarea name="description_en" rows="3">${esc(c?.description_en || '')}</textarea>
+            </div>
+            <div class="form-group">
+              <label>Description (AR)</label>
+              <textarea name="description_ar" rows="3" dir="rtl">${esc(c?.description_ar || '')}</textarea>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;">
+              <input type="checkbox" name="active" ${c?.active !== false ? 'checked' : ''}> Visible on the storefront
+            </label>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-cat">${c ? 'Update' : 'Create'} Category</button>
+        </div>
+      </div>`);
+
+    const input = $('#cat-image-input');
+    const preview = $('#cat-image-preview');
+    const syncPreview = () => {
+      if (!preview) return;
+      if (input.value.trim()) { preview.src = input.value.trim(); preview.style.display = ''; }
+      else preview.style.display = 'none';
+    };
+    if (input) input.addEventListener('input', syncPreview);
+    $$('[data-cat-pick]').forEach(el => el.addEventListener('click', () => { input.value = el.dataset.catPick; syncPreview(); }));
+
+    $('#btn-save-cat').addEventListener('click', async () => {
+      const form = $('#cat-form');
+      const nameEn = form.querySelector('[name=name_en]').value.trim();
+      const slug = form.querySelector('[name=slug]').value.trim().toLowerCase().replace(/\s+/g, '-');
+      if (!nameEn || !slug) { toast('Name and slug are required', 'error'); return; }
+      const data = {
+        id: c?.id || slug,
+        name_en: nameEn,
+        name_ar: form.querySelector('[name=name_ar]').value.trim(),
+        slug,
+        image: form.querySelector('[name=image]').value.trim(),
+        description_en: form.querySelector('[name=description_en]').value.trim(),
+        description_ar: form.querySelector('[name=description_ar]').value.trim(),
+        order: parseFloat(form.querySelector('[name=order]').value) || 0,
+        active: form.querySelector('[name=active]').checked,
+        product_count: c?.product_count || 0,
+      };
+      try {
+        await sbUpsert('categories', data);
+        if (!state.data.categories) state.data.categories = [];
+        const idx = state.data.categories.findIndex(x => x.id === data.id);
+        if (idx >= 0) state.data.categories[idx] = data; else state.data.categories.push(data);
+        toast(c ? 'Category updated' : 'Category created', 'success');
+        closeAllModals();
+        render();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
     });
+  }
+
+  function bindCategories() {
+    const search = $('#cat-search');
+    if (search) search.addEventListener('input', (e) => { state.catSearch = e.target.value; render(); });
+
+    const addBtn = $('#btn-add-category');
+    if (addBtn) addBtn.addEventListener('click', () => showCategoryEditor(null));
+
+    $$('[data-edit-cat]').forEach(el => el.addEventListener('click', () => showCategoryEditor(el.dataset.editCat)));
+
+    $$('[data-toggle-cat]').forEach(el => el.addEventListener('click', async () => {
+      const id = el.dataset.toggleCat;
+      const c = (state.data.categories || []).find(x => x.id === id);
+      if (!c) return;
+      try {
+        await sbUpdate('categories', id, { active: c.active === false });
+        c.active = c.active === false;
+        toast(c.active ? 'Category visible' : 'Category hidden', 'success');
+        render();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    }));
+
+    $$('[data-cat-order]').forEach(el => el.addEventListener('change', async () => {
+      const id = el.dataset.catOrder;
+      try {
+        await sbUpdate('categories', id, { order: parseFloat(el.value) || 0 });
+        toast('Order saved', 'success');
+        await loadData();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    }));
 
     $$('[data-delete-cat]').forEach(el => el.addEventListener('click', () => {
       const id = el.dataset.deleteCat;
-      showConfirm('Delete Category', 'Are you sure? This cannot be undone.', async () => {
+      showConfirm('Delete Category', 'Are you sure? Products in this category are not deleted.', async () => {
         try {
           await sbDelete('categories', id);
           state.data.categories = (state.data.categories || []).filter(x => x.id !== id);
           toast('Category deleted', 'success');
           render();
-        } catch (e) { toast('Failed', 'error'); }
+        } catch (e) { toast('Failed: ' + e.message, 'error'); }
       });
     }));
   }
@@ -1895,6 +2199,19 @@
     const statusFilter = $('#order-status-filter');
     if (statusFilter) statusFilter.addEventListener('change', (e) => { state.orderStatusFilter = e.target.value; render(); });
 
+    const refresh = $('#btn-refresh-orders');
+    if (refresh) refresh.addEventListener('click', async () => {
+      refresh.disabled = true;
+      try {
+        const { ok, j } = await api('GET', '/api/admin/orders');
+        if (ok && j && Array.isArray(j.orders)) {
+          state.data.orders = j.orders;
+          state.ordersUpdatedAt = new Date();
+          toast('Orders reloaded from Supabase', 'success');
+        } else toast('Could not reload orders', 'error');
+      } finally { refresh.disabled = false; render(); }
+    });
+
     $$('[data-view-order]').forEach(el => el.addEventListener('click', () => showOrderDetail(el.dataset.viewOrder)));
 
     $$('[data-delete-order]').forEach(el => el.addEventListener('click', () => {
@@ -1910,12 +2227,23 @@
     }));
   }
 
-  function showOrderDetail(id) {
-    const o = state.data.orders.find(x => x.id === id);
-    if (!o) return;
+  // ------------------------------------------------------------------------
+  // ORDER DETAIL — customer_phone, customer_address and the order_items rows
+  // ------------------------------------------------------------------------
+  async function showOrderDetail(id) {
+    const local = (state.data.orders || []).find(x => x.id === id);
+    // Always re-read the order from Supabase so the panel shows the stored
+    // order_items rows, not a stale in-memory copy.
+    let o = local;
+    try {
+      const { ok, j } = await api('GET', `/api/admin/order/${encodeURIComponent(id)}`);
+      if (ok && j && j.id) o = j;
+    } catch (e) { /* fall back to the cached copy */ }
+    if (!o) { toast('Order not found', 'error'); return; }
 
+    const items = o.items || [];
     showModal(`
-      <div class="modal" style="max-width:700px;">
+      <div class="modal" style="max-width:760px;">
         <div class="modal-header">
           <h3>Order ${esc(o.id)}</h3>
           <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
@@ -1925,39 +2253,60 @@
             <div class="detail-section">
               <h4>Customer</h4>
               <p><strong>${esc(o.customer?.fullName || '—')}</strong></p>
-              <p>📞 ${esc(o.customer?.phone || '—')}</p>
-              <p>📧 ${esc(o.customer?.email || '—')}</p>
-              <p>📍 ${esc(o.customer?.address || '—')}${o.customer?.city ? ', ' + esc(o.customer.city) : ''}</p>
+              <p data-field="customer_phone">📞 <a href="tel:${esc(o.customer?.phone || '')}">${esc(o.customer?.phone || '—')}</a></p>
+              ${o.customer?.email ? `<p>📧 ${esc(o.customer.email)}</p>` : ''}
+              <p data-field="customer_address">📍 ${esc(o.customer?.address || '—')}</p>
+              <p>🏙 ${esc(o.customer?.city || '—')}${o.customer?.area ? ' — ' + esc(o.customer.area) : ''}</p>
+              ${o.customer?.notes ? `<p style="color:var(--text-secondary);font-size:12px;">📝 ${esc(o.customer.notes)}</p>` : ''}
             </div>
             <div class="detail-section">
               <h4>Order Info</h4>
-              <p>📅 ${fmtDateTime(o.createdAt)}</p>
+              <p>📅 ${fmtDateTime(o.createdAt || o.created_at)}</p>
               <p>💳 ${esc(o.payment || 'Cash on Delivery')}</p>
+              <p>🌐 ${esc(o.source || 'storefront')}</p>
               <p>Status: ${statusBadge(o.status)}</p>
             </div>
           </div>
-          <h4 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:20px 0 10px;">Items</h4>
+
+          <h4 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:20px 0 10px;">
+            Order items <span style="color:var(--text-muted);font-weight:400;">(${items.length} line${items.length === 1 ? '' : 's'} from order_items)</span>
+          </h4>
           <table class="data-table" style="font-size:12px;">
-            <thead><tr><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+            <thead><tr><th style="width:44px;"></th><th>Product</th><th>Key shape</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead>
             <tbody>
-              ${(o.items || []).map(it => `<tr>
-                <td>${esc(it.name_en || it.productId)}</td>
+              ${items.length ? items.map(it => `<tr>
+                <td>${it.image ? `<img src="${esc(it.image)}" alt="" style="width:36px;height:30px;object-fit:cover;border-radius:5px;background:var(--cream);">` : ''}</td>
+                <td>
+                  <div style="font-weight:600;">${esc(it.name_en || it.productId || '—')}</div>
+                  <div style="font-size:11px;color:var(--text-muted);">${esc(it.category || '')}${it.brandSlug ? ' · ' + esc(it.brandSlug) : ''}${it.fitment && it.fitment.model ? ' · ' + esc(it.fitment.model) + ' ' + esc(it.fitment.year || '') : ''}</div>
+                </td>
+                <td>${esc(it.keyShape || '—')}</td>
                 <td>${it.qty}</td>
                 <td>${money(it.price)}</td>
-                <td><strong>${money(it.lineTotal || it.price * it.qty)}</strong></td>
-              </tr>`).join('')}
+                <td><strong>${money(it.lineTotal != null ? it.lineTotal : (it.price || 0) * (it.qty || 0))}</strong></td>
+              </tr>`).join('') : '<tr><td colspan="6" style="color:var(--text-muted);">No line items stored for this order.</td></tr>'}
             </tbody>
           </table>
+
           <div style="margin-top:16px;text-align:right;">
             <p style="font-size:13px;color:var(--text-secondary);">Subtotal: ${money(o.subtotal)}</p>
             ${o.bundleDiscount ? `<p style="font-size:13px;color:var(--success);">Bundle Discount: −${money(o.bundleDiscount)}</p>` : ''}
             <p style="font-size:13px;color:var(--text-secondary);">Delivery: ${o.deliveryFee ? money(o.deliveryFee) : 'Free'}</p>
             <p style="font-size:18px;font-weight:700;margin-top:8px;">Total: ${money(o.total)}</p>
           </div>
+
+          ${(o.statusHistory && o.statusHistory.length) ? `
+          <details style="margin-top:16px;">
+            <summary style="cursor:pointer;font-size:12px;color:var(--text-muted);">Status history (${o.statusHistory.length})</summary>
+            <ul style="font-size:12px;color:var(--text-secondary);margin:8px 0 0 18px;">
+              ${o.statusHistory.map(h => `<li>${esc(h.status)} — ${fmtDateTime(h.at)}</li>`).join('')}
+            </ul>
+          </details>` : ''}
+
           <div class="form-group" style="margin-top:20px;">
             <label>Change Status</label>
             <select id="order-status-select">
-              ${['New','Pending','Confirmed','Processing','Shipped','Delivered','Cancelled'].map(s => `<option value="${s}" ${o.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+              ${ORDER_STATUSES.map(s => `<option value="${s}" ${o.status === s ? 'selected' : ''}>${s}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -1970,13 +2319,12 @@
     $('#btn-update-status').addEventListener('click', async () => {
       const newStatus = $('#order-status-select').value;
       try {
-        const updates = {
-          status: newStatus,
-          statusHistory: [...(o.statusHistory || []), { status: newStatus, at: new Date().toISOString() }],
-        };
-        await sbUpdate('orders', id, updates);
-        o.status = newStatus;
-        o.statusHistory = updates.statusHistory;
+        await api('POST', '/api/admin/order-status', { id, status: newStatus });
+        const stored = (state.data.orders || []).find(x => x.id === id);
+        if (stored) {
+          stored.status = newStatus;
+          stored.statusHistory = [...(stored.statusHistory || []), { status: newStatus, at: new Date().toISOString() }];
+        }
         toast('Order status updated', 'success');
         closeAllModals();
         render();
@@ -2128,7 +2476,85 @@
     }));
   }
 
+  function showContentEditor(key) {
+    const c = (state.data.websiteContent || []).find(x => x.key === key);
+    if (!c) return;
+    showModal(`
+      <div class="modal">
+        <div class="modal-header"><h3>Edit “${esc(c.key)}”</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div>
+        <div class="modal-body">
+          <form id="content-form">
+            <div class="form-group"><label>Section</label><input name="section" value="${esc(c.section || 'copy')}"></div>
+            <div class="form-group"><label>English</label><textarea name="value_en" rows="3">${esc(c.value_en || '')}</textarea></div>
+            <div class="form-group"><label>Arabic</label><textarea name="value_ar" rows="3" dir="rtl">${esc(c.value_ar || '')}</textarea></div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-content">Save</button>
+        </div>
+      </div>`);
+    $('#btn-save-content').addEventListener('click', async () => {
+      const form = $('#content-form');
+      const data = {
+        id: c.id,
+        section: form.querySelector('[name=section]').value.trim() || 'copy',
+        key: c.key,
+        value_en: form.querySelector('[name=value_en]').value,
+        value_ar: form.querySelector('[name=value_ar]').value,
+      };
+      try {
+        await sbUpsert('websiteContent', data);
+        Object.assign(c, data);
+        toast('Content saved', 'success');
+        closeAllModals();
+        render();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    });
+  }
+
   function bindContent() {
+    const contentSearch = $('#content-search');
+    if (contentSearch) contentSearch.addEventListener('input', (e) => { state.contentSearch = e.target.value; render(); });
+
+    $$('[data-edit-content]').forEach(el => el.addEventListener('click', () => showContentEditor(el.dataset.editContent)));
+
+    $$('[data-edit-section-title]').forEach(el => el.addEventListener('click', () => {
+      const id = el.dataset.editSectionTitle;
+      const sec = (state.data.homeSections || []).find(x => x.id === id);
+      if (!sec) return;
+      showModal(`
+        <div class="modal">
+          <div class="modal-header"><h3>Edit section “${esc(sec.type || sec.id)}”</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div>
+          <div class="modal-body">
+            <form id="section-form">
+              <div class="form-group"><label>Title (EN)</label><input name="title" value="${esc(sec.title || '')}"></div>
+              <div class="form-group"><label>Subtitle (EN)</label><input name="subtitle_en" value="${esc(sec.subtitle_en || '')}"></div>
+              <div class="form-group"><label>Order</label><input name="order" type="number" step="1" value="${sec.order || 0}"></div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+            <button class="btn btn-primary" id="btn-save-section">Save section</button>
+          </div>
+        </div>`);
+      $('#btn-save-section').addEventListener('click', async () => {
+        const form = $('#section-form');
+        const updates = {
+          title: form.querySelector('[name=title]').value.trim(),
+          subtitle_en: form.querySelector('[name=subtitle_en]').value.trim(),
+          order: parseInt(form.querySelector('[name=order]').value, 10) || 0,
+        };
+        try {
+          await sbUpdate('home_sections', id, updates);
+          Object.assign(sec, updates);
+          toast('Section saved', 'success');
+          closeAllModals();
+          render();
+        } catch (e) { toast('Failed: ' + e.message, 'error'); }
+      });
+    }));
+
     const addSlide = $('#btn-add-slide');
     if (addSlide) addSlide.addEventListener('click', () => {
       showModal(`
@@ -2206,14 +2632,14 @@
           reader.onload = async () => {
             try {
               const { ok, j } = await api('POST', '/api/admin/upload', { dataUrl: reader.result });
-              if (ok && j?.url) {
-                const imgData = { id: uid('img'), name: file.name, url: j.url, section: 'general' };
-                if (!state.data.website_images) state.data.website_images = [];
-                state.data.website_images.push(imgData);
-                toast('Image uploaded', 'success');
-                render();
-              }
-            } catch (err) { toast('Upload failed', 'error'); }
+              if (!ok || !j?.url) { toast((j && j.error) || 'Upload failed', 'error'); return; }
+              const imgData = { id: uid('img'), name: file.name, url: j.url, section: 'general', alt: file.name };
+              await sbInsert('website_images', imgData);
+              if (!state.data.website_images) state.data.website_images = [];
+              state.data.website_images.push(imgData);
+              toast('Image uploaded', 'success');
+              render();
+            } catch (err) { toast('Upload failed: ' + err.message, 'error'); }
           };
           reader.readAsDataURL(file);
         }
@@ -2222,12 +2648,31 @@
 
     $$('[data-delete-image]').forEach(el => el.addEventListener('click', () => {
       const id = el.dataset.deleteImage;
-      showConfirm('Delete Image', 'This image will be removed.', async () => {
-        state.data.website_images = (state.data.website_images || []).filter(x => x.id !== id);
-        toast('Image removed', 'success');
-        render();
+      showConfirm('Delete Image', 'This image will be removed from the library. Products that already reference its URL keep it.', async () => {
+        try {
+          await sbDelete('website_images', id);
+          state.data.website_images = (state.data.website_images || []).filter(x => x.id !== id);
+          toast('Image removed', 'success');
+          render();
+        } catch (e) { toast('Failed: ' + e.message, 'error'); }
       }, 'Delete');
     }));
+
+    const addByUrl = $('#btn-image-by-url');
+    if (addByUrl) addByUrl.addEventListener('click', async () => {
+      const input = $('#image-url-input');
+      const url = (input?.value || '').trim();
+      if (!url) { toast('Enter an image URL', 'error'); return; }
+      const name = (document.querySelector('#image-name-input')?.value || url.split('/').pop()).trim();
+      const imgData = { id: uid('img'), name, url, section: 'general', alt: name };
+      try {
+        await sbInsert('website_images', imgData);
+        if (!state.data.website_images) state.data.website_images = [];
+        state.data.website_images.push(imgData);
+        toast('Image added to the library', 'success');
+        render();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    });
   }
 
   function bindMessages() {
