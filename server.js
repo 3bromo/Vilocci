@@ -100,7 +100,7 @@ app.get('/api/admin/config', (req, res) => {
 });
 
 // Diagnostic endpoint to check Supabase configuration (no secrets exposed)
-app.get('/api/admin/diagnose', (req, res) => {
+app.get('/api/admin/diagnose', async (req, res) => {
   const rawUrl = process.env.VITE_SUPABASE_URL || '';
   const hasAnonKey = !!(process.env.VITE_SUPABASE_ANON_KEY || '');
   const hasServiceKey = !!(process.env.SUPABASE_SERVICE_ROLE_KEY || '');
@@ -108,7 +108,34 @@ app.get('/api/admin/diagnose', (req, res) => {
   let urlHasPath = false;
   try { urlHasPath = !!rawUrl && new URL(rawUrl).pathname !== '/'; } catch (e) { urlHasPath = false; }
 
+  // ?probe=1 — actually read the catalog so the health state below reflects a
+  // real attempt on THIS instance (serverless instances are cold per request).
+  let probe = null;
+  if (req.query.probe) {
+    const t0 = Date.now();
+    try {
+      const catalog = await db.getCatalog();
+      const orders = await db.getOrders({ limit: 1000 });
+      probe = {
+        ok: true,
+        ms: Date.now() - t0,
+        products: catalog.products.length,
+        categories: catalog.categories.length,
+        brands: catalog.brands.length,
+        bundles: catalog.bundles.length,
+        heroSlides: catalog.heroSlides.length,
+        homeSections: catalog.homeSections.length,
+        orders: orders.length,
+      };
+    } catch (e) {
+      probe = { ok: false, ms: Date.now() - t0, error: e.message };
+    }
+    probe.servedBy = db.health().activeDriver;
+    probe.health = db.health();
+  }
+
   res.json({
+    probe,
     rawEnvUrl: rawUrl || '(not set)',
     sanitizedUrl: SUPABASE_URL || '(empty)',
     urlIsValid: urlPattern.test(SUPABASE_URL),
