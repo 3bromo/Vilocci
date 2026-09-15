@@ -96,6 +96,31 @@ Notable mapping decisions:
 
 `GET /api/admin/diagnose` reports which one is active.
 
+### Fallback when the schema is not applied yet
+
+The remote drivers only work once the tables exist. If a read or a write fails
+(`relation "public.products" does not exist`, `PGRST205`, connection refused…),
+the **whole** store degrades to the bundled JSON dataset — reads and writes
+together — so a pending migration cannot take the storefront down or split
+writes across two stores. The remote is re-probed every 60 s, so it takes over
+on its own the moment `--apply` has been run.
+
+```jsonc
+// GET /api/admin/diagnose while the schema is missing
+{
+  "dataDriver": "postgrest",      // what the environment asks for
+  "dataDriverActive": "json",     // what is actually serving
+  "usingJsonFallback": true,
+  "remoteState": "unavailable",
+  "remoteError": "select products: relation \"public.products\" does not exist"
+}
+```
+
+On a serverless host the filesystem is read-only, so a checkout that lands in
+the fallback store is kept in memory for the life of that instance and is
+**not** durable. Applying the schema is what makes orders durable — the
+fallback only keeps the site alive in the meantime.
+
 Every admin mutation goes through the server (`/api/admin/save`,
 `/api/admin/update`, `/api/admin/delete`, `/api/admin/order-status`) rather than
 writing to Supabase from the browser — the browser only ever had the anon key,
@@ -129,10 +154,12 @@ Storefront checkouts are written to `orders` + `order_items` by
 ## 5. Tests
 
 ```bash
-npm run test:db     # embedded PostgreSQL 18.4: migrations, RLS, checkout -> admin,
-                    # admin edit -> storefront, dry-run mapping. 41 checks.
-npm test            # jsdom suites against a local server on :3000:
-                    #   storefront smoke (34), admin auth (7), admin CMS (36).
+npm run test:db       # embedded PostgreSQL 18.4: migrations, RLS, checkout -> admin,
+                      # admin edit -> storefront, dry-run mapping. 41 checks.
+npm run test:fallback # lib/db.js against unreachable sql + postgrest drivers:
+                      # the JSON fallback must keep serving and keep writes. 19 checks.
+npm test              # smoke (34), admin auth (7), admin CMS (36), fallback (19)
+                      # against a local server on :3000.
 ```
 
 `npm test` needs a server first. Use a scratch copy of the seed data so the
