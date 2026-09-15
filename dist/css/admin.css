@@ -1021,3 +1021,38 @@ img { max-width: 100%; height: auto; display: block; }
   border-bottom: 1px solid var(--border);
 }
 .editor-section-title:first-child { margin-top: 0; }
+
+/* --------------------------------------------------------------------------
+   Data-source banner — shown while the admin is reading the bundled JSON
+   fallback instead of live Supabase data, or when the data load failed.
+   -------------------------------------------------------------------------- */
+.data-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: var(--warning-light);
+  border: 1px solid #fcd34d;
+  border-left: 4px solid var(--warning);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #713f12;
+  box-shadow: var(--shadow-sm);
+}
+.data-banner-icon { font-size: 15px; line-height: 1.4; }
+.data-banner-text { flex: 1; word-break: break-word; }
+.data-banner-link {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--spinto-gold-deep);
+  text-decoration: none;
+  border: 1px solid #fcd34d;
+  background: #fff;
+  padding: 3px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.data-banner-link:hover { background: #fef3c7; }

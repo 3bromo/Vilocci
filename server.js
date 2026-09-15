@@ -38,6 +38,21 @@ const SUPABASE_URL = sanitizeSupabaseUrl(process.env.VITE_SUPABASE_URL || '');
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
+// A key with header-unencodable characters (e.g. a pasted bullet "•") makes
+// every Supabase request throw before it is sent. Treat such keys as absent
+// and fall back to the next usable one; lib/db.js does the same for its own
+// data client, and the issues are reported by /api/admin/diagnose.
+const ANON_KEY_ISSUE = db.keyIssue(SUPABASE_ANON_KEY.trim(), 'VITE_SUPABASE_ANON_KEY');
+const SERVICE_KEY_ISSUE = db.keyIssue(SUPABASE_SERVICE_KEY.trim(), 'SUPABASE_SERVICE_ROLE_KEY');
+if (ANON_KEY_ISSUE) console.error(`[Supabase] ${ANON_KEY_ISSUE}`);
+if (SERVICE_KEY_ISSUE) console.error(`[Supabase] ${SERVICE_KEY_ISSUE}`);
+// Key used for the server-side auth-verification client (JWT checks, admin
+// lookups). Service role first; the anon key is sufficient for auth checks
+// because the GoTrue /user endpoint only needs a valid apikey.
+const SERVER_AUTH_KEY = (!SERVICE_KEY_ISSUE && SUPABASE_SERVICE_KEY)
+  || (!ANON_KEY_ISSUE && SUPABASE_ANON_KEY)
+  || '';
+
 if (SUPABASE_URL) {
   console.log('[Supabase] URL configured:', SUPABASE_URL);
 } else {
@@ -94,9 +109,14 @@ app.get('/admin.html', serveAdminHTML);
 // %VITE_SUPABASE_URL% / %VITE_SUPABASE_ANON_KEY% placeholders in admin.html
 // are not replaced by the server. The admin SPA fetches this endpoint in
 // that case. The anon key is a public key by design (RLS protects data);
-// the service role key is never exposed here.
+// the service role key is never exposed here. A corrupted key is served as
+// empty — it could never authenticate anyway, and shipping it to the browser
+// would only reproduce the same ByteString failure client-side.
 app.get('/api/admin/config', (req, res) => {
-  res.json({ url: SUPABASE_URL || '', anonKey: SUPABASE_ANON_KEY || '' });
+  res.json({
+    url: SUPABASE_URL || '',
+    anonKey: ANON_KEY_ISSUE ? '' : (SUPABASE_ANON_KEY || ''),
+  });
 });
 
 // Diagnostic endpoint to check Supabase configuration (no secrets exposed)
@@ -134,21 +154,42 @@ app.get('/api/admin/diagnose', async (req, res) => {
     probe.health = db.health();
   }
 
+  const detail = db.info();
+  // Actionable, human-readable list of everything that is blocking the
+  // app from using the real Supabase database right now (empty = healthy).
+  const issues = [];
+  if (detail.serviceKeyIssue) issues.push(detail.serviceKeyIssue);
+  if (detail.anonKeyIssue) issues.push(detail.anonKeyIssue);
+  // The last remote failure lands in health().remoteError (the probe's own
+  // error only covers probe-level failures); check both.
+  const lastRemoteError = detail.remoteError || (probe && probe.error) || '';
+  const schemaMissing = /does not exist|PGRST205|PGRST202|could not find the table/i.test(lastRemoteError);
+  if (schemaMissing) {
+    issues.push('The Supabase schema has not been applied to this project. '
+      + 'Run supabase/full_database_seed.sql in Supabase → SQL Editor (creates every table and loads the existing catalog).');
+  } else if (db.health().usingJsonFallback && detail.remoteError) {
+    issues.push(`The remote Supabase store is unreachable (${detail.remoteError}) — the bundled JSON store is serving instead.`);
+  }
+
   res.json({
     probe,
+    issues,
     rawEnvUrl: rawUrl || '(not set)',
     sanitizedUrl: SUPABASE_URL || '(empty)',
     urlIsValid: urlPattern.test(SUPABASE_URL),
     urlHasPath,
     anonKeyPresent: hasAnonKey,
     serviceKeyPresent: hasServiceKey,
+    serviceKeyIssue: detail.serviceKeyIssue,
+    anonKeyIssue: detail.anonKeyIssue,
+    serverKeyRole: detail.serverKeyRole,
     serverClientAvailable: !!getServerSb(),
     dataDriver: db.DRIVER,
     dataDriverActive: db.health().activeDriver,
     usingJsonFallback: db.health().usingJsonFallback,
     remoteState: db.health().remoteState,
     remoteError: db.health().remoteError,
-    dataDriverDetail: db.info(),
+    dataDriverDetail: detail,
     publicDir: PUBLIC,
     distExists: fs.existsSync(path.join(__dirname, 'dist')),
     env: process.env.NODE_ENV || 'development',
@@ -159,14 +200,15 @@ app.get('/api/admin/diagnose', async (req, res) => {
 // SUPABASE ADMIN AUTH — JWT-verified, no hardcoded passwords
 // ---------------------------------------------------------------------------
 
-// Lazy-load Supabase server client (service role for admin verification)
+// Lazy-load Supabase server client (service role when usable, anon key as a
+// fallback — both are valid apikeys for the GoTrue auth endpoints).
 let _serverSb = null;
 function getServerSb() {
   if (_serverSb) return _serverSb;
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
+  if (!SUPABASE_URL || !SERVER_AUTH_KEY) return null;
   try {
     const { createClient } = require('@supabase/supabase-js');
-    _serverSb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+    _serverSb = createClient(SUPABASE_URL, SERVER_AUTH_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
   } catch (e) {
@@ -207,7 +249,12 @@ async function requireAdmin(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Unauthorized — no token' });
 
   const sb = getServerSb();
-  if (!sb) return res.status(503).json({ error: 'Supabase not configured on server' });
+  if (!sb) {
+    return res.status(503).json({
+      error: 'Supabase is not configured on this server (no usable VITE_SUPABASE_URL + key pair).',
+      hint: SERVICE_KEY_ISSUE || ANON_KEY_ISSUE || 'Check /api/admin/diagnose',
+    });
+  }
 
   try {
     // supabase-js v2 exposes this as auth.getUser(jwt).
@@ -431,7 +478,20 @@ app.post('/api/messages', async (req, res) => {
 // ---------------------------------------------------------------------------
 app.get('/api/admin/data', requireAdmin, async (req, res) => {
   try {
-    res.json(await db.getAdminData());
+    const data = await db.getAdminData();
+    // _meta tells the admin SPA which store actually served the payload, so
+    // an empty-looking dashboard can never be mistaken for an empty database.
+    const h = db.health();
+    res.json(Object.assign({}, data, {
+      _meta: {
+        driver: h.activeDriver,
+        usingJsonFallback: h.usingJsonFallback,
+        remoteState: h.remoteState,
+        remoteError: h.remoteError,
+        serviceKeyIssue: db.serviceKeyIssue,
+        anonKeyIssue: db.anonKeyIssue,
+      },
+    }));
   } catch (e) {
     console.error('[api/admin/data]', e.message);
     res.status(500).json({ error: 'Failed to load admin data.' });

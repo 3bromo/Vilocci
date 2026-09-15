@@ -129,6 +129,12 @@
     loginError: '',
     modal: null,
     toastTimer: null,
+    // Data-source health: shown as a banner so an empty dashboard can never
+    // be mistaken for an empty database.
+    dataError: '',
+    dataMeta: null,
+    diagnosis: null,
+    pollErrorShown: false,
   };
 
   function money(n) { return 'EGP ' + Math.round(n || 0).toLocaleString('en-US'); }
@@ -429,21 +435,72 @@
   // ========================================================================
   // DATA LOADING
   // ========================================================================
+  // Fetch /api/admin/diagnose (no auth required) so a failed or degraded data
+  // load can explain itself instead of showing an empty dashboard.
+  async function fetchDiagnosis() {
+    try {
+      const r = await fetch('/api/admin/diagnose?probe=1', { cache: 'no-store' });
+      if (r.ok) state.diagnosis = await r.json();
+    } catch (e) { /* the banner falls back to the data error text */ }
+  }
+
+  function dataIsDegraded(meta) {
+    return !!(meta && (meta.usingJsonFallback || meta.serviceKeyIssue || meta.anonKeyIssue || meta.remoteState === 'unavailable'));
+  }
+
   async function loadData() {
     state.loading = true;
+    state.dataError = '';
+    state.dataMeta = null;
     render();
     try {
-      const { ok, j } = await api('GET', '/api/admin/data');
+      const { ok, j, status } = await api('GET', '/api/admin/data');
       if (ok && j) {
         state.data = j;
+        state.dataMeta = j._meta || null;
+        if (dataIsDegraded(state.dataMeta)) await fetchDiagnosis();
+      } else {
+        state.dataError = (j && j.error) || ('HTTP ' + status);
+        await fetchDiagnosis();
       }
       state.loading = false;
       render();
     } catch (e) {
+      state.dataError = String((e && e.message) || e);
+      await fetchDiagnosis();
       toast('Failed to load data', 'error');
       state.loading = false;
       render();
     }
+  }
+
+  // Builds the warning banner shown above every page while the data source is
+  // not the live Supabase database (or the load failed outright). Empty
+  // string = everything is healthy.
+  function dataBannerHtml() {
+    if (state.view === 'login' || state.view === 'config-error') return '';
+    const d = state.diagnosis || {};
+    let msg = '';
+    if (state.dataError) {
+      const issues = (d.issues || []).filter(Boolean);
+      if (issues.length) {
+        msg = 'The admin panel could not load data from Supabase. ' + issues.join(' ');
+      } else if (d.remoteError) {
+        msg = 'The admin panel could not load data from Supabase: ' + d.remoteError + '.';
+      } else {
+        msg = 'The admin panel could not load data: ' + state.dataError;
+      }
+    } else if (dataIsDegraded(state.dataMeta)) {
+      const issues = (d.issues || []).filter(Boolean);
+      msg = 'Heads up — the data below is being served from the bundled JSON fallback, not the live Supabase database.'
+        + (issues.length ? ' ' + issues.join(' ') : ' Check /api/admin/diagnose for details.');
+    }
+    if (!msg) return '';
+    return `<div class="data-banner" role="alert">
+      <span class="data-banner-icon">&#9888;</span>
+      <span class="data-banner-text">${esc(msg)}</span>
+      <a class="data-banner-link" href="/api/admin/diagnose?probe=1" target="_blank" rel="noopener">Details</a>
+    </div>`;
   }
 
   // ========================================================================
@@ -492,6 +549,7 @@
       ${renderSidebar()}
       <div class="main-content">
         ${renderHeader()}
+        ${dataBannerHtml()}
         <div class="page-content">
           ${renderPage()}
         </div>
@@ -1012,8 +1070,23 @@
     orderPollTimer = setInterval(async () => {
       if (document.hidden) return;
       try {
-        const { ok, j } = await api('GET', '/api/admin/orders');
-        if (!ok || !j || !Array.isArray(j.orders)) return;
+        const { ok, j, status } = await api('GET', '/api/admin/orders');
+        if (!ok || !j || !Array.isArray(j.orders)) {
+          // Surface a broken feed once (e.g. expired session or the server
+          // losing its Supabase connection) — never let the list go stale
+          // in silence.
+          if (!state.pollErrorShown) {
+            state.pollErrorShown = true;
+            if (!state.dataError) state.dataError = 'Orders feed failed (HTTP ' + status + ')';
+            await fetchDiagnosis();
+            render();
+          }
+          return;
+        }
+        if (state.pollErrorShown) {
+          state.pollErrorShown = false;
+          if (/Orders feed failed/.test(state.dataError)) state.dataError = '';
+        }
         const before = (state.data?.orders || []).length;
         state.data = state.data || {};
         state.data.orders = j.orders;
