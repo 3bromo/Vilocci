@@ -43,7 +43,8 @@ if (SUPABASE_URL) {
 } else {
   console.warn('[Supabase] WARNING: VITE_SUPABASE_URL is not set or invalid');
 }
-console.log('[data] driver:', db.DRIVER);
+console.log('[data] driver:', db.DRIVER,
+  db.DRIVER === 'json' ? '(bundled JSON store)' : '(will fall back to the JSON store if the schema is not applied)');
 
 const PUBLIC = process.env.NODE_ENV === 'production' && fs.existsSync(path.join(__dirname, 'dist'))
   ? path.join(__dirname, 'dist')
@@ -116,6 +117,10 @@ app.get('/api/admin/diagnose', (req, res) => {
     serviceKeyPresent: hasServiceKey,
     serverClientAvailable: !!getServerSb(),
     dataDriver: db.DRIVER,
+    dataDriverActive: db.health().activeDriver,
+    usingJsonFallback: db.health().usingJsonFallback,
+    remoteState: db.health().remoteState,
+    remoteError: db.health().remoteError,
     dataDriverDetail: db.info(),
     publicDir: PUBLIC,
     distExists: fs.existsSync(path.join(__dirname, 'dist')),
