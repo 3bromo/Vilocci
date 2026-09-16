@@ -857,6 +857,9 @@
         <div class="field"><label>Warranty — AR</label><input id="s-warranty-ar" value="${sp('warranty_ar')}"></div>
         <div class="field full"><label>Copyright — EN</label><input id="s-copy-en" value="${sp('copyright_en')}"></div>
         <div class="field full"><label>Copyright — AR</label><input id="s-copy-ar" value="${sp('copyright_ar')}"></div>
+        <div class="field full" style="border-top:1px solid var(--line);padding-top:16px;margin-top:8px"><b>Payment Settings (InstaPay)</b></div>
+        <div class="field"><label>Enable InstaPay</label><div class="toggle" style="padding-top:8px"><input type="checkbox" id="s-instapay-enabled" ${s.instapay && s.instapay.enabled ? 'checked' : ''}> <span>Active</span></div></div>
+        <div class="field"><label>InstaPay Payment Link</label><input id="s-instapay-url" value="${esc(s.instapay && s.instapay.url || '')}" placeholder="https://ipn.eg/..."></div>
       </div></div>`;
   }
 
@@ -910,6 +913,10 @@
         returnPolicy: Object.assign({}, state.data.settings.returnPolicy, { days: +$('#s-return').value, note_en: $('#s-return-en').value, note_ar: $('#s-return-ar').value }),
         warranty_en: $('#s-warranty-en').value, warranty_ar: $('#s-warranty-ar').value,
         copyright_en: $('#s-copy-en').value, copyright_ar: $('#s-copy-ar').value,
+        instapay: {
+          enabled: $('#s-instapay-enabled') ? $('#s-instapay-enabled').checked : false,
+          url: $('#s-instapay-url') ? $('#s-instapay-url').value.trim() : '',
+        },
       });
       api('POST', '/api/admin/settings', { settings }).then(() => notify('Settings saved', 'gold'));
     });

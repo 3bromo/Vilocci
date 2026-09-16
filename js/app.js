@@ -1290,10 +1290,49 @@
             </div>
             <div class="field"><label>${pt('full_address')} <span class="req">*</span></label><textarea name="address" rows="3" required maxlength="200"></textarea><div class="field-hint">${L()==='ar'?'الحد أقصى 200 حرف':'Max 200 characters'}</div></div>
             <div class="field"><label>${pt('order_notes')}</label><textarea name="notes" rows="2" maxlength="300"></textarea><div class="field-hint">${L()==='ar'?'الحد أقصى 300 حرف':'Max 300 characters'}</div></div>
-            <div style="display:flex;align-items:center;gap:10px;padding:16px;background:var(--ivory);border:1px solid var(--line);border-radius:8px;margin-top:8px">
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#C8A15A"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
-              <div><b>${pt('cash')}</b><div style="font-size:12px;color:var(--muted)">${pt('cod_note')}</div></div>
-            </div>
+            ${(() => {
+              const instapayEnabled = !!(state.data.settings?.instapay?.enabled && state.data.settings?.instapay?.url);
+              const instapayUrl = state.data.settings?.instapay?.url || '';
+              if (!instapayEnabled) {
+                return `<div style="display:flex;align-items:center;gap:10px;padding:16px;background:var(--ivory);border:1px solid var(--line);border-radius:8px;margin-top:8px">
+                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#C8A15A"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
+                  <div><b>${pt('cash')}</b><div style="font-size:12px;color:var(--muted)">${pt('cod_note')}</div></div>
+                </div>`;
+              }
+              const isAr = L() === 'ar';
+              const instapayTitle = isAr ? 'انستاباي (InstaPay)' : 'Pay with InstaPay';
+              const instapayDesc = isAr ? 'تحويل فوري وآمن عبر تطبيق انستاباي' : 'Instant and secure payment via InstaPay';
+              const payBtnText = isAr ? 'فتح رابط الدفع عبر انستاباي ↗' : 'Open InstaPay Link ↗';
+              return `<div style="margin-top:14px;">
+                <label style="font-size:13px;font-weight:600;margin-bottom:8px;display:block;">${isAr ? 'طريقة الدفع' : 'Payment Method'}</label>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                  <label style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:var(--ivory);border:1px solid var(--line);border-radius:8px;cursor:pointer;">
+                    <input type="radio" name="paymentMethod" value="Cash on Delivery" checked style="margin-top:3px;">
+                    <div>
+                      <b style="display:flex;align-items:center;gap:6px;">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#C8A15A"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
+                        ${pt('cash')}
+                      </b>
+                      <div style="font-size:12px;color:var(--muted);margin-top:2px;">${pt('cod_note')}</div>
+                    </div>
+                  </label>
+                  <label style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:var(--ivory);border:1px solid var(--line);border-radius:8px;cursor:pointer;">
+                    <input type="radio" name="paymentMethod" value="InstaPay" style="margin-top:3px;">
+                    <div style="flex:1;">
+                      <b style="display:flex;align-items:center;gap:6px;color:var(--gold-deep,#C8A15A);">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                        ${instapayTitle}
+                      </b>
+                      <div style="font-size:12px;color:var(--muted);margin-top:2px;">${instapayDesc}</div>
+                      <div id="instapay-cta-box" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);">
+                        <a href="${VEL.esc(instapayUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-gold btn-sm" id="instapay-link-btn" style="display:inline-block;text-decoration:none;padding:8px 14px;font-size:13px;border-radius:6px;">${payBtnText}</a>
+                        <div style="font-size:11px;color:var(--muted);margin-top:6px;">${isAr ? 'اضغط الرابط لإتمام التحويل ثم اضغط تأكيد الطلب بالأسفل' : 'Open link to transfer via InstaPay, then click Place Order below.'}</div>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>`;
+            })()}
             <button class="btn btn-gold btn-block" type="submit" style="margin-top:20px">${pt('place_order')}</button>
           </form>
         </div>
@@ -1562,8 +1601,8 @@
       <div class="success-card">
         <div class="sc-row"><span>${pt('order_id')}</span><b class="gold">${VESt(o.id)}</b></div>
         <div class="sc-row"><span>${pt('order_date')}</span><span>${VESt(fmtDate(o.createdAt))}</span></div>
-        <div class="sc-row"><span>${pt('payment_method')}</span><b class="cod"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg> ${pt('cash_on_delivery')}</b></div>
-        <div class="sc-note">${pt('cod_note')}</div>
+        <div class="sc-row"><span>${pt('payment_method')}</span><b class="cod">${o.payment === 'InstaPay' ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg> InstaPay` : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg> ${pt('cash_on_delivery')}`}</b></div>
+        <div class="sc-note">${o.payment === 'InstaPay' ? (L() === 'ar' ? 'تم اختيار الدفع عبر انستاباي' : 'Paid via InstaPay') : pt('cod_note')}</div>
       </div>
 
       ${o.bundleDiscount ? `<div class="bundle-tag" style="display:flex;gap:8px;justify-content:center;margin:22px 0 6px">${pt('bundle_applied')}</div>
@@ -1799,7 +1838,21 @@
 
     // checkout form
     const form = $('#checkout-form');
-    if (form) form.addEventListener('submit', submitCheckout);
+    if (form) {
+      form.addEventListener('submit', submitCheckout);
+      const radioInsta = form.querySelector('input[name="paymentMethod"][value="InstaPay"]');
+      const radioCod = form.querySelector('input[name="paymentMethod"][value="Cash on Delivery"]');
+      const ctaBox = $('#instapay-cta-box');
+      function syncPaymentUI() {
+        if (!ctaBox) return;
+        ctaBox.style.display = (radioInsta && radioInsta.checked) ? 'block' : 'none';
+      }
+      if (radioInsta && radioCod) {
+        radioInsta.addEventListener('change', syncPaymentUI);
+        radioCod.addEventListener('change', syncPaymentUI);
+        syncPaymentUI();
+      }
+    }
 
     // clear fitment
     $('#clear-fitment') && $('#clear-fitment').addEventListener('click', () => { state.fitment = null; localStorage.removeItem(FIT_KEY); route(); });
@@ -1940,14 +1993,16 @@
     const form = e.target;
     const f = new FormData(form);
     const customer = { fullName: f.get('fullName'), phone: f.get('phone'), city: f.get('city'), area: f.get('area'), address: f.get('address'), notes: f.get('notes') };
+    const payment = f.get('paymentMethod') || 'Cash on Delivery';
     const cart = state.cart.map(i => ({ productId: i.productId, keyShape: i.keyShape, qty: i.qty, fitment: i.fitment || null }));
     const btn = form.querySelector('button[type=submit]');
     btn.disabled = true; btn.textContent = '…';
-    submitOrder({ customer, cart }).then(({ ok, j }) => {
+    submitOrder({ customer, cart, payment }).then(({ ok, j }) => {
       if (ok) {
         const totals = cartTotals();
         state.lastOrder = {
           id: j.orderId, createdAt: new Date().toISOString(), customer,
+          payment,
           items: totals.items.map(it => ({ productId: it.productId, keyShape: it.keyShape, qty: it.qty, fitment: it.fitment || null, name_en: it.prod.name_en, name_ar: it.prod.name_ar, price: it.prod.price, lineTotal: it.prod.price * it.qty, image: img(it.prod), brandSlug: it.prod.brandSlug, category: it.prod.category })),
           subtotal: totals.subtotal, bundleDiscount: totals.bundleDiscount, deliveryFee: totals.deliveryFee, total: totals.total,
         };
