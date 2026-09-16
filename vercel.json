@@ -15,6 +15,7 @@
     { "source": "/api/:path*", "destination": "/api/index.js" },
     { "source": "/img/asset.svg", "destination": "/api/index.js" },
     { "source": "/admin", "destination": "/admin.html" },
-    { "source": "/admin/login", "destination": "/admin.html" }
+    { "source": "/admin/login", "destination": "/admin.html" },
+    { "source": "/customize", "destination": "/index.html" }
   ]
 }
