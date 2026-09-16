@@ -2170,3 +2170,166 @@ img, video, canvas, svg { max-width: 100%; height: auto; }
 table { max-width: 100%; }
 pre, code { max-width: 100%; overflow-x: auto; }
 
+
+/* ==========================================================================
+   CUSTOMIZE — five-step bespoke request flow
+   Mobile-first: single column, large tap targets, thumb-friendly CTA.
+   ========================================================================== */
+.cz-hero { padding: 26px 0 10px; text-align: center; }
+.cz-hero .kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 10.5px; letter-spacing: .28em; text-transform: uppercase;
+  color: var(--gold-deep); font-weight: 600;
+}
+.cz-hero .kicker::before, .cz-hero .kicker::after { content: ""; width: 22px; height: 1px; background: var(--gold); }
+.cz-hero h1 { font-family: var(--serif); font-size: 30px; line-height: 1.15; margin: 10px 0 8px; text-transform: uppercase; letter-spacing: .02em; }
+.cz-hero p { color: var(--muted); font-size: 13.5px; max-width: 620px; margin: 0 auto; }
+
+.cz-wrap { padding-bottom: 60px; }
+
+/* --- stepper -------------------------------------------------------------- */
+.cz-steps {
+  display: flex; gap: 6px; list-style: none; margin: 18px 0 22px; padding: 0;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.cz-steps::-webkit-scrollbar { display: none; }
+.cz-step {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 7px;
+  padding: 7px 12px; border: 1px solid var(--line-strong); border-radius: 999px;
+  background: var(--white); font-size: 11px; color: var(--muted); white-space: nowrap;
+}
+.cz-step-n {
+  width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--cream); color: var(--gold-deep); font-size: 10px; font-weight: 700;
+}
+.cz-step.active { border-color: var(--gold); color: var(--ink); box-shadow: var(--shadow-sm); }
+.cz-step.active .cz-step-n { background: var(--gold-grad); color: #fff; }
+.cz-step.done { border-color: rgba(200,161,90,.5); color: var(--ink); }
+.cz-step.done .cz-step-n { background: var(--gold-soft); color: #fff; }
+
+/* --- blocks --------------------------------------------------------------- */
+.cz-form { display: block; }
+.cz-block {
+  background: var(--white); border: 1px solid var(--line); border-radius: 12px;
+  padding: 18px 16px; margin-bottom: 14px; box-shadow: var(--shadow-sm);
+}
+.cz-block-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+.cz-block-head h2 { font-family: var(--serif); font-size: 18px; margin: 0 0 2px; }
+.cz-block-head p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.cz-num {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--gold-grad); color: #fff; font-size: 12px; font-weight: 700;
+}
+
+/* --- category picker ------------------------------------------------------ */
+.cz-cats { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.cz-cat {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: start;
+  padding: 12px; border: 1px solid var(--line-strong); border-radius: 10px;
+  background: var(--white); cursor: pointer; font: inherit; color: inherit;
+  transition: border-color .18s, box-shadow .18s, transform .18s;
+}
+.cz-cat:hover { border-color: var(--gold-soft); }
+.cz-cat.selected { border-color: var(--gold); box-shadow: 0 6px 18px rgba(156,107,22,.14); }
+.cz-cat-img {
+  flex: 0 0 auto; width: 54px; height: 54px; border-radius: 9px; overflow: hidden;
+  background: var(--cream); display: flex; align-items: center; justify-content: center;
+  color: var(--gold-deep); font-size: 18px;
+}
+.cz-cat-img img { width: 100%; height: 100%; object-fit: cover; }
+.cz-cat-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cz-cat-name { font-size: 14px; font-weight: 600; }
+.cz-cat-count { font-size: 11.5px; color: var(--muted); }
+.cz-cat-check {
+  margin-inline-start: auto; width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid var(--line-strong); color: transparent; font-size: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.cz-cat.selected .cz-cat-check { background: var(--gold-grad); border-color: transparent; color: #fff; }
+
+/* --- photo upload --------------------------------------------------------- */
+.cz-upload {
+  border: 1.5px dashed var(--line-strong); border-radius: 12px; background: var(--ivory);
+  padding: 14px; cursor: pointer; transition: border-color .18s, background .18s;
+}
+.cz-upload.dragging { border-color: var(--gold); background: #fbf7ec; }
+.cz-upload.has-photo { border-style: solid; background: var(--white); padding: 10px; }
+.cz-drop-inner { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 18px 8px; }
+.cz-drop-ic { color: var(--gold-deep); }
+.cz-drop-ic svg { width: 34px; height: 34px; }
+.cz-drop-inner b { font-size: 14px; font-weight: 600; }
+.cz-drop-hint { font-size: 11.5px; color: var(--muted); }
+.cz-preview-wrap { position: relative; border-radius: 10px; overflow: hidden; background: var(--cream); }
+.cz-preview { display: block; width: 100%; max-height: 320px; object-fit: cover; }
+.cz-preview-badge {
+  position: absolute; inset-block-start: 8px; inset-inline-start: 8px;
+  background: rgba(18,16,12,.72); color: #fff; font-size: 11px; padding: 4px 9px; border-radius: 999px;
+}
+.cz-photo-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* --- form bits ------------------------------------------------------------ */
+.cz-form .field { margin-bottom: 13px; }
+.cz-form .field label { display: block; font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.cz-form .field input, .cz-form .field textarea, .cz-form .field select {
+  width: 100%; padding: 12px 13px; border: 1px solid var(--line-strong); border-radius: 8px;
+  background: var(--white); font: inherit; font-size: 15px; color: var(--ink);
+}
+.cz-form .field input:focus, .cz-form .field textarea:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(200,161,90,.16); }
+.cz-form .field textarea { resize: vertical; min-height: 90px; }
+.cz-form #cz-request { min-height: 150px; font-size: 15px; line-height: 1.6; }
+.cz-form .req { color: var(--danger); }
+.cz-err { color: var(--danger); font-size: 12px; margin-top: 6px; }
+.cz-err-form { padding: 10px 12px; border: 1px solid rgba(192,57,43,.3); background: rgba(192,57,43,.06); border-radius: 8px; margin-bottom: 12px; }
+
+.cz-contacts { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.cz-contact {
+  display: flex; align-items: center; gap: 9px; padding: 11px 13px;
+  border: 1px solid var(--line-strong); border-radius: 8px; cursor: pointer; font-size: 14px;
+}
+.cz-contact input { accent-color: var(--gold-deep); }
+.cz-contact.active { border-color: var(--gold); background: #fdfaf3; }
+
+/* --- submit --------------------------------------------------------------- */
+.cz-submit { margin-top: 18px; }
+.cz-submit-btn { padding: 16px 20px; font-size: 13px; letter-spacing: .1em; }
+.cz-submit-note { text-align: center; color: var(--muted); font-size: 11.5px; margin: 10px 0 0; }
+
+/* --- empty + success ------------------------------------------------------ */
+.cz-empty { text-align: center; padding: 60px 16px; max-width: 520px; margin: 0 auto; }
+.cz-empty-ic { font-size: 30px; color: var(--gold); margin-bottom: 10px; }
+.cz-empty h1 { font-family: var(--serif); font-size: 24px; margin: 0 0 8px; }
+.cz-empty p { color: var(--muted); font-size: 13.5px; }
+.cz-empty-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
+
+.cz-success { max-width: 560px; margin: 0 auto; padding: 46px 0 70px; text-align: center; }
+.cz-success-ic {
+  width: 62px; height: 62px; border-radius: 50%; margin: 0 auto 16px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--gold-grad); color: #fff; box-shadow: 0 12px 30px rgba(156,107,22,.28);
+}
+.cz-success-ic svg { width: 28px; height: 28px; }
+.cz-success h1 { font-family: var(--serif); font-size: 26px; margin: 0 0 10px; }
+.cz-success-msg { color: var(--ink); font-size: 14.5px; line-height: 1.7; margin: 0 0 18px; }
+.cz-success-card { border: 1px solid var(--line); border-radius: 10px; background: var(--white); padding: 14px 16px; text-align: start; box-shadow: var(--shadow-sm); }
+.cz-success-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; font-size: 13px; border-bottom: 1px solid var(--line); }
+.cz-success-row:last-child { border-bottom: none; }
+.cz-success-row b { color: var(--gold-deep); }
+.cz-success-note { color: var(--muted); font-size: 12px; margin: 14px 0 0; }
+.cz-success-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+
+@media (min-width: 640px) {
+  .cz-hero { padding: 40px 0 14px; }
+  .cz-hero h1 { font-size: 40px; }
+  .cz-cats { grid-template-columns: repeat(2, 1fr); }
+  .cz-contacts { grid-template-columns: repeat(3, 1fr); }
+  .cz-block { padding: 24px 22px; margin-bottom: 16px; }
+  .cz-form .frow { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .cz-form .frow .field { margin-bottom: 13px; }
+}
+@media (min-width: 1024px) {
+  .cz-hero h1 { font-size: 46px; }
+  .cz-cats { grid-template-columns: repeat(3, 1fr); }
+  .cz-wrap { max-width: 900px; }
+  .cz-steps { justify-content: center; }
+}

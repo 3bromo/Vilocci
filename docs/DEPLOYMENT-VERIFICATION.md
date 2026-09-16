@@ -230,3 +230,71 @@ using a patched copy outside the repo: replacing the two call sites with
 Consequence: `/admin` login cannot succeed in production until (1) §6.2 env vars
 are set, (2) §6.3 SQL is run, **and** (3) these two lines are fixed. No code was
 changed here, per the "do not modify the working site" instruction.
+
+> **Update (2026-09-16):** the two call sites were since changed to
+> `sb.auth.getUser(token)`; the blocker above is resolved in the code. Condition
+> (1) §6.2 is still open — see §7.
+
+---
+
+## 7. Customize feature — what was verified, and what still needs production credentials
+
+**Date:** 2026-09-16 (UTC)
+**Scope:** the new `Customize` flow (storefront wizard + `Admin → Customize`),
+migration `003_customize.sql`, the private photo bucket.
+
+### 7.1 Verified LOCALLY (this is not a production verification)
+
+| What | How | Result |
+| --- | --- | --- |
+| Migration `003` on a real PostgreSQL 18.4 | `npm run test:db` (embedded Postgres) | table + 29 columns, RLS enabled, `anon` cannot read (0 rows / no grant), `settings['customize']` seeded with all 3 existing categories, re-run is a no-op |
+| Whole customer flow | `npm run test:customize` (jsdom drives `public/js/app.js`) | 5 steps, only admin-enabled categories, photo preview/replace, client-side validation, in-flight duplicate guard, submit payload, success message + request id, EN/AR + RTL |
+| Whole admin flow | `npm run test:customize` (jsdom drives `public/js/admin-app.js`) + `npm run test:db` | ON/OFF per category + save, list/detail, photo through the authenticated endpoint, status, internal notes, delete with confirmation — persisted (in Postgres in `test:db`) |
+| Availability is isolated | `npm run test:db` | disabling a category removes it from `/api/customize/categories` while `/api/data` still serves all 3 and `categories.active` is unchanged |
+| Private photo | `npm run test:db` | row holds a bucket path or inline data — never a public URL; the admin list payload contains no photo bytes |
+| Everything else | `npm test` | 221 checks green (smoke 39, admin auth 7, admin CMS 36, admin packages 48, fallback 36, customize 55) |
+| Storefront render (served copy) | `curl http://127.0.0.1:3000/#/customize`-equivalent via jsdom on `public/` | wizard renders; `root/public/dist` copies byte-identical |
+
+### 7.2 Verified on PRODUCTION after the deploy
+
+```
+GET /                              → 200 (storefront, unchanged)
+GET /api/data                      → 200, payload now includes `customize`
+GET /api/customize/categories      → 200, { available: true, categories: [...], contactMethods: [...] }
+GET /api/admin/customize/...       → 401 without an admin token
+```
+
+### 7.3 NOT verified on production — blocked by missing Supabase credentials
+
+`GET https://vilocci-b31u.vercel.app/api/admin/diagnose` (checked 2026-09-16):
+
+```json
+{"rawEnvUrl":"(not set)","sanitizedUrl":"(empty)","urlIsValid":false,
+ "anonKeyPresent":false,"serviceKeyPresent":false,"serverClientAvailable":false,
+ "dataDriver":"json","dataDriverActive":"json","dbUrlPresent":false,
+ "publicDir":"/var/task/dist","distExists":true,"env":"production"}
+```
+
+The production project still has **no** Supabase environment variables, so:
+
+- **Admin login is still impossible in production** (§6.2/§6.3 not done), which
+  means `Admin → Customize Settings / Requests` cannot be exercised there.
+- The store runs on the **JSON driver** (ephemeral on Vercel serverless):
+  customization requests are not durable across cold starts, and car photos are
+  kept **inline** in the row (`photoStored: "inline-fallback"`) instead of going
+  to the private `customize-uploads` bucket. The private bucket, the signed-URL
+  admin path and the RLS-protected `customize_requests` table are therefore
+  **unverified against real Supabase** — they are only proven against a real
+  PostgreSQL server locally (`npm run test:db`).
+
+### 7.4 Operator checklist to finish production
+
+1. Vercel → Project → Settings → Environment Variables: `VITE_SUPABASE_URL`,
+   `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (`SUPABASE_DB_URL` for
+   the migration CLI; the `CUSTOMIZE_*` variables are optional).
+2. `npm run migrate -- --apply` (applies `003`, seeds `settings['customize']`
+   from the existing categories and creates the private bucket).
+3. Supabase → Storage: confirm `customize-uploads` exists and is **private**.
+4. Redeploy, then re-run the §6.4 checklist plus
+   `GET /api/customize/categories` and one end-to-end Customize submission from
+   `Admin → Customize → Requests` (status change, internal note, delete).

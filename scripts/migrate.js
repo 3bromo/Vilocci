@@ -36,6 +36,7 @@ const DB_FILE = process.env.VELOCCI_DB || path.join(ROOT, 'data', 'velocci-db.js
 const MIGRATIONS = [
   { version: '001', title: 'Baseline schema (products, categories, brands, bundles, orders, content, RLS)', file: 'supabase-schema.sql' },
   { version: '002', title: 'CMS core (order_items, product_images, product_prices, customer_phone/address, CMS columns)', file: 'supabase/migrations/002_cms_core.sql' },
+  { version: '003', title: 'Customize (customize_requests, customize category settings, private storage bucket)', file: 'supabase/migrations/003_customize.sql' },
 ];
 
 const argv = process.argv.slice(2);
@@ -57,38 +58,9 @@ function loadSource() {
 
 // Categories are not a collection in the JSON store — the storefront derives
 // them from the products it already has. The mapping does exactly the same
-// thing (labels come from the site's own EN/AR dictionary, the image is that
-// category's existing first product image), so no category is invented.
-function deriveCategories(db) {
-  const dict = (db.languages && db.languages.dict) || {};
-  const en = dict.en || {};
-  const ar = dict.ar || {};
-  const meta = [
-    { key: 'keycase', slug: 'keycases', name_en: en.key_cases || 'Key Cases', name_ar: ar.key_cases || '', order: 1 },
-    { key: 'keyholder', slug: 'keyholders', name_en: en.key_holders || 'Key Holders', name_ar: ar.key_holders || '', order: 2 },
-    { key: 'medal', slug: 'medals', name_en: en.car_medals || 'Car Medals', name_ar: ar.car_medals || '', order: 3 },
-  ];
-  const products = db.products || [];
-  const out = [];
-  meta.forEach((m) => {
-    const inCat = products.filter((p) => p.category === m.key);
-    if (!inCat.length) return; // never create an empty, unused category
-    const firstImage = (inCat.find((p) => p.images && p.images[0]) || {}).images?.[0] || null;
-    out.push(mapping.categoryToRow({
-      id: m.key,
-      slug: m.slug,
-      name_en: m.name_en,
-      name_ar: m.name_ar,
-      description_en: null, // not present in the existing data — left for the admin
-      description_ar: null,
-      image: firstImage,
-      active: true,
-      product_count: inCat.length,
-      order: m.order,
-    }));
-  });
-  return out;
-}
+// thing, and it lives in lib/mapping.js so the runtime (lib/db.js, the Admin
+// Customize Settings screen) and this migration always agree on the same ids.
+const deriveCategories = mapping.deriveCategories;
 
 function buildContentPlan(db) {
   const plan = [];
@@ -400,11 +372,41 @@ async function apply() {
     }
   }
 
+  // ---------------------------------------------------------------- defaults
+  // The migrations run BEFORE the storefront content is mapped in, so the
+  // Customize setting can only be seeded once the categories exist. Exactly the
+  // same statement as in 003 (on conflict do nothing) — an operator's choices
+  // are never overwritten.
+  try {
+    const seeded = await seedCustomizeSetting(client);
+    if (seeded) line(C.green('   settings[customize] seeded from the existing categories'));
+  } catch (e) {
+    line(C.yellow(`   settings[customize] not seeded: ${e.message}`));
+  }
+
   await client.end();
   if (AS_JSON) process.stdout.write(JSON.stringify({ mode: 'apply', summary }, null, 2) + '\n');
   line('');
   line(C.green('✓ Migration applied.'));
   return 0;
+}
+
+// Enables every existing (active) category for Customize when the setting does
+// not exist yet, so the Customize page is never empty on a first deployment.
+async function seedCustomizeSetting(client) {
+  const tables = await client.query(`
+    select to_regclass('public.settings') as settings, to_regclass('public.categories') as categories`);
+  if (!tables.rows[0].settings || !tables.rows[0].categories) return false;
+  const res = await client.query(`
+    insert into public.settings (key, value)
+    select 'customize',
+           jsonb_build_object('categories', jsonb_object_agg(c.id, true), 'seededAt', now())
+    from public.categories c
+    where c.active is not false
+    having count(*) > 0
+    on conflict (key) do nothing
+    returning key`);
+  return res.rowCount > 0;
 }
 
 const JSONB_TABLES = {
