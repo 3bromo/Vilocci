@@ -1392,10 +1392,14 @@
       [lang === 'ar' ? 'ميداليات السيارات' : 'Car Medals', '#/category/medals'],
       [lang === 'ar' ? 'الباقات' : 'Packages', '#/packages'],
     ];
-    // The Customize entry only appears while the Admin has at least one
-    // category switched ON for Customize (Admin → Customize → Customize
-    // Settings). The page itself is always reachable at #/customize.
-    if (czCategories().length) navLinks.push([cz('customize'), '#/customize']);
+    // The Customize entry is ALWAYS part of the main navigation: it is a
+    // primary customer flow, so it must never depend on a data condition to
+    // show up. (It used to be gated on `czCategories().length`, which silently
+    // hid it on any deployment whose catalogue reported no categories — the
+    // link simply vanished from the live storefront.) Which categories the
+    // customer may pick inside the flow is still driven entirely by the Admin
+    // Customize Settings screen.
+    navLinks.push([cz('customize'), '#/customize']);
     const topBrandSlugs = ['mercedes-benz','bmw','audi','toyota','hyundai','kia'];
     const topBrands = state.data.brands.filter(b => topBrandSlugs.includes(b.slug));
     return `<header class="header" id="header">
@@ -1463,7 +1467,7 @@
             <h4>${lang === 'ar' ? 'روابط مهمة' : 'Quick Links'}</h4>
             <ul>
               <li><a href="#/about">${pt('about_velocci')}</a></li>
-              ${czCategories().length ? `<li><a href="#/customize">${czE('customize')}</a></li>` : ''}
+              <li><a href="#/customize">${czE('customize')}</a></li>
               <li><a href="#/keyguide">${pt('keyguide')}</a></li>
               <li><a href="#/shipping">${pt('shipping')}</a></li>
               <li><a href="#/warranty">${pt('warranty_page')}</a></li>
@@ -1744,9 +1748,44 @@
   function cz(key) { const v = CZ_TEXT[key]; if (!v) return key; return L() === 'ar' ? v[1] : v[0]; }
   const czE = (key) => VEL.esc(cz(key));
 
+  // The site's real categories, in the order the storefront and the Admin
+  // Customize Settings screen already use them. Only used as a label/order
+  // source for the fallback below — never to invent categories.
+  const CZ_CAT_DICT = { keycase: 'key_cases', keyholder: 'key_holders', medal: 'car_medals' };
+  const CZ_CAT_ORDER = { keycase: 1, keyholder: 2, medal: 3 };
+
   function czCategories() {
     const c = state.data && state.data.customize;
-    return (c && Array.isArray(c.categories)) ? c.categories : [];
+    const enabled = (c && Array.isArray(c.categories)) ? c.categories.filter(Boolean) : [];
+    if (enabled.length) return enabled;
+    // The API can report no Customize categories — for example a database
+    // whose `categories` table holds no rows. The flow must stay usable
+    // anyway, so fall back to the categories the storefront already knows:
+    // first the catalogue, then the categories the products belong to. Both
+    // are the site's own real categories, never a hard-coded list, and the
+    // Admin ON/OFF switch still governs the normal case above.
+    const catalogue = (state.data && Array.isArray(state.data.categories))
+      ? state.data.categories.filter((x) => x && x.active !== false)
+      : [];
+    if (catalogue.length) return catalogue;
+    const seen = {};
+    return ((state.data && state.data.products) || []).reduce((acc, p) => {
+      const key = p && p.category;
+      if (!key || seen[key]) return acc;
+      seen[key] = true;
+      const dictKey = CZ_CAT_DICT[key] || key;
+      acc.push({
+        id: key,
+        slug: key,
+        name_en: t(dictKey, null, 'en'),
+        name_ar: t(dictKey, null, 'ar'),
+        image: (p.images && p.images[0]) || p.main_image || null,
+        icon: null,
+        product_count: 0,
+        order: CZ_CAT_ORDER[key] || 99,
+      });
+      return acc;
+    }, []).sort((a, b) => (a.order || 0) - (b.order || 0));
   }
   function czCatName(c) { return (L() === 'ar' && c.name_ar) ? c.name_ar : (c.name_en || c.slug || c.id); }
 
@@ -2645,11 +2684,26 @@
     bindGlobal();
   }
 
+  // ------------------------------------------------------------------ routes
+  // Client routes the SPA owns. A request for one of these as a plain path
+  // (/customize) is normalised into its hash form on boot, so the very same
+  // router renders it and there is exactly one implementation of every page.
+  const CLEAN_ROUTES = ['customize'];
+
+  function normalizeCleanUrl() {
+    if (location.hash) return;                       // the hash already wins
+    const seg = (location.pathname || '').split('/').filter(Boolean);
+    if (!seg.length || CLEAN_ROUTES.indexOf(seg[0]) === -1) return;
+    try { history.replaceState(null, '', '#/' + seg.join('/')); }
+    catch (e) { location.hash = '#/' + seg.join('/'); }
+  }
+
   function init() {
     setLang(localStorage.getItem(LANG_KEY) || 'en');
     loadCart();
     const savedFit = localStorage.getItem(FIT_KEY); if (savedFit) { try { state.fitment = JSON.parse(savedFit); } catch (e) {} }
     state.fitStep = fitDeep();
+    normalizeCleanUrl();
     $('#app').innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:var(--muted)">SPINTO …</div>`;
     fetch('/api/data').then(r => r.json()).then(data => {
       state.data = data;
