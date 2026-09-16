@@ -1268,6 +1268,57 @@
   function openCart() { $('#drawer-overlay').classList.add('open'); $('#cart-drawer').classList.add('open'); document.body.style.overflow = 'hidden'; }
   function closeCart() { $('#drawer-overlay').classList.remove('open'); $('#cart-drawer').classList.remove('open'); document.body.style.overflow = ''; }
 
+  // InstaPay from /api/data settings. Accepts object, JSON string, or alt keys.
+  // Hidden only when explicitly disabled or when no URL is configured.
+  function getInstapay() {
+    const s = (state.data && state.data.settings) || {};
+    let cfg = s.instapay;
+    if (typeof cfg === 'string') {
+      try { cfg = JSON.parse(cfg); } catch (e) { cfg = null; }
+    }
+    if (!cfg || typeof cfg !== 'object') cfg = {};
+    const url = String(cfg.url || s.instapayUrl || s.instapay_url || '').trim();
+    const raw = cfg.enabled;
+    const off = raw === false || raw === 'false' || raw === 0 || raw === '0';
+    return { enabled: !off && !!url, url: url };
+  }
+
+  function paymentMethodsHTML() {
+    const ip = getInstapay();
+    const cashInner = `<svg class="pay-ic" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#C8A15A"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
+        <div class="pay-option-body">
+          <b class="pay-option-title">${pt('cash')}</b>
+          <div class="pay-option-desc">${pt('cod_note')}</div>
+        </div>`;
+    if (!ip.enabled) {
+      return `<div class="pay-option pay-option-static">${cashInner}</div>`;
+    }
+    const isAr = L() === 'ar';
+    const instapayTitle = isAr ? 'انستاباي (InstaPay)' : 'Pay with InstaPay';
+    const instapayDesc = isAr ? 'تحويل فوري وآمن عبر تطبيق انستاباي' : 'Instant and secure payment via InstaPay';
+    const payBtnText = isAr ? 'فتح رابط الدفع عبر انستاباي ↗' : 'Open InstaPay Link ↗';
+    const hint = isAr ? 'اضغط الرابط لإتمام التحويل ثم اضغط تأكيد الطلب بالأسفل' : 'Open link to transfer via InstaPay, then click Place Order below.';
+    const safeUrl = VEL.esc(ip.url);
+    return `<div class="pay-methods" id="pay-methods">
+      <div class="pay-methods-label">${isAr ? 'طريقة الدفع' : 'Payment Method'}</div>
+      <label class="pay-option">
+        <input type="radio" name="paymentMethod" value="Cash on Delivery" checked>
+        ${cashInner}
+      </label>
+      <label class="pay-option pay-option-instapay" id="pay-option-instapay">
+        <input type="radio" name="paymentMethod" value="InstaPay" id="pay-instapay-radio">
+        <div class="pay-option-body">
+          <a class="pay-instapay-title" href="${safeUrl}" target="_blank" rel="noopener noreferrer" id="instapay-title-link">${instapayTitle}</a>
+          <div class="pay-option-desc">${instapayDesc}</div>
+          <div class="instapay-cta" id="instapay-cta-box">
+            <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-gold btn-sm" id="instapay-link-btn">${payBtnText}</a>
+            <div class="instapay-hint">${hint}</div>
+          </div>
+        </div>
+      </label>
+    </div>`;
+  }
+
   // ============================================================== CHECKOUT
   function checkoutHTML() {
     const totals = cartTotals();
@@ -1290,49 +1341,7 @@
             </div>
             <div class="field"><label>${pt('full_address')} <span class="req">*</span></label><textarea name="address" rows="3" required maxlength="200"></textarea><div class="field-hint">${L()==='ar'?'الحد أقصى 200 حرف':'Max 200 characters'}</div></div>
             <div class="field"><label>${pt('order_notes')}</label><textarea name="notes" rows="2" maxlength="300"></textarea><div class="field-hint">${L()==='ar'?'الحد أقصى 300 حرف':'Max 300 characters'}</div></div>
-            ${(() => {
-              const instapayEnabled = !!(state.data.settings?.instapay?.enabled && state.data.settings?.instapay?.url);
-              const instapayUrl = state.data.settings?.instapay?.url || '';
-              if (!instapayEnabled) {
-                return `<div style="display:flex;align-items:center;gap:10px;padding:16px;background:var(--ivory);border:1px solid var(--line);border-radius:8px;margin-top:8px">
-                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#C8A15A"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
-                  <div><b>${pt('cash')}</b><div style="font-size:12px;color:var(--muted)">${pt('cod_note')}</div></div>
-                </div>`;
-              }
-              const isAr = L() === 'ar';
-              const instapayTitle = isAr ? 'انستاباي (InstaPay)' : 'Pay with InstaPay';
-              const instapayDesc = isAr ? 'تحويل فوري وآمن عبر تطبيق انستاباي' : 'Instant and secure payment via InstaPay';
-              const payBtnText = isAr ? 'فتح رابط الدفع عبر انستاباي ↗' : 'Open InstaPay Link ↗';
-              return `<div style="margin-top:14px;">
-                <label style="font-size:13px;font-weight:600;margin-bottom:8px;display:block;">${isAr ? 'طريقة الدفع' : 'Payment Method'}</label>
-                <div style="display:flex;flex-direction:column;gap:10px;">
-                  <label style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:var(--ivory);border:1px solid var(--line);border-radius:8px;cursor:pointer;">
-                    <input type="radio" name="paymentMethod" value="Cash on Delivery" checked style="margin-top:3px;">
-                    <div>
-                      <b style="display:flex;align-items:center;gap:6px;">
-                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#C8A15A"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
-                        ${pt('cash')}
-                      </b>
-                      <div style="font-size:12px;color:var(--muted);margin-top:2px;">${pt('cod_note')}</div>
-                    </div>
-                  </label>
-                  <label style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:var(--ivory);border:1px solid var(--line);border-radius:8px;cursor:pointer;">
-                    <input type="radio" name="paymentMethod" value="InstaPay" style="margin-top:3px;">
-                    <div style="flex:1;">
-                      <b style="display:flex;align-items:center;gap:6px;color:var(--gold-deep,#C8A15A);">
-                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                        ${instapayTitle}
-                      </b>
-                      <div style="font-size:12px;color:var(--muted);margin-top:2px;">${instapayDesc}</div>
-                      <div id="instapay-cta-box" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);">
-                        <a href="${VEL.esc(instapayUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-gold btn-sm" id="instapay-link-btn" style="display:inline-block;text-decoration:none;padding:8px 14px;font-size:13px;border-radius:6px;">${payBtnText}</a>
-                        <div style="font-size:11px;color:var(--muted);margin-top:6px;">${isAr ? 'اضغط الرابط لإتمام التحويل ثم اضغط تأكيد الطلب بالأسفل' : 'Open link to transfer via InstaPay, then click Place Order below.'}</div>
-                      </div>
-                    </div>
-                  </label>
-                </div>
-              </div>`;
-            })()}
+            ${paymentMethodsHTML()}
             <button class="btn btn-gold btn-block" type="submit" style="margin-top:20px">${pt('place_order')}</button>
           </form>
         </div>
@@ -1841,17 +1850,11 @@
     if (form) {
       form.addEventListener('submit', submitCheckout);
       const radioInsta = form.querySelector('input[name="paymentMethod"][value="InstaPay"]');
-      const radioCod = form.querySelector('input[name="paymentMethod"][value="Cash on Delivery"]');
-      const ctaBox = $('#instapay-cta-box');
-      function syncPaymentUI() {
-        if (!ctaBox) return;
-        ctaBox.style.display = (radioInsta && radioInsta.checked) ? 'block' : 'none';
-      }
-      if (radioInsta && radioCod) {
-        radioInsta.addEventListener('change', syncPaymentUI);
-        radioCod.addEventListener('change', syncPaymentUI);
-        syncPaymentUI();
-      }
+      function selectInstapay() { if (radioInsta) radioInsta.checked = true; }
+      const titleLink = $('#instapay-title-link');
+      const ctaLink = $('#instapay-link-btn');
+      if (titleLink) titleLink.addEventListener('click', selectInstapay);
+      if (ctaLink) ctaLink.addEventListener('click', selectInstapay);
     }
 
     // clear fitment

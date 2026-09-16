@@ -142,6 +142,14 @@ function read(url) {
   setHash('#/checkout'); await new Promise(r => setTimeout(r, 40));
   check('checkout form present', !!document.querySelector('#checkout-form'));
   check('COD note present', /استلام|Cash|توصيل/i.test(document.body.textContent));
+  const checkoutText = document.body.textContent || '';
+  check('Pay with InstaPay visible', /Pay with InstaPay|انستاباي/.test(checkoutText));
+  check('Open InstaPay Link visible', /Open InstaPay Link|فتح رابط الدفع عبر انستاباي/.test(checkoutText));
+  const instaBtn = document.querySelector('#instapay-link-btn');
+  const expectedUrl = (data.settings && data.settings.instapay && data.settings.instapay.url) || '';
+  check('InstaPay link uses configured URL', !!(instaBtn && expectedUrl && instaBtn.getAttribute('href') === expectedUrl));
+  check('InstaPay radio present', !!document.querySelector('input[name="paymentMethod"][value="InstaPay"]'));
+  check('COD radio still present', !!document.querySelector('input[name="paymentMethod"][value="Cash on Delivery"]'));
 
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
