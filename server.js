@@ -391,6 +391,7 @@ app.post('/api/orders', async (req, res) => {
     const total = subtotal - bundleDiscount + deliveryFee;
 
     const nowIso = new Date().toISOString();
+    const paymentMethod = body.payment === 'InstaPay' ? 'InstaPay' : 'Cash on Delivery';
     const order = {
       id: 'ORD-' + Date.now().toString().slice(-8),
       createdAt: nowIso,
@@ -407,7 +408,7 @@ app.post('/api/orders', async (req, res) => {
       total: Math.round(total),
       status: 'Pending',
       statusHistory: [{ status: 'Pending', at: nowIso }],
-      payment: 'Cash on Delivery',
+      payment: paymentMethod,
       currency: settings.currency || 'EGP',
       source: 'storefront',
     };

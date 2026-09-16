@@ -1655,6 +1655,19 @@
             <input type="url" id="s-twitter" value="${esc(s.social?.twitter || '')}" placeholder="https://x.com/...">
           </div>
         </div>
+        <h4 style="font-size:14px;font-weight:600;margin:24px 0 16px;padding-top:16px;border-top:1px solid var(--border);">Payment Settings</h4>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;">
+            <input type="checkbox" id="s-instapay-enabled" ${s.instapay?.enabled ? 'checked' : ''}>
+            <span>Enable InstaPay Payment</span>
+          </label>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">When enabled, customers can choose to pay via your InstaPay link at checkout.</div>
+        </div>
+        <div class="form-group">
+          <label>InstaPay Payment Link (URL)</label>
+          <input type="url" id="s-instapay-url" value="${esc(s.instapay?.url || '')}" placeholder="https://ipn.eg/... or payment link">
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Direct payment link opened when customer chooses InstaPay.</div>
+        </div>
         <button class="btn btn-primary" id="btn-save-settings" style="margin-top:16px;">💾 Save Settings</button>
       </div>
     </div>`;
@@ -2828,6 +2841,8 @@
   function bindSettings() {
     const saveBtn = $('#btn-save-settings');
     if (saveBtn) saveBtn.addEventListener('click', async () => {
+      const instapayEnabled = $('#s-instapay-enabled') ? $('#s-instapay-enabled').checked : false;
+      const instapayUrl = $('#s-instapay-url') ? $('#s-instapay-url').value.trim() : '';
       const settings = {
         shopName: $('#s-name').value.trim() || 'Spinto',
         tagline: $('#s-tagline').value.trim(),
@@ -2844,6 +2859,10 @@
           instagram: $('#s-instagram').value.trim(),
           tiktok: $('#s-tiktok').value.trim(),
           twitter: $('#s-twitter').value.trim(),
+        },
+        instapay: {
+          enabled: instapayEnabled,
+          url: instapayUrl,
         },
       };
       try {
