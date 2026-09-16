@@ -76,25 +76,36 @@ async function main() {
     check('migration CLI exited 0', () => assert.strictEqual(apply.status, 0, `exit ${apply.status}`));
 
     const applied = await q('select version from supabase_migrations.schema_migrations order by version');
-    check('both migrations recorded (001 + 002)', () =>
-      assert.deepStrictEqual(applied.map((r) => r.version), ['001', '002']));
+    check('all migrations recorded (001 + 002 + 003)', () =>
+      assert.deepStrictEqual(applied.map((r) => r.version), ['001', '002', '003']));
 
     // ------------------------------------------------------------------ 2
     section('2. Existing storefront content is in the database (mapped, not sample data)');
     const counts = {};
     for (const t of ['products', 'categories', 'brands', 'bundles', 'hero_slides', 'home_sections',
-      'settings', 'promo_bar', 'website_content', 'orders', 'order_items', 'product_images', 'product_prices']) {
+      'settings', 'promo_bar', 'website_content', 'orders', 'order_items', 'product_images', 'product_prices',
+      'customize_requests']) {
       counts[t] = (await one(`select count(*)::int n from public.${t}`)).n;
     }
     console.log('  ' + JSON.stringify(counts));
     const expected = {
       products: 117, categories: 3, brands: 29, bundles: 29, hero_slides: 3,
-      home_sections: 14, settings: 25, promo_bar: 1, website_content: 167,
+      home_sections: 14,
+      // 25 storefront settings + the language dictionary + the seeded
+      // Customize category setting (003 / post-import default)
+      settings: 27,
+      promo_bar: 1, website_content: 167,
       orders: 23, order_items: 65, product_images: 279, product_prices: 117,
+      customize_requests: 0,
     };
     for (const [t, n] of Object.entries(expected)) {
       check(`${t} = ${n} rows`, () => assert.strictEqual(counts[t], n, `got ${counts[t]}`));
     }
+
+    const czSetting = await one(`select value from public.settings where key = 'customize'`);
+    check('the Customize category setting was seeded with every existing category', () => {
+      assert.deepStrictEqual(Object.keys(czSetting.value.categories).sort(), ['keycase', 'keyholder', 'medal']);
+    });
 
     const kc = await one(`select name_en, product_count, image from public.categories where id = 'keycase'`);
     check('category "keycase" mapped from live data (59 products, real image)', () => {
@@ -129,6 +140,28 @@ async function main() {
     check('row counts unchanged after re-run (idempotent)', () =>
       assert.strictEqual(JSON.stringify(counts2), before, `${JSON.stringify(counts2)} != ${before}`));
 
+    const czCols = await q(`select column_name from information_schema.columns
+      where table_schema = 'public' and table_name = 'customize_requests'`);
+    const czColNames = czCols.map((r) => r.column_name);
+    check('customize_requests has every documented column', () => {
+      for (const c of ['id', 'created_at', 'category_id', 'car_image_path', 'car_brand', 'car_model',
+        'model_year', 'car_details', 'customization_request', 'customer_name', 'phone', 'whatsapp',
+        'email', 'preferred_contact', 'additional_notes', 'status', 'admin_notes']) {
+        assert.ok(czColNames.includes(c), `missing column ${c}`);
+      }
+    });
+    const czRls = await one(`select relrowsecurity from pg_class where oid = 'public.customize_requests'::regclass`);
+    check('customize_requests has RLS enabled', () => assert.strictEqual(czRls.relrowsecurity, true));
+    const czSeed = await one(`select value from public.settings where key = 'customize'`);
+    check('the customize category setting is seeded from the existing categories', () => {
+      assert.ok(czSeed, 'settings[customize] missing');
+      assert.deepStrictEqual(Object.keys(czSeed.value.categories).sort(), ['keycase', 'keyholder', 'medal']);
+      assert.deepStrictEqual(Object.values(czSeed.value.categories), [true, true, true]);
+    });
+    const czCatActive = await one(`select active from public.categories where id = 'keycase'`);
+    check('the feature does not touch categories.active (normal shopping unaffected)', () =>
+      assert.notStrictEqual(czCatActive.active, false));
+
     // ------------------------------------------------------------------ 4
     section('4. Row Level Security actually blocks anonymous order reads');
     const anon = await local.connect();
@@ -136,8 +169,19 @@ async function main() {
     await anon.query('set role anon');
     const anonOrders = (await anon.query('select count(*)::int n from public.orders')).rows[0].n;
     const anonProducts = (await anon.query('select count(*)::int n from public.products')).rows[0].n;
+    // Either RLS hands out zero rows or the role has no grant at all — both mean
+    // the customers' data is unreachable.
+    let anonCustomize = null;
+    let anonCustomizeDenied = false;
+    try {
+      anonCustomize = (await anon.query('select count(*)::int n from public.customize_requests')).rows[0].n;
+    } catch (e) {
+      anonCustomizeDenied = /permission denied/i.test(e.message);
+    }
     await anon.end();
     check('anon sees 0 orders (admin-only table)', () => assert.strictEqual(anonOrders, 0));
+    check('anon cannot read customize requests (no rows and no grant)', () =>
+      assert.ok(anonCustomizeDenied || anonCustomize === 0, `anon read ${anonCustomize}`));
     check('anon can read the public catalog', () => assert.ok(anonProducts > 0, `anon saw ${anonProducts} products`));
 
     // ------------------------------------------------------------------ 5
@@ -323,10 +367,168 @@ async function main() {
       assert.strictEqual(siteImg.url, '/img/hero.jpg');
     });
 
+    // ------------------------------------------------------------------ 7
+    section('7. Customize: customer request -> private photo -> admin management');
+
+    const czCats = await (await fetch(`${base}/api/customize/categories`)).json();
+    check('GET /api/customize/categories lists the admin-enabled categories', () => {
+      assert.strictEqual(czCats.available, true);
+      assert.deepStrictEqual(czCats.categories.map((c) => c.id).sort(), ['keycase', 'keyholder', 'medal']);
+      assert.ok(czCats.contactMethods.includes('WhatsApp'), JSON.stringify(czCats.contactMethods));
+    });
+
+    const jpeg = 'data:image/jpeg;base64,' + Buffer.from([
+      0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0xff, 0xd9,
+    ]).toString('base64');
+    const czPost = (body) => fetch(`${base}/api/customize/requests`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const czBody = {
+      category: 'keycase', carBrand: 'Mercedes-Benz', carModel: 'C-Class', modelYear: '2022',
+      carDetails: 'AMG line, black leather',
+      customizationRequest: 'Carbon key case with the AMG badge and gold stitching, please.',
+      fullName: 'Customize E2E', phone: '+201099997777', whatsapp: '+201099997777',
+      email: 'cz@example.com', preferredContact: 'WhatsApp', additionalNotes: 'Evenings only',
+      carImage: jpeg, clientKey: 'e2e_customize_1', locale: 'en',
+    };
+
+    const czRes = await czPost(czBody);
+    const czJson = await czRes.json();
+    check('POST /api/customize/requests stores the request', () => {
+      assert.strictEqual(czRes.status, 200, JSON.stringify(czJson));
+      assert.ok(czJson.ok && /^CUS-/.test(czJson.requestId || ''), JSON.stringify(czJson));
+    });
+    const czId = czJson.requestId;
+    check('the car photo lands in private storage (or the inline fallback), never a public URL', () =>
+      assert.ok(['private-storage', 'inline-fallback'].includes(czJson.photoStored), czJson.photoStored));
+
+    const czRow = await one('select * from public.customize_requests where id = $1', [czId]);
+    check('the row carries the category, car, request and customer details', () => {
+      assert.strictEqual(czRow.category_id, 'keycase');
+      assert.strictEqual(czRow.category_name_en, 'Key Cases');
+      assert.strictEqual(czRow.car_brand, 'Mercedes-Benz');
+      assert.strictEqual(czRow.car_model, 'C-Class');
+      assert.strictEqual(czRow.model_year, '2022');
+      assert.strictEqual(czRow.car_details, 'AMG line, black leather');
+      assert.strictEqual(czRow.customization_request, 'Carbon key case with the AMG badge and gold stitching, please.');
+      assert.strictEqual(czRow.customer_name, 'Customize E2E');
+      assert.strictEqual(czRow.phone, '+201099997777');
+      assert.strictEqual(czRow.whatsapp, '+201099997777');
+      assert.strictEqual(czRow.email, 'cz@example.com');
+      assert.strictEqual(czRow.preferred_contact, 'WhatsApp');
+      assert.strictEqual(czRow.status, 'New');
+    });
+    check('the photo is a bucket path or inline data — never a public URL', () => {
+      assert.ok(czRow.car_image_path || czRow.car_image_data, 'no photo stored');
+      assert.ok(!/^https?:/i.test(czRow.car_image_path || ''), `public path: ${czRow.car_image_path}`);
+    });
+
+    const czDup = await (await czPost(czBody)).json();
+    check('a repeated submit (same client key) is deduplicated', () => {
+      assert.strictEqual(czDup.requestId, czId);
+      assert.strictEqual(czDup.duplicate, true);
+    });
+    await acheck('exactly one row exists for that client key', async () => {
+      const n = await one('select count(*)::int n from public.customize_requests where client_key = $1', ['e2e_customize_1']);
+      assert.strictEqual(n.n, 1);
+    });
+
+    const czNoPhoto = await (await czPost(Object.assign({}, czBody, { carImage: undefined, clientKey: 'e2e_customize_nophoto' }))).json();
+    check('a submission without a car photo is rejected', () =>
+      assert.match(czNoPhoto.errors.carImage, /photo of your car is required/i));
+    const czBadYear = await (await czPost(Object.assign({}, czBody, { modelYear: '22', clientKey: 'e2e_customize_badyear' }))).json();
+    check('an invalid model year is rejected', () =>
+      assert.match(czBadYear.errors.modelYear, /4-digit/i));
+    const czBadImg = await (await czPost(Object.assign({}, czBody, { carImage: 'data:text/html;base64,PHNjcmlwdD4=', clientKey: 'e2e_customize_badimg' }))).json();
+    check('a non-image "photo" is rejected', () =>
+      assert.match(czBadImg.error, /image/i));
+
+    await acheck('anonymous access to every admin Customize endpoint is refused (401)', async () => {
+      for (const p of ['/api/admin/customize/settings', '/api/admin/customize/requests',
+        `/api/admin/customize/requests/${czId}`, `/api/admin/customize/requests/${czId}/photo`]) {
+        const r = await fetch(base + p);
+        assert.strictEqual(r.status, 401, `${p} -> ${r.status}`);
+      }
+    });
+    const czAnonDelete = await fetch(`${base}/api/admin/customize/requests/${czId}/delete`, { method: 'POST' });
+    check('anonymously deleting a request is refused', () => assert.strictEqual(czAnonDelete.status, 401));
+
+    const czList = await (await fetch(`${base}/api/admin/customize/requests`, { headers: adminHeaders })).json();
+    check('the admin list shows the request without shipping the photo payload', () => {
+      const found = czList.requests.find((r) => r.id === czId);
+      assert.ok(found, 'request missing from /api/admin/customize/requests');
+      assert.strictEqual(found.customerName, 'Customize E2E');
+      assert.strictEqual(found.categoryNameEn, 'Key Cases');
+      assert.strictEqual(found.hasPhoto, true);
+      assert.ok(!('carImageData' in found) && !('carImagePath' in found), 'the private photo must not be in the list payload');
+      assert.ok(!JSON.stringify(found).includes('data:image'), 'inline data leaked into the list payload');
+    });
+
+    const czPhoto = await (await fetch(`${base}/api/admin/customize/requests/${czId}/photo`, { headers: adminHeaders })).json();
+    check('the admin opens the private photo through an authenticated short-lived link', () => {
+      assert.ok(czPhoto.url, JSON.stringify(czPhoto));
+      assert.ok(['signed', 'inline'].includes(czPhoto.kind), czPhoto.kind);
+    });
+
+    const czPatch = await (await fetch(`${base}/api/admin/customize/requests/${czId}`, {
+      method: 'POST', headers: adminHeaders,
+      body: JSON.stringify({ status: 'In Progress', admin_notes: 'Quoted carbon + gold stitching.' }),
+    })).json();
+    const czRow2 = await one('select status, admin_notes from public.customize_requests where id = $1', [czId]);
+    check('admin status + internal notes persist in Supabase', () => {
+      assert.ok(czPatch.ok, JSON.stringify(czPatch));
+      assert.strictEqual(czRow2.status, 'In Progress');
+      assert.strictEqual(czRow2.admin_notes, 'Quoted carbon + gold stitching.');
+    });
+    const czBadStatus = await fetch(`${base}/api/admin/customize/requests/${czId}`, {
+      method: 'POST', headers: adminHeaders, body: JSON.stringify({ status: 'Nope' }),
+    });
+    check('an unknown status is rejected', () => assert.strictEqual(czBadStatus.status, 400));
+
+    // Category availability: admin-controlled, and isolated from shopping.
+    const czOff = await (await fetch(`${base}/api/admin/customize/settings`, {
+      method: 'POST', headers: adminHeaders,
+      body: JSON.stringify({ categories: { keycase: false, keyholder: true, medal: true } }),
+    })).json();
+    check('the admin can disable a category for Customize only', () =>
+      assert.strictEqual(czOff.customize.categories.keycase, false));
+    const czCats2 = await (await fetch(`${base}/api/customize/categories`)).json();
+    check('the public Customize page no longer offers it', () =>
+      assert.deepStrictEqual(czCats2.categories.map((c) => c.id).sort(), ['keyholder', 'medal']));
+    const czRefused = await czPost(Object.assign({}, czBody, { clientKey: 'e2e_customize_off' }));
+    check('a request for a disabled category is refused', () => assert.strictEqual(czRefused.status, 400));
+    const dataOff = await (await fetch(`${base}/api/data`)).json();
+    check('normal shopping is untouched: /api/data still serves all 3 categories + the customize config', () => {
+      assert.strictEqual(dataOff.categories.length, 3);
+      assert.strictEqual(dataOff.categories.find((c) => c.id === 'keycase').active, true);
+      assert.deepStrictEqual(dataOff.customize.categories.map((c) => c.id).sort(), ['keyholder', 'medal']);
+    });
+    await acheck('categories.active was never modified by the Customize setting', async () => {
+      const rows = await q('select id, active from public.categories order by id');
+      assert.deepStrictEqual(rows.map((r) => r.active), [true, true, true]);
+    });
+
+    const czOn = await (await fetch(`${base}/api/admin/customize/settings`, {
+      method: 'POST', headers: adminHeaders,
+      body: JSON.stringify({ categories: { keycase: true, keyholder: true, medal: true } }),
+    })).json();
+    check('re-enabling the category brings it back', () => assert.strictEqual(czOn.customize.categories.keycase, true));
+    const czCats3 = await (await fetch(`${base}/api/customize/categories`)).json();
+    check('the public Customize page offers all 3 categories again', () => assert.strictEqual(czCats3.categories.length, 3));
+
+    const czDel = await (await fetch(`${base}/api/admin/customize/requests/${czId}/delete`, {
+      method: 'POST', headers: adminHeaders,
+    })).json();
+    await acheck('admin deletion removes the request from Supabase', async () => {
+      assert.ok(czDel.ok, JSON.stringify(czDel));
+      const n = await one('select count(*)::int n from public.customize_requests where id = $1', [czId]);
+      assert.strictEqual(n.n, 0);
+    });
+
     await new Promise((resolve) => server.close(resolve));
 
-    // ------------------------------------------------------------------ 7
-    section('7. Dry run reports the same mapping (no writes)');
+    // ------------------------------------------------------------------ 8
+    section('8. Dry run reports the same mapping (no writes)');
     const dry = runMigrate(['--json'], { SUPABASE_DB_URL: local.url });
     const dryJson = JSON.parse(dry.stdout);
     check('dry run lists every table with existing row counts', () => {

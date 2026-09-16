@@ -13,6 +13,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const db = require('./lib/db');
 const store = require('./lib/store');
+const storage = require('./lib/storage');
 
 const { seed } = require('./data/seed');
 const { asset } = require('./lib/assets');
@@ -65,6 +66,11 @@ const PUBLIC = process.env.NODE_ENV === 'production' && fs.existsSync(path.join(
   ? path.join(__dirname, 'dist')
   : __dirname;
 
+// The Customize car photo travels as a base64 data URL (the same client
+// contract as the admin image upload), so that ONE route gets a bigger body
+// budget. body-parser marks the request as parsed, so the global 4 MB parser
+// below leaves it alone and every other route keeps the smaller limit.
+app.use('/api/customize/requests', express.json({ limit: '12mb' }));
 app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -190,6 +196,7 @@ app.get('/api/admin/diagnose', async (req, res) => {
     remoteState: db.health().remoteState,
     remoteError: db.health().remoteError,
     dataDriverDetail: detail,
+    customizeStorage: storage.info(),
     publicDir: PUBLIC,
     distExists: fs.existsSync(path.join(__dirname, 'dist')),
     env: process.env.NODE_ENV || 'development',
@@ -626,6 +633,293 @@ app.post('/api/admin/preorder-status', requireAdmin, async (req, res) => {
     const { id, status } = req.body || {};
     const n = await db.updateRow('preorders', id, { status });
     if (!n) return res.status(404).json({ error: 'Pre-order not found.' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// CUSTOMIZE — public customer flow
+// ---------------------------------------------------------------------------
+// Reads the categories the Admin switched ON for Customize (never a hard-coded
+// list, never categories.active) and stores customer requests server-side.
+const CUSTOMIZE_STATUSES = ['New', 'Contacted', 'In Progress', 'Completed', 'Cancelled'];
+const CUSTOMIZE_CONTACT_METHODS = ['Phone', 'WhatsApp', 'Email'];
+const CUSTOMIZE_LIMITS = {
+  category: 60,
+  carBrand: 60,
+  carModel: 60,
+  modelYear: 10,
+  carDetails: 600,
+  customizationRequest: 2000,
+  fullName: 60,
+  phone: 20,
+  whatsapp: 20,
+  email: 120,
+  additionalNotes: 600,
+  clientKey: 80,
+};
+
+// Trim, drop control characters and cap the length before anything is stored.
+function sanitizeText(value, max) {
+  if (value === undefined || value === null) return '';
+  let s = String(value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ');
+  s = s.replace(/\r\n?/g, '\n').trim();
+  return s.length > max ? s.slice(0, max) : s;
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PHONE_RE = /^[\d\s+\-()]{6,20}$/;
+
+function customizeRequestId() {
+  const stamp = Date.now().toString(36).toUpperCase().slice(-6);
+  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `CUS-${stamp}${rand}`;
+}
+
+// The categories the customer may pick (admin-controlled, live).
+app.get('/api/customize/categories', async (req, res) => {
+  try {
+    const categories = await db.getCustomizeCategories();
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      available: categories.length > 0,
+      categories,
+      contactMethods: CUSTOMIZE_CONTACT_METHODS,
+    });
+  } catch (e) {
+    console.error('[api/customize/categories]', e.message);
+    res.status(500).json({ error: 'Could not load the customization categories.' });
+  }
+});
+
+// Public submission. Everything is validated, sanitized and stored SERVER-side
+// (the photo goes into the private bucket with the service-role key; that key
+// never reaches the browser).
+app.post('/api/customize/requests', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const f = {
+      category: sanitizeText(body.category, CUSTOMIZE_LIMITS.category),
+      carBrand: sanitizeText(body.carBrand, CUSTOMIZE_LIMITS.carBrand),
+      carModel: sanitizeText(body.carModel, CUSTOMIZE_LIMITS.carModel),
+      modelYear: sanitizeText(body.modelYear, CUSTOMIZE_LIMITS.modelYear),
+      carDetails: sanitizeText(body.carDetails, CUSTOMIZE_LIMITS.carDetails),
+      customizationRequest: sanitizeText(body.customizationRequest, CUSTOMIZE_LIMITS.customizationRequest),
+      fullName: sanitizeText(body.fullName, CUSTOMIZE_LIMITS.fullName),
+      phone: sanitizeText(body.phone, CUSTOMIZE_LIMITS.phone),
+      whatsapp: sanitizeText(body.whatsapp, CUSTOMIZE_LIMITS.whatsapp),
+      email: sanitizeText(body.email, CUSTOMIZE_LIMITS.email),
+      additionalNotes: sanitizeText(body.additionalNotes, CUSTOMIZE_LIMITS.additionalNotes),
+      clientKey: sanitizeText(body.clientKey, CUSTOMIZE_LIMITS.clientKey),
+      preferredContact: sanitizeText(body.preferredContact, 20) || 'Phone',
+      locale: sanitizeText(body.locale, 5) === 'ar' ? 'ar' : 'en',
+    };
+
+    const errors = {};
+    if (!f.category) errors.category = 'Please choose a category.';
+    if (!body.carImage || typeof body.carImage !== 'string') errors.carImage = 'A photo of your car is required.';
+    if (!f.carBrand) errors.carBrand = 'Car brand is required.';
+    if (!f.carModel) errors.carModel = 'Car model is required.';
+    if (!f.modelYear) errors.modelYear = 'Model year is required.';
+    else if (!/^\d{4}$/.test(f.modelYear)) errors.modelYear = 'Enter a 4-digit model year.';
+    if (!f.customizationRequest) errors.customizationRequest = 'Tell us what you would like us to customize.';
+    else if (f.customizationRequest.length < 10) errors.customizationRequest = 'Please describe your request in at least 10 characters.';
+    if (!f.fullName) errors.fullName = 'Full name is required.';
+    if (!f.phone) errors.phone = 'Phone number is required.';
+    else if (!PHONE_RE.test(f.phone)) errors.phone = 'Enter a valid phone number.';
+    if (f.whatsapp && !PHONE_RE.test(f.whatsapp)) errors.whatsapp = 'Enter a valid WhatsApp number.';
+    if (f.email && !EMAIL_RE.test(f.email)) errors.email = 'Enter a valid email address.';
+    if (!CUSTOMIZE_CONTACT_METHODS.includes(f.preferredContact)) {
+      errors.preferredContact = 'Choose how we should contact you.';
+    } else if (f.preferredContact === 'WhatsApp' && !f.whatsapp) {
+      errors.whatsapp = 'Add your WhatsApp number so we can reach you there.';
+    }
+    if (Object.keys(errors).length) {
+      return res.status(400).json({ error: 'Please check the highlighted fields.', errors });
+    }
+
+    // Only a category the admin has enabled for Customize is accepted.
+    const available = await db.getCustomizeCategories();
+    const category = available.find((c) => c.id === f.category || c.slug === f.category);
+    if (!category) {
+      return res.status(400).json({
+        error: 'That category is not available for customization right now.',
+        errors: { category: 'This category is not available for customization.' },
+      });
+    }
+
+    // Duplicate guard — a stable per-form key makes a retry idempotent.
+    const existing = await db.findCustomizeRequestByClientKey(f.clientKey);
+    if (existing) {
+      return res.json({ ok: true, requestId: existing.id, duplicate: true });
+    }
+
+    // Validate the photo, then store it server-side in the PRIVATE bucket.
+    let parsedImage;
+    try {
+      parsedImage = storage.parseImageDataUrl(body.carImage);
+    } catch (err) {
+      return res.status(400).json({ error: err.message, errors: { carImage: err.message } });
+    }
+
+    const id = customizeRequestId();
+    const upload = await storage.uploadCarPhoto(body.carImage, { requestId: id });
+
+    const record = {
+      id,
+      createdAt: new Date().toISOString(),
+      categoryId: category.id,
+      categorySlug: category.slug || category.id,
+      categoryNameEn: category.name_en || category.id,
+      categoryNameAr: category.name_ar || '',
+      carImagePath: upload.ok ? upload.path : null,
+      carImageMime: parsedImage.mime,
+      carImageSize: parsedImage.size,
+      carImageData: upload.ok ? null : body.carImage,
+      carBrand: f.carBrand,
+      carModel: f.carModel,
+      modelYear: f.modelYear,
+      carDetails: f.carDetails,
+      customizationRequest: f.customizationRequest,
+      customerName: f.fullName,
+      phone: f.phone,
+      whatsapp: f.whatsapp,
+      email: f.email,
+      preferredContact: f.preferredContact,
+      additionalNotes: f.additionalNotes,
+      status: 'New',
+      adminNotes: '',
+      clientKey: f.clientKey || null,
+      locale: f.locale,
+      source: 'storefront',
+    };
+
+    await db.createCustomizeRequest(record);
+    console.log(`[customize] request ${id} stored (photo: ${upload.ok ? 'private storage' : 'inline fallback'})`);
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      requestId: id,
+      photoStored: upload.ok ? 'private-storage' : 'inline-fallback',
+    });
+  } catch (e) {
+    console.error('[api/customize/requests]', e.message);
+    res.status(500).json({ error: 'Could not save your customization request. Please try again.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// CUSTOMIZE — admin (settings + requests). Every route requires an admin JWT.
+// ---------------------------------------------------------------------------
+app.get('/api/admin/customize/settings', requireAdmin, async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    res.json(await db.getCustomizeConfig());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/customize/settings', requireAdmin, async (req, res) => {
+  try {
+    const { categories } = req.body || {};
+    const config = await db.saveCustomizeSettings({ categories: categories || {} });
+    res.json({ ok: true, customize: config });
+  } catch (e) {
+    console.error('[api/admin/customize/settings]', e.message);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.get('/api/admin/customize/requests', requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 300, 1000);
+    res.set('Cache-Control', 'no-store');
+    res.json({ requests: await db.getCustomizeRequests({ limit }) });
+  } catch (e) {
+    console.error('[api/admin/customize/requests]', e.message);
+    res.status(/does not exist|PGRST/i.test(e.message) ? 503 : 500).json({
+      error: 'Could not load the customization requests.',
+      detail: e.message,
+      hint: /does not exist|PGRST/i.test(e.message)
+        ? 'The customize_requests table is missing — run `npm run migrate -- --apply`.'
+        : undefined,
+    });
+  }
+});
+
+app.get('/api/admin/customize/requests/:id', requireAdmin, async (req, res) => {
+  try {
+    const record = await db.getCustomizeRequest(req.params.id);
+    if (!record) return res.status(404).json({ error: 'Request not found.' });
+    const summary = require('./lib/mapping').customizeRequestSummary(record);
+    summary.photoKind = record.carImagePath ? 'storage' : (record.carImageData ? 'inline' : 'none');
+    res.set('Cache-Control', 'no-store');
+    res.json(summary);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Signed URL for the private car photo. Admins only, short-lived, never cached.
+app.get('/api/admin/customize/requests/:id/photo', requireAdmin, async (req, res) => {
+  try {
+    const record = await db.getCustomizeRequest(req.params.id);
+    if (!record) return res.status(404).json({ error: 'Request not found.' });
+    res.set('Cache-Control', 'no-store');
+    if (record.carImagePath) {
+      try {
+        const url = await storage.signedUrl(record.carImagePath);
+        if (url) {
+          return res.json({
+            url,
+            kind: 'signed',
+            expiresIn: storage.info().signedUrlTtlSeconds,
+            mime: record.carImageMime || null,
+          });
+        }
+      } catch (e) {
+        console.warn('[api/admin/customize/requests/photo] signing failed:', e.message);
+      }
+    }
+    if (record.carImageData) {
+      return res.json({ url: record.carImageData, kind: 'inline', mime: record.carImageMime || null });
+    }
+    return res.status(404).json({ error: 'This request has no photo.' });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not open the photo.' });
+  }
+});
+
+app.post('/api/admin/customize/requests/:id', requireAdmin, async (req, res) => {
+  try {
+    const { status, admin_notes: adminNotes } = req.body || {};
+    const patch = {};
+    if (status !== undefined) {
+      // Validated here as well as in the data layer so a typo can never reach
+      // the database (and can never look like a database failure).
+      if (!CUSTOMIZE_STATUSES.includes(String(status))) {
+        return res.status(400).json({ error: `Unknown status: ${status}` });
+      }
+      patch.status = String(status);
+    }
+    if (adminNotes !== undefined) patch.admin_notes = sanitizeText(adminNotes, 2000);
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update.' });
+    const n = await db.updateCustomizeRequest(req.params.id, patch);
+    if (!n) return res.status(404).json({ error: 'Request not found.' });
+    const record = await db.getCustomizeRequest(req.params.id);
+    res.json({ ok: true, request: require('./lib/mapping').customizeRequestSummary(record) });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/customize/requests/:id/delete', requireAdmin, async (req, res) => {
+  try {
+    const n = await db.deleteCustomizeRequest(req.params.id);
+    if (!n) return res.status(404).json({ error: 'Request not found.' });
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });

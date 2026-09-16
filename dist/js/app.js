@@ -20,6 +20,20 @@
     productQty: 1,
     productOption: 0,       // complete-your-set combo index
     lastOrder: null,        // most recently placed order, for the thank-you page
+    // Customize request flow — kept here (not in the DOM) so nothing the
+    // customer typed is lost when they navigate back and forth.
+    customize: {
+      category: '',
+      photo: '', photoName: '', photoSize: 0,
+      carBrand: '', carModel: '', modelYear: '', carDetails: '',
+      request: '',
+      fullName: '', phone: '', whatsapp: '', email: '',
+      preferredContact: 'Phone', additionalNotes: '',
+      clientKey: '',
+      submitting: false,
+      errors: {},
+      success: null,
+    },
   };
 
   const LANG_KEY = 'velocci_lang';
@@ -1378,6 +1392,10 @@
       [lang === 'ar' ? 'ميداليات السيارات' : 'Car Medals', '#/category/medals'],
       [lang === 'ar' ? 'الباقات' : 'Packages', '#/packages'],
     ];
+    // The Customize entry only appears while the Admin has at least one
+    // category switched ON for Customize (Admin → Customize → Customize
+    // Settings). The page itself is always reachable at #/customize.
+    if (czCategories().length) navLinks.push([cz('customize'), '#/customize']);
     const topBrandSlugs = ['mercedes-benz','bmw','audi','toyota','hyundai','kia'];
     const topBrands = state.data.brands.filter(b => topBrandSlugs.includes(b.slug));
     return `<header class="header" id="header">
@@ -1445,6 +1463,7 @@
             <h4>${lang === 'ar' ? 'روابط مهمة' : 'Quick Links'}</h4>
             <ul>
               <li><a href="#/about">${pt('about_velocci')}</a></li>
+              ${czCategories().length ? `<li><a href="#/customize">${czE('customize')}</a></li>` : ''}
               <li><a href="#/keyguide">${pt('keyguide')}</a></li>
               <li><a href="#/shipping">${pt('shipping')}</a></li>
               <li><a href="#/warranty">${pt('warranty_page')}</a></li>
@@ -1568,6 +1587,7 @@
     else if (first === 'brands') html = brandsHTML();
     else if (first === 'fitment') html = fitmentHTML();
     else if (first === 'packages') html = packagesHTML();
+    else if (first === 'customize') html = customizeHTML();
     else if (first === 'checkout') html = checkoutHTML();
     else if (first === 'success') html = successHTML(parts[1] || query.id);
     else if (first === 'keyguide') html = staticHTML('keyguide');
@@ -1649,6 +1669,535 @@
         <a class="btn btn-gold" href="#/checkout">${pt('proceed_to_checkout')}</a>
       </div>
     </div></div></div>`;
+  }
+
+  // ============================================================== CUSTOMIZE
+  // The five-step bespoke flow. The categories are NEVER hard-coded: they come
+  // from the Admin-controlled Customize settings via /api/data → `customize`
+  // (only the ones switched ON for Customize, while normal shopping keeps
+  // showing every active category).
+  const CZ_PHOTO_MAX_BYTES = 8 * 1024 * 1024;     // raw file
+  const CZ_PHOTO_MAX_DATA = 4.2 * 1024 * 1024;    // after optimization
+  const CZ_PHOTO_DIM = 1600;                      // longest edge
+  const CZ_TEXT = {
+    customize: ['Customize', 'تخصيص'],
+    kicker: ['Bespoke Atelier', 'أتيليه خاص'],
+    title: ['Customize Your Car', 'خصّص سيارتك'],
+    sub: ['Choose a category, show us your car and tell us exactly what you have in mind. Our atelier will contact you to make it real.',
+      'اختر الفئة، وأرسل لنا صورة سيارتك، وأخبرنا بالضبط بما تريده. سيتواصل معك الأتيليه لتنفيذه.'],
+    step1: ['Choose', 'الفئة'],
+    step2: ['Photo', 'الصورة'],
+    step3: ['Car info', 'السيارة'],
+    step4: ['Your request', 'طلبك'],
+    step5: ['Your details', 'بياناتك'],
+    s1_title: ['Choose a category', 'اختر الفئة'],
+    s1_sub: ['What would you like us to customize for you?', 'ما الذي تريد أن نخصصه لك؟'],
+    s2_title: ['Upload a photo of your car', 'ارفع صورة سيارتك'],
+    s2_sub: ['A clear photo helps our team advise you precisely.', 'صورة واضحة تساعد فريقنا على تقديم النصيحة بدقة.'],
+    upload_cta: ['Tap to upload a photo', 'اضغط لرفع صورة'],
+    upload_hint: ['Gallery or camera · JPG, PNG or WebP · max 5 MB', 'من المعرض أو الكاميرا · JPG أو PNG أو WebP · بحد أقصى 5 ميجابايت'],
+    replace: ['Replace photo', 'تغيير الصورة'],
+    remove: ['Remove', 'إزالة'],
+    photo_ready: ['Photo added', 'تمت إضافة الصورة'],
+    photo_type_err: ['Please upload a JPG, PNG or WebP image.', 'يرجى رفع صورة بصيغة JPG أو PNG أو WebP.'],
+    photo_size_err: ['That photo is too large (max 8 MB).', 'الصورة كبيرة جدًا (بحد أقصى 8 ميجابايت).'],
+    photo_big_err: ['That photo is too large after optimization. Please choose a smaller one.', 'الصورة كبيرة جدًا بعد الضغط. يرجى اختيار صورة أصغر.'],
+    photo_read_err: ['We could not read that file. Please try another photo.', 'لم نتمكن من قراءة الملف. يرجى تجربة صورة أخرى.'],
+    s3_title: ['Car information', 'بيانات السيارة'],
+    car_brand: ['Car brand', 'ماركة السيارة'],
+    car_brand_ph: ['e.g. Mercedes-Benz', 'مثال: مرسيدس'],
+    car_model: ['Car model', 'موديل السيارة'],
+    car_model_ph: ['e.g. C-Class', 'مثال: سي كلاس'],
+    model_year: ['Model year', 'سنة الصنع'],
+    car_details: ['Additional car details', 'تفاصيل إضافية عن السيارة'],
+    car_details_ph: ['Colour, trim, interior — anything that helps us.', 'اللون، الفئة، المقصورة — أي تفاصيل تساعدنا.'],
+    s4_title: ['What would you like us to customize?', 'ماذا تريد أن نخصص؟'],
+    s4_sub: ['Describe exactly what you want — materials, colours, engraving, ideas.', 'اكتب بالضبط ما تريده — الخامات، الألوان، الحفر، والأفكار.'],
+    request_ph: ['Tell us exactly what you want us to customize for your car...', 'أخبرنا بالضبط بما تريد أن نخصصه لسيارتك...'],
+    s5_title: ['Your information', 'بياناتك'],
+    full_name: ['Full name', 'الاسم بالكامل'],
+    phone: ['Phone number', 'رقم الهاتف'],
+    whatsapp: ['WhatsApp number', 'رقم واتساب'],
+    email: ['Email (optional)', 'البريد الإلكتروني (اختياري)'],
+    preferred_contact: ['Preferred contact method', 'طريقة التواصل المفضلة'],
+    contact_phone: ['Phone call', 'اتصال هاتفي'],
+    contact_whatsapp: ['WhatsApp', 'واتساب'],
+    contact_email: ['Email', 'البريد الإلكتروني'],
+    additional_notes: ['Additional notes', 'ملاحظات إضافية'],
+    required: ['Required', 'مطلوب'],
+    submit: ['SUBMIT CUSTOM REQUEST', 'إرسال طلب التخصيص'],
+    submitting: ['Submitting…', 'جارٍ الإرسال…'],
+    success_title: ['Request received', 'تم استلام الطلب'],
+    success_msg: ['Your customization request has been received. Our team will contact you shortly.',
+      'تم استلام طلب التخصيص الخاص بك. سيتواصل معك فريقنا قريبًا.'],
+    request_id: ['Request ID', 'رقم الطلب'],
+    success_note: ['Keep this number for reference — we reply on the contact method you chose.',
+      'احتفظ بهذا الرقم للمراجعة — سنرد عليك عبر وسيلة التواصل التي اخترتها.'],
+    back_home: ['Back to home', 'العودة للرئيسية'],
+    unavailable_title: ['Customization is coming soon', 'التخصيص قريبًا'],
+    unavailable_sub: ['Our atelier is not accepting custom requests right now. Meanwhile, explore the collection.',
+      'الأتيليه لا يستقبل طلبات التخصيص حاليًا. في الوقت نفسه، استكشف المجموعة.'],
+    brand_hint: ['Start typing your brand', 'ابدأ بكتابة الماركة'],
+    err_form: ['Something went wrong. Please try again.', 'حدث خطأ ما. يرجى المحاولة مرة أخرى.'],
+    err_network: ['We could not reach the atelier. Please check your connection and try again.', 'تعذر الوصول إلى الأتيليه. تحقق من الاتصال وحاول مرة أخرى.'],
+  };
+  function cz(key) { const v = CZ_TEXT[key]; if (!v) return key; return L() === 'ar' ? v[1] : v[0]; }
+  const czE = (key) => VEL.esc(cz(key));
+
+  function czCategories() {
+    const c = state.data && state.data.customize;
+    return (c && Array.isArray(c.categories)) ? c.categories : [];
+  }
+  function czCatName(c) { return (L() === 'ar' && c.name_ar) ? c.name_ar : (c.name_en || c.slug || c.id); }
+
+  // Which of the five steps are already satisfied (drives the stepper).
+  function czStepDone() {
+    const f = state.customize;
+    return [
+      !!f.category,
+      !!f.photo,
+      !!(f.carBrand && f.carModel && f.modelYear),
+      !!(f.request && String(f.request).trim().length >= 10),
+      !!(f.fullName && f.phone),
+    ];
+  }
+  function czStepItems() {
+    const done = czStepDone();
+    const firstOpen = done.indexOf(false);
+    return done.map((d, i) => {
+      const cls = d ? 'done' : (i === (firstOpen < 0 ? done.length - 1 : firstOpen) ? 'active' : '');
+      return `<li class="cz-step ${cls}"><span class="cz-step-n">${d ? '✓' : i + 1}</span><span class="cz-step-l">${czE('step' + (i + 1))}</span></li>`;
+    }).join('');
+  }
+  function czSyncSteps() { const el = $('#cz-steps'); if (el) el.innerHTML = czStepItems(); }
+
+  function czNewClientKey() {
+    return 'cz_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  }
+
+  function czPhotoInner() {
+    const f = state.customize;
+    const err = f.errors.carImage ? `<div class="cz-err">${VESt(f.errors.carImage)}</div>` : '';
+    if (f.photo) {
+      return `<div class="cz-preview-wrap">
+          <img class="cz-preview" src="${f.photo}" alt="Your car">
+          <span class="cz-preview-badge">✓ ${czE('photo_ready')}</span>
+        </div>
+        <div class="cz-photo-actions">
+          <button type="button" class="btn btn-outline btn-sm" data-cz-action="replace">${czE('replace')}</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-cz-action="remove">${czE('remove')}</button>
+        </div>${err}`;
+    }
+    return `<div class="cz-drop-inner">
+        <span class="cz-drop-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 16.5 8.5 12l3 3L15 11l5 5.5"/><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9" r="1.6"/></svg></span>
+        <b>${czE('upload_cta')}</b>
+        <span class="cz-drop-hint">${czE('upload_hint')}</span>
+      </div>${err}`;
+  }
+  function czRenderPhoto() {
+    const host = $('#cz-photo');
+    if (!host) return;
+    host.classList.toggle('has-photo', !!state.customize.photo);
+    host.innerHTML = czPhotoInner();
+  }
+
+  // Reads the picked file, downscaling it in the browser so a 12 MP phone photo
+  // travels as a few hundred KB. Any failure (no canvas, HEIC, …) falls back to
+  // the original data URL — the server validates type and size again anyway.
+  function czReadImage(file) {
+    return new Promise((resolve) => {
+      let reader;
+      try { reader = new FileReader(); } catch (e) { return resolve({ ok: false }); }
+      reader.onerror = () => resolve({ ok: false });
+      reader.onload = () => {
+        const raw = String(reader.result || '');
+        if (!raw || raw.indexOf('data:image/') !== 0) return resolve({ ok: false });
+        let settled = false;
+        const done = (value) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } };
+        // Safety net: if the browser never reports load/error (unsupported
+        // format, blocked decode, headless environment), use the original file.
+        const timer = setTimeout(() => done({ ok: true, dataUrl: raw }), 4000);
+        let image;
+        try { image = new Image(); } catch (e) { return done({ ok: true, dataUrl: raw }); }
+        image.onerror = () => done({ ok: true, dataUrl: raw });
+        image.onload = () => {
+          try {
+            const w0 = image.width || 0, h0 = image.height || 0;
+            if (!w0 || !h0) return done({ ok: true, dataUrl: raw });
+            const scale = Math.min(1, CZ_PHOTO_DIM / Math.max(w0, h0));
+            const w = Math.max(1, Math.round(w0 * scale));
+            const h = Math.max(1, Math.round(h0 * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext && canvas.getContext('2d');
+            if (!ctx) return done({ ok: true, dataUrl: raw });
+            ctx.drawImage(image, 0, 0, w, h);
+            const out = canvas.toDataURL('image/jpeg', 0.85);
+            if (!out || out.indexOf('data:image/') !== 0 || out.length >= raw.length) {
+              return done({ ok: true, dataUrl: raw });
+            }
+            done({ ok: true, dataUrl: out, compressed: true });
+          } catch (e) { done({ ok: true, dataUrl: raw }); }
+        };
+        image.src = raw;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function czHandleFile(file) {
+    const f = state.customize;
+    if (!file) return;
+    const type = String(file.type || '').toLowerCase();
+    if (!/^image\/(jpeg|jpg|png|webp|heic|heif|avif)$/.test(type)) {
+      f.errors = Object.assign({}, f.errors, { carImage: cz('photo_type_err') });
+      czRenderPhoto();
+      return;
+    }
+    if (file.size > CZ_PHOTO_MAX_BYTES) {
+      f.errors = Object.assign({}, f.errors, { carImage: cz('photo_size_err') });
+      czRenderPhoto();
+      return;
+    }
+    const res = await czReadImage(file);
+    if (!res.ok || !res.dataUrl) {
+      f.errors = Object.assign({}, f.errors, { carImage: cz('photo_read_err') });
+      czRenderPhoto();
+      return;
+    }
+    if (res.dataUrl.length > CZ_PHOTO_MAX_DATA) {
+      f.errors = Object.assign({}, f.errors, { carImage: cz('photo_big_err') });
+      czRenderPhoto();
+      return;
+    }
+    f.photo = res.dataUrl;
+    f.photoName = file.name || '';
+    f.photoSize = file.size;
+    delete f.errors.carImage;
+    czRenderPhoto();
+    czSyncSteps();
+    notify(cz('photo_ready'), 'gold');
+  }
+
+  function czError(k) {
+    const e = state.customize.errors[k];
+    return e ? `<div class="cz-err">${VESt(e)}</div>` : '';
+  }
+  function customizeHTML() {
+    if (state.customize.success) return czSuccessHTML();
+    const cats = czCategories();
+    const f = state.customize;
+
+    if (!cats.length) {
+      return `${crumbs([pt('breadcrumb_home'), czE('customize')])}
+      <div class="container"><div class="cz-empty">
+        <div class="cz-empty-ic" aria-hidden="true">✦</div>
+        <h1>${czE('unavailable_title')}</h1>
+        <p>${czE('unavailable_sub')}</p>
+        <div class="cz-empty-actions">
+          <a class="btn btn-gold" href="#/collections">${pt('continue_shopping')}</a>
+          <a class="btn btn-ghost" href="#/">${pt('back_home')}</a>
+        </div>
+      </div></div>`;
+    }
+
+    return `${crumbs([pt('breadcrumb_home'), czE('customize')])}
+    <section class="cz-hero">
+      <div class="container">
+        <span class="kicker">${czE('kicker')}</span>
+        <h1>${czE('title')}</h1>
+        <p>${czE('sub')}</p>
+      </div>
+    </section>
+    <div class="container cz-wrap">
+      <ol class="cz-steps" id="cz-steps">${czStepItems()}</ol>
+
+      <form id="cz-form" class="cz-form" novalidate>
+        <section class="cz-block" id="cz-block-1">
+          <div class="cz-block-head"><span class="cz-num">1</span><div><h2>${czE('s1_title')}</h2><p>${czE('s1_sub')}</p></div></div>
+          <div class="cz-cats">
+            ${cats.map(c => `<button type="button" class="cz-cat ${f.category === c.id ? 'selected' : ''}" data-cz-cat="${VEL.esc(c.id)}">
+              <span class="cz-cat-img">${c.image ? `<img src="${VEL.esc(c.image)}" alt="" loading="lazy">` : '◆'}</span>
+              <span class="cz-cat-body">
+                <span class="cz-cat-name">${VEL.esc(czCatName(c))}</span>
+                <span class="cz-cat-count">${c.product_count || 0} ${VEL.plural(c.product_count || 0, 'product', 'products')}</span>
+              </span>
+              <span class="cz-cat-check" aria-hidden="true">✓</span>
+            </button>`).join('')}
+          </div>
+          ${czError('category')}
+        </section>
+
+        <section class="cz-block" id="cz-block-2">
+          <div class="cz-block-head"><span class="cz-num">2</span><div><h2>${czE('s2_title')}</h2><p>${czE('s2_sub')}</p></div></div>
+          <div class="cz-upload ${f.photo ? 'has-photo' : ''}" id="cz-photo">${czPhotoInner()}</div>
+          <input type="file" id="cz-file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden>
+        </section>
+
+        <section class="cz-block" id="cz-block-3">
+          <div class="cz-block-head"><span class="cz-num">3</span><div><h2>${czE('s3_title')}</h2></div></div>
+          <div class="frow">
+            <div class="field">
+              <label for="cz-brand">${czE('car_brand')} <span class="req">*</span></label>
+              <input id="cz-brand" name="carBrand" list="cz-brand-list" maxlength="60" placeholder="${czE('car_brand_ph')}" value="${VEL.esc(f.carBrand)}">
+              <datalist id="cz-brand-list">${(state.data.brands || []).map(b => `<option value="${VEL.esc(b.name_en || '')}"></option>`).join('')}</datalist>
+              ${czError('carBrand')}
+            </div>
+            <div class="field">
+              <label for="cz-model">${czE('car_model')} <span class="req">*</span></label>
+              <input id="cz-model" name="carModel" maxlength="60" placeholder="${czE('car_model_ph')}" value="${VEL.esc(f.carModel)}">
+              ${czError('carModel')}
+            </div>
+          </div>
+          <div class="frow">
+            <div class="field">
+              <label for="cz-year">${czE('model_year')} <span class="req">*</span></label>
+              <input id="cz-year" name="modelYear" inputmode="numeric" maxlength="4" placeholder="2022" value="${VEL.esc(f.modelYear)}">
+              ${czError('modelYear')}
+            </div>
+            <div class="field">
+              <label for="cz-details">${czE('car_details')}</label>
+              <input id="cz-details" name="carDetails" maxlength="600" placeholder="${czE('car_details_ph')}" value="${VEL.esc(f.carDetails)}">
+            </div>
+          </div>
+        </section>
+
+        <section class="cz-block" id="cz-block-4">
+          <div class="cz-block-head"><span class="cz-num">4</span><div><h2>${czE('s4_title')}</h2><p>${czE('s4_sub')}</p></div></div>
+          <div class="field">
+            <textarea id="cz-request" name="customizationRequest" rows="7" maxlength="2000" placeholder="${czE('request_ph')}">${VESt(f.request)}</textarea>
+            ${czError('customizationRequest')}
+          </div>
+        </section>
+
+        <section class="cz-block" id="cz-block-5">
+          <div class="cz-block-head"><span class="cz-num">5</span><div><h2>${czE('s5_title')}</h2></div></div>
+          <div class="frow">
+            <div class="field">
+              <label for="cz-name">${czE('full_name')} <span class="req">*</span></label>
+              <input id="cz-name" name="fullName" maxlength="60" autocomplete="name" value="${VEL.esc(f.fullName)}">
+              ${czError('fullName')}
+            </div>
+            <div class="field">
+              <label for="cz-phone">${czE('phone')} <span class="req">*</span></label>
+              <input id="cz-phone" name="phone" inputmode="tel" maxlength="20" autocomplete="tel" value="${VEL.esc(f.phone)}">
+              ${czError('phone')}
+            </div>
+          </div>
+          <div class="frow">
+            <div class="field">
+              <label for="cz-whatsapp">${czE('whatsapp')}</label>
+              <input id="cz-whatsapp" name="whatsapp" inputmode="tel" maxlength="20" value="${VEL.esc(f.whatsapp)}">
+              ${czError('whatsapp')}
+            </div>
+            <div class="field">
+              <label for="cz-email">${czE('email')}</label>
+              <input id="cz-email" name="email" type="email" inputmode="email" maxlength="120" autocomplete="email" value="${VEL.esc(f.email)}">
+              ${czError('email')}
+            </div>
+          </div>
+          <div class="field">
+            <label>${czE('preferred_contact')} <span class="req">*</span></label>
+            <div class="cz-contacts">
+              ${[['Phone', 'contact_phone'], ['WhatsApp', 'contact_whatsapp'], ['Email', 'contact_email']].map(([val, key]) => `<label class="cz-contact ${f.preferredContact === val ? 'active' : ''}">
+                <input type="radio" name="preferredContact" value="${val}" ${f.preferredContact === val ? 'checked' : ''}>
+                <span>${czE(key)}</span>
+              </label>`).join('')}
+            </div>
+            ${czError('preferredContact')}
+          </div>
+          <div class="field">
+            <label for="cz-notes">${czE('additional_notes')}</label>
+            <textarea id="cz-notes" name="additionalNotes" rows="3" maxlength="600">${VESt(f.additionalNotes)}</textarea>
+          </div>
+        </section>
+
+        <div class="cz-submit">
+          ${state.customize.errors._form ? `<div class="cz-err cz-err-form">${VESt(state.customize.errors._form)}</div>` : ''}
+          <button class="btn btn-gold btn-block cz-submit-btn" type="submit" id="cz-submit" ${f.submitting ? 'disabled' : ''}>
+            ${f.submitting ? czE('submitting') : czE('submit')}
+          </button>
+          <p class="cz-submit-note">${czE('success_note')}</p>
+        </div>
+      </form>
+    </div>`;
+  }
+
+  function czSuccessHTML() {
+    const s = state.customize.success || {};
+    const wa = (state.data.settings && state.data.settings.whatsapp) ? String(state.data.settings.whatsapp).replace(/\D/g, '') : '';
+    return `<div class="container"><div class="cz-success">
+      <div class="cz-success-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <h1>${czE('success_title')}</h1>
+      <p class="cz-success-msg">${czE('success_msg')}</p>
+      <div class="cz-success-card">
+        <div class="cz-success-row"><span>${czE('request_id')}</span><b>${VESt(s.id || '')}</b></div>
+        ${s.category ? `<div class="cz-success-row"><span>${czE('step1')}</span><span>${VESt(s.category)}</span></div>` : ''}
+        ${s.car ? `<div class="cz-success-row"><span>${czE('step3')}</span><span>${VESt(s.car)}</span></div>` : ''}
+      </div>
+      <p class="cz-success-note">${czE('success_note')}</p>
+      <div class="cz-success-actions">
+        <a class="btn btn-gold" href="#/">${pt('back_home')}</a>
+        <a class="btn btn-outline" href="#/collections">${pt('continue_shopping')}</a>
+        ${wa ? `<a class="btn btn-ghost" href="https://wa.me/${VESt(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
+      </div>
+    </div></div>`;
+  }
+
+  function czValidate(f) {
+    const e = {};
+    if (!f.category) e.category = L() === 'ar' ? 'يرجى اختيار الفئة.' : 'Please choose a category.';
+    if (!f.photo) e.carImage = L() === 'ar' ? 'صورة السيارة مطلوبة.' : 'A photo of your car is required.';
+    if (!f.carBrand.trim()) e.carBrand = L() === 'ar' ? 'ماركة السيارة مطلوبة.' : 'Car brand is required.';
+    if (!f.carModel.trim()) e.carModel = L() === 'ar' ? 'موديل السيارة مطلوب.' : 'Car model is required.';
+    if (!String(f.modelYear).trim()) e.modelYear = L() === 'ar' ? 'سنة الصنع مطلوبة.' : 'Model year is required.';
+    else if (!/^\d{4}$/.test(String(f.modelYear).trim())) e.modelYear = L() === 'ar' ? 'أدخل سنة من 4 أرقام.' : 'Enter a 4-digit model year.';
+    const req = String(f.request).trim();
+    if (!req) e.customizationRequest = L() === 'ar' ? 'أخبرنا بما تريد أن نخصصه.' : 'Tell us what you would like us to customize.';
+    else if (req.length < 10) e.customizationRequest = L() === 'ar' ? 'اشرح طلبك في 10 أحرف على الأقل.' : 'Please describe your request in at least 10 characters.';
+    if (!f.fullName.trim()) e.fullName = L() === 'ar' ? 'الاسم بالكامل مطلوب.' : 'Full name is required.';
+    if (!f.phone.trim()) e.phone = L() === 'ar' ? 'رقم الهاتف مطلوب.' : 'Phone number is required.';
+    else if (!/^[\d\s+\-()]{6,20}$/.test(f.phone.trim())) e.phone = L() === 'ar' ? 'أدخل رقم هاتف صحيح.' : 'Enter a valid phone number.';
+    if (f.whatsapp.trim() && !/^[\d\s+\-()]{6,20}$/.test(f.whatsapp.trim())) e.whatsapp = L() === 'ar' ? 'أدخل رقم واتساب صحيح.' : 'Enter a valid WhatsApp number.';
+    if (f.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email.trim())) e.email = L() === 'ar' ? 'أدخل بريدًا إلكترونيًا صحيحًا.' : 'Enter a valid email address.';
+    if (f.preferredContact === 'WhatsApp' && !f.whatsapp.trim()) e.whatsapp = L() === 'ar' ? 'أضف رقم واتساب لنتمكن من التواصل معك.' : 'Add your WhatsApp number so we can reach you there.';
+    return e;
+  }
+
+  async function submitCustomize(ev) {
+    ev.preventDefault();
+    const f = state.customize;
+    if (f.submitting) return;                     // double-tap guard (client side)
+    const form = ev.target;
+    const fd = new FormData(form);
+    Object.assign(f, {
+      carBrand: String(fd.get('carBrand') || ''),
+      carModel: String(fd.get('carModel') || ''),
+      modelYear: String(fd.get('modelYear') || ''),
+      carDetails: String(fd.get('carDetails') || ''),
+      request: String(fd.get('customizationRequest') || ''),
+      fullName: String(fd.get('fullName') || ''),
+      phone: String(fd.get('phone') || ''),
+      whatsapp: String(fd.get('whatsapp') || ''),
+      email: String(fd.get('email') || ''),
+      preferredContact: String(fd.get('preferredContact') || 'Phone'),
+      additionalNotes: String(fd.get('additionalNotes') || ''),
+    });
+
+    const errors = czValidate(f);
+    if (Object.keys(errors).length) {
+      f.errors = errors;
+      route();
+      const firstBad = document.querySelector('.cz-err');
+      if (firstBad && firstBad.scrollIntoView) firstBad.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
+
+    if (!f.clientKey) f.clientKey = czNewClientKey();   // one key per form fill
+    f.errors = {};
+    f.submitting = true;
+    czSyncSteps();
+    const btn = $('#cz-submit');
+    if (btn) { btn.disabled = true; btn.textContent = cz('submitting'); }
+
+    const payload = {
+      category: f.category,
+      carImage: f.photo,
+      carBrand: f.carBrand.trim(),
+      carModel: f.carModel.trim(),
+      modelYear: String(f.modelYear).trim(),
+      carDetails: f.carDetails.trim(),
+      customizationRequest: String(f.request).trim(),
+      fullName: f.fullName.trim(),
+      phone: f.phone.trim(),
+      whatsapp: f.whatsapp.trim(),
+      email: f.email.trim(),
+      preferredContact: f.preferredContact,
+      additionalNotes: f.additionalNotes.trim(),
+      clientKey: f.clientKey,
+      locale: L(),
+    };
+
+    try {
+      const res = await fetch('/api/customize/requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j && j.ok) {
+        const cat = czCategories().find(c => c.id === f.category);
+        state.customize = Object.assign({}, state.customize, {
+          success: {
+            id: j.requestId,
+            category: cat ? czCatName(cat) : '',
+            car: [f.carBrand.trim(), f.carModel.trim(), String(f.modelYear).trim()].filter(Boolean).join(' · '),
+          },
+          submitting: false,
+          errors: {},
+          clientKey: '',
+        });
+        route();
+        notify(cz('success_title'), 'gold');
+        return;
+      }
+      f.submitting = false;
+      f.errors = Object.assign({}, (j && j.errors) || {}, { _form: (j && j.error) || cz('err_form') });
+    } catch (err) {
+      f.submitting = false;
+      f.errors = { _form: cz('err_network') };
+    }
+    route();
+    const box = document.querySelector('.cz-err-form');
+    if (box && box.scrollIntoView) box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  function bindCustomize() {
+    const zone = $('#cz-photo');
+    const input = $('#cz-file');
+
+    if (zone && input) {
+      // One delegated handler: the block's inner HTML is swapped when a photo is
+      // added / replaced / removed, and it must keep responding.
+      zone.addEventListener('click', (ev) => {
+        const action = ev.target.closest('[data-cz-action]');
+        if (action) {
+          const kind = action.getAttribute('data-cz-action');
+          if (kind === 'remove') {
+            state.customize.photo = '';
+            state.customize.photoName = '';
+            state.customize.photoSize = 0;
+            czRenderPhoto(); czSyncSteps();
+          } else {
+            input.click();
+          }
+          return;
+        }
+        input.click();
+      });
+      input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (file) czHandleFile(file);
+        input.value = '';                    // allow picking the same file again
+      });
+      ['dragenter', 'dragover'].forEach(evt => zone.addEventListener(evt, (ev) => { ev.preventDefault(); zone.classList.add('dragging'); }));
+      ['dragleave', 'drop'].forEach(evt => zone.addEventListener(evt, (ev) => { ev.preventDefault(); zone.classList.remove('dragging'); }));
+      zone.addEventListener('drop', (ev) => {
+        const file = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+        if (file) czHandleFile(file);
+      });
+    }
+
+    $$('[data-cz-cat]').forEach(el => el.addEventListener('click', () => {
+      const id = el.getAttribute('data-cz-cat');
+      state.customize.category = id;
+      delete state.customize.errors.category;
+      $$('[data-cz-cat]').forEach(x => x.classList.toggle('selected', x === el));
+      czSyncSteps();
+    }));
+
+    const form = $('#cz-form');
+    if (form) form.addEventListener('submit', submitCustomize);
   }
 
   // ============================================================== BINDINGS
@@ -1844,6 +2393,9 @@
         if (ab) { const p = product(ab.getAttribute('data-addbundle')); if (!p) return; const shape = (p.keyShapes||[]).find(s=>s.available); addToCart(p.id, shape?shape.shape:'', 1); return; }
       });
     }
+
+    // customize (five-step bespoke request)
+    if ($('#cz-form')) bindCustomize();
 
     // checkout form
     const form = $('#checkout-form');

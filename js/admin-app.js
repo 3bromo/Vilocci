@@ -135,6 +135,17 @@
     dataMeta: null,
     diagnosis: null,
     pollErrorShown: false,
+    // Customize: the editable ON/OFF draft (Customize Settings) and the
+    // submitted requests (Customize Requests), loaded on demand.
+    czSettings: null,
+    czRequests: null,
+    czLoading: false,
+    czError: '',
+    czSaving: false,
+    czFilter: 'all',
+    czSearch: '',
+    czSearchTimer: null,
+    czPhotoCache: {},
   };
 
   function money(n) { return 'EGP ' + Math.round(n || 0).toLocaleString('en-US'); }
@@ -458,6 +469,7 @@
       if (ok && j) {
         state.data = j;
         state.dataMeta = j._meta || null;
+        state.czSettings = null;      // re-read from the fresh payload
         if (dataIsDegraded(state.dataMeta)) await fetchDiagnosis();
       } else {
         state.dataError = (j && j.error) || ('HTTP ' + status);
@@ -523,6 +535,11 @@
   function navigate(view) {
     state.view = view;
     state.sidebarOpen = false;
+    // The requests list is fetched fresh on every visit (and signed photo links
+    // are short-lived), while the settings draft is re-read from the server
+    // payload.
+    if (view === 'customize-requests') { state.czRequests = null; state.czError = ''; state.czPhotoCache = {}; }
+    if (view === 'customize-settings') { state.czSettings = null; }
     render();
     window.scrollTo(0, 0);
   }
@@ -629,6 +646,8 @@
       { id: 'content', icon: '📝', label: 'Website Content' },
       { id: 'images', icon: '🖼️', label: 'Website Images' },
       { id: 'messages', icon: '✉️', label: 'Contact Messages', badge: getUnreadMsgCount() },
+      { id: 'customize-settings', icon: '🎨', label: 'Customize Settings' },
+      { id: 'customize-requests', icon: '📸', label: 'Customize Requests', badge: getNewCustomizeCount() },
       { id: 'settings', icon: '⚙️', label: 'Settings' },
     ];
 
@@ -651,8 +670,10 @@
         ${items.slice(4, 8).map(i => sidebarLink(i, v)).join('')}
         <div class="nav-label">Content</div>
         ${items.slice(8, 12).map(i => sidebarLink(i, v)).join('')}
+        <div class="nav-label">Customize</div>
+        ${items.slice(12, 14).map(i => sidebarLink(i, v)).join('')}
         <div class="nav-label">System</div>
-        ${items.slice(12).map(i => sidebarLink(i, v)).join('')}
+        ${items.slice(14).map(i => sidebarLink(i, v)).join('')}
       </nav>
       <div class="sidebar-footer">
         <a href="/" target="_blank">
@@ -683,6 +704,14 @@
     return state.data.messages.filter(m => !m.is_read).length;
   }
 
+  // New (not yet contacted) customization requests — drives the sidebar badge.
+  function getNewCustomizeCount() {
+    const cfg = state.data && state.data.customize;
+    const stats = cfg && cfg.stats;
+    const n = stats && Number(stats.new);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
   function renderHeader() {
     const titles = {
       dashboard: 'Dashboard', products: 'Products', categories: 'Categories',
@@ -690,6 +719,8 @@
       inventory: 'Inventory', discounts: 'Discounts', packages: 'Packages',
       content: 'Website Content', images: 'Website Images',
       messages: 'Contact Messages', settings: 'Settings',
+      'customize-settings': 'Customize Settings',
+      'customize-requests': 'Customize Requests',
     };
     return `
     <header class="top-header">
@@ -720,6 +751,8 @@
       case 'content': return renderContent();
       case 'images': return renderImages();
       case 'messages': return renderMessages();
+      case 'customize-settings': return renderCustomizeSettings();
+      case 'customize-requests': return renderCustomizeRequests();
       case 'settings': return renderSettings();
       default: return renderDashboard();
     }
@@ -1587,6 +1620,478 @@
   }
 
   // ========================================================================
+  // CUSTOMIZE — Settings (which categories are available) + Requests
+  // ========================================================================
+  // The availability of a category for Customize lives in the `customize`
+  // setting (see supabase/migrations/003_customize.sql) and NEVER touches
+  // categories.active, so the normal shopping pages are unaffected by anything
+  // that is changed here.
+  const CUSTOMIZE_STATUSES = ['New', 'Contacted', 'In Progress', 'Completed', 'Cancelled'];
+  const CZ_STATUS_CLASS = {
+    'New': 'badge-new',
+    'Contacted': 'badge-confirmed',
+    'In Progress': 'badge-processing',
+    'Completed': 'badge-delivered',
+    'Cancelled': 'badge-cancelled',
+  };
+
+  function czConfig() {
+    const c = state.data && state.data.customize;
+    return (c && typeof c === 'object') ? c : { categories: {}, list: [], stats: { total: 0, new: 0 } };
+  }
+
+  // Every category the site has, with its Customize availability. `list` comes
+  // from the server; the plain categories collection is the fallback for an
+  // older payload.
+  function czCategoryRows() {
+    const cfg = czConfig();
+    if (Array.isArray(cfg.list) && cfg.list.length) {
+      return cfg.list.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+    return (state.data?.categories || []).slice()
+      .sort((a, b) => (a.order || 0) - (b.order || 0))
+      .map(c => ({
+        id: c.id, slug: c.slug, name_en: c.name_en || c.name, name_ar: c.name_ar,
+        image: c.image, product_count: c.product_count, order: c.order,
+        active: c.active !== false,
+        enabled: cfg.categories ? cfg.categories[c.id] !== false : true,
+      }));
+  }
+
+  // The ON/OFF draft the admin is editing (starts from what is saved).
+  function czDraft() {
+    const rows = czCategoryRows();
+    if (!state.czSettings) {
+      const map = {};
+      rows.forEach(c => { map[c.id] = c.enabled !== false; });
+      state.czSettings = map;
+    }
+    return state.czSettings;
+  }
+
+  function renderCustomizeSettings() {
+    const rows = czCategoryRows();
+    const draft = czDraft();
+    const enabled = rows.filter(c => draft[c.id] !== false).length;
+    const cfg = czConfig();
+    return `
+    <div class="card">
+      <div class="card-header">
+        <h3>🎨 Customize Settings</h3>
+        <span class="cz-hint">Switch a category ON to offer it on the public Customize page. This never changes the normal shop pages.</span>
+      </div>
+      <div class="card-body" style="padding:0;overflow-x:auto;">
+        ${rows.length ? `
+        <table class="data-table">
+          <thead><tr><th style="width:70px;">Image</th><th>Category</th><th>Slug</th><th>Products</th><th>Shop page</th><th style="width:250px;">Available for Customize</th></tr></thead>
+          <tbody>
+            ${rows.map(c => {
+              const on = draft[c.id] !== false;
+              return `<tr>
+                <td>${c.image ? `<img src="${esc(c.image)}" alt="" style="width:48px;height:36px;object-fit:cover;border-radius:6px;background:var(--cream);">` : '<div style="width:48px;height:36px;background:var(--cream);border-radius:6px;display:flex;align-items:center;justify-content:center;">🏷️</div>'}</td>
+                <td>
+                  <div style="font-weight:600;font-size:13px;">${esc(c.name_en || c.id)}</div>
+                  ${c.name_ar ? `<div style="font-size:11px;color:var(--text-muted);" dir="rtl">${esc(c.name_ar)}</div>` : ''}
+                </td>
+                <td>${esc(c.slug || c.id)}</td>
+                <td>${c.product_count != null ? c.product_count : '—'}</td>
+                <td>${c.active !== false ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-inactive">Hidden</span>'}</td>
+                <td>
+                  <div class="cz-toggle" data-cz-row="${esc(c.id)}">
+                    <button type="button" class="cz-opt ${on ? 'on' : ''}" data-cz-enable="${esc(c.id)}" data-cz-value="1" aria-pressed="${on}">ON</button>
+                    <button type="button" class="cz-opt ${!on ? 'off' : ''}" data-cz-enable="${esc(c.id)}" data-cz-value="0" aria-pressed="${!on}">OFF</button>
+                  </div>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>` : '<div class="empty-state"><div class="empty-icon">🏷️</div><h4>No categories yet</h4><p>Add categories under Catalog → Categories first.</p></div>'}
+      </div>
+      <div class="card-footer">
+        <span class="cz-summary" id="cz-settings-summary">${enabled} of ${rows.length} categor${rows.length === 1 ? 'y' : 'ies'} available for Customize</span>
+        <button class="btn btn-primary" id="btn-save-customize" ${state.czSaving ? 'disabled' : ''}>${state.czSaving ? 'Saving…' : '💾 Save Changes'}</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>ℹ️ How this works</h3></div>
+      <div class="card-body">
+        <p class="cz-hint">Customers open <a href="/#/customize" target="_blank" rel="noopener">/#/customize</a> and only see the categories switched ON above. The standard category pages keep showing every category according to its own Active/Hidden setting.</p>
+        <p class="cz-hint">${cfg.updatedAt ? `Last saved ${fmtDateTime(cfg.updatedAt)}.` : 'No Customize configuration saved yet — every existing category is offered by default.'}</p>
+        <p class="cz-hint">Car photos are stored in the private <code>customize-uploads</code> bucket (${cfg.storage && cfg.storage.configured ? 'Supabase Storage' : 'inline fallback — Supabase Storage is not configured on this server'}) and are only viewable by an admin through short-lived signed links.</p>
+      </div>
+    </div>`;
+  }
+
+  function bindCustomizeSettings() {
+    czDraft();   // make sure the draft exists before any click
+    $$('[data-cz-enable]').forEach(el => el.addEventListener('click', () => {
+      const id = el.dataset.czEnable;
+      const on = el.dataset.czValue === '1';
+      state.czSettings = Object.assign({}, czDraft(), { [id]: on });
+      const row = el.closest('[data-cz-row]');
+      if (row) {
+        row.querySelectorAll('[data-cz-enable]').forEach(b => {
+          const isOn = b.dataset.czValue === '1';
+          b.classList.toggle(isOn ? 'on' : 'off', isOn === on);
+          b.setAttribute('aria-pressed', String(isOn === on));
+        });
+      }
+      const rows = czCategoryRows();
+      const enabled = rows.filter(c => state.czSettings[c.id] !== false).length;
+      const summary = $('#cz-settings-summary');
+      if (summary) summary.textContent = `${enabled} of ${rows.length} categor${rows.length === 1 ? 'y' : 'ies'} available for Customize`;
+    }));
+
+    const save = $('#btn-save-customize');
+    if (save) save.addEventListener('click', async () => {
+      const categories = czDraft();
+      state.czSaving = true;
+      save.disabled = true;
+      save.textContent = 'Saving…';
+      try {
+        const { ok, j } = await api('POST', '/api/admin/customize/settings', { categories });
+        if (!ok || !j || !j.ok) throw new Error((j && j.error) || 'Save failed');
+        if (state.data) state.data.customize = Object.assign({}, czConfig(), j.customize || {});
+        state.czSettings = null;
+        toast('Customize settings saved', 'success');
+      } catch (e) {
+        toast('Failed: ' + e.message, 'error');
+      }
+      state.czSaving = false;
+      render();
+    });
+  }
+
+  // ------------------------------------------------------------------ requests
+  function czRequestCounts() {
+    const all = state.czRequests || [];
+    const counts = { total: all.length };
+    CUSTOMIZE_STATUSES.forEach(s => { counts[s] = all.filter(r => (r.status || 'New') === s).length; });
+    return counts;
+  }
+
+  function czFilteredRequests() {
+    let list = (state.czRequests || []).slice();
+    if (state.czFilter && state.czFilter !== 'all') list = list.filter(r => (r.status || 'New') === state.czFilter);
+    const q = (state.czSearch || '').trim().toLowerCase();
+    if (q) {
+      list = list.filter(r => [r.id, r.customer_name, r.phone, r.whatsapp, r.email,
+        r.car_brand, r.car_model, r.model_year, r.category_name_en]
+        .filter(Boolean).some(v => String(v).toLowerCase().includes(q)));
+    }
+    return list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  }
+
+  function renderCustomizeRequests() {
+    if (state.czRequests === null && state.czLoading) {
+      return `<div class="loading-state"><div class="spinner"></div> Loading customization requests…</div>`;
+    }
+    if (state.czRequests === null) {
+      return `<div class="card"><div class="card-body">
+        <div class="empty-state">
+          <div class="empty-icon">⚠️</div>
+          <h4>Could not load the requests</h4>
+          <p>${esc(state.czError || 'Unknown error')}</p>
+          <button class="btn btn-primary" id="cz-retry">Retry</button>
+        </div>
+      </div></div>`;
+    }
+
+    return `
+    <div class="toolbar cz-toolbar">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="Search name, phone, request ID, car…" value="${esc(state.czSearch)}" id="cz-search">
+      </div>
+      <button class="btn btn-secondary btn-sm" id="cz-refresh">↻ Refresh</button>
+    </div>
+    <div id="cz-list-region">${czListRegionHTML()}</div>`;
+  }
+
+  function czListRegionHTML() {
+    const counts = czRequestCounts();
+    const list = czFilteredRequests();
+    const chips = [['all', 'All']].concat(CUSTOMIZE_STATUSES.map(s => [s, s]));
+
+    return `
+    <div class="cz-chips">
+      ${chips.map(([key, label]) => `<button type="button" class="cz-chip ${state.czFilter === key ? 'active' : ''}" data-cz-filter="${esc(key)}">${esc(label)} <b>${key === 'all' ? counts.total : (counts[key] || 0)}</b></button>`).join('')}
+    </div>
+    <div class="card">
+      <div class="card-body" style="padding:0;overflow-x:auto;">
+        ${list.length ? `
+        <table class="data-table cz-table">
+          <thead><tr><th>Request</th><th>Photo</th><th>Category</th><th>Car</th><th>Customer</th><th>Status</th><th style="width:170px;">Actions</th></tr></thead>
+          <tbody>
+            ${list.map(r => `<tr>
+              <td>
+                <div style="font-weight:600;font-size:12.5px;">${esc(r.id)}</div>
+                <div style="font-size:11px;color:var(--text-muted);">${fmtDateTime(r.created_at)}</div>
+              </td>
+              <td>
+                <button type="button" class="cz-thumb" data-cz-thumb="${esc(r.id)}" title="View car photo">
+                  ${r.hasPhoto ? '<span class="cz-thumb-state">Load</span>' : '<span class="cz-thumb-none">—</span>'}
+                </button>
+              </td>
+              <td>${esc(r.category_name_en || r.category_slug || r.category_id || '—')}</td>
+              <td>
+                <div style="font-size:12.5px;font-weight:600;">${esc(r.car_brand || '—')}</div>
+                <div style="font-size:11px;color:var(--text-muted);">${esc([r.car_model, r.model_year].filter(Boolean).join(' · '))}</div>
+              </td>
+              <td>
+                <div style="font-size:12.5px;font-weight:600;">${esc(r.customer_name || '—')}</div>
+                <div style="font-size:11px;color:var(--text-muted);">${esc(r.phone || '')}</div>
+              </td>
+              <td>
+                <select class="cz-status-select" data-cz-status="${esc(r.id)}">
+                  ${CUSTOMIZE_STATUSES.map(s => `<option value="${esc(s)}" ${(r.status || 'New') === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+                </select>
+                <div style="margin-top:4px;"><span class="badge ${CZ_STATUS_CLASS[r.status || 'New'] || 'badge-new'}">${esc(r.status || 'New')}</span></div>
+              </td>
+              <td>
+                <button class="btn btn-ghost btn-sm" data-cz-view="${esc(r.id)}" title="Open">👁</button>
+                <button class="btn btn-ghost btn-sm" data-cz-photo="${esc(r.id)}" title="Car photo">🖼</button>
+                <button class="btn btn-ghost btn-sm" data-cz-delete="${esc(r.id)}" title="Delete">🗑</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>` : `<div class="empty-state"><div class="empty-icon">📸</div><h4>No customization requests</h4><p>${state.czFilter !== 'all' || state.czSearch ? 'Nothing matches this filter.' : 'Requests submitted from the Customize page appear here.'}</p></div>`}
+      </div>
+    </div>`;
+  }
+
+  // Signed (or inline) photo URL for one request — cached for the session.
+  async function czPhoto(id) {
+    if (state.czPhotoCache[id]) return state.czPhotoCache[id];
+    const { ok, j } = await api('GET', `/api/admin/customize/requests/${encodeURIComponent(id)}/photo`);
+    if (!ok || !j || !j.url) throw new Error((j && (j.error || j.hint)) || 'Photo unavailable');
+    state.czPhotoCache[id] = j;
+    return j;
+  }
+
+  function bindCustomizeRequests() {
+    // First visit (or after a refresh) → fetch the list, then re-render.
+    if (state.czRequests === null && !state.czLoading) {
+      loadCustomizeRequests();
+      return;
+    }
+
+    const search = $('#cz-search');
+    if (search) search.addEventListener('input', (e) => {
+      state.czSearch = e.target.value;
+      clearTimeout(state.czSearchTimer);
+      // Refresh only the list region — the search box keeps focus while typing.
+      state.czSearchTimer = setTimeout(czRefreshList, 220);
+    });
+
+    const refresh = $('#cz-refresh');
+    if (refresh) refresh.addEventListener('click', () => { state.czRequests = null; state.czPhotoCache = {}; render(); });
+
+    const retry = $('#cz-retry');
+    if (retry) retry.addEventListener('click', () => { state.czRequests = null; state.czError = ''; render(); });
+
+    bindCzList();
+  }
+
+  // Everything inside #cz-list-region is re-bound whenever that region is
+  // re-rendered (search / filter / status change), so no control is ever left
+  // without its handler.
+  function bindCzList() {
+    $$('[data-cz-filter]').forEach(el => el.addEventListener('click', () => {
+      state.czFilter = el.dataset.czFilter;
+      czRefreshList();
+    }));
+
+    // Load the thumbnails (private bucket → signed link minted per request).
+    const thumbs = $$('[data-cz-thumb]').slice(0, 30);
+    thumbs.forEach(async (el) => {
+      const id = el.dataset.czThumb;
+      const row = (state.czRequests || []).find(r => r.id === id);
+      if (!row || !row.hasPhoto) return;
+      try {
+        const p = await czPhoto(id);
+        el.innerHTML = `<img src="${esc(p.url)}" alt="Car photo">`;
+        el.classList.add('loaded');
+      } catch (e) {
+        el.innerHTML = '<span class="cz-thumb-fail">!</span>';
+      }
+    });
+
+    $$('[data-cz-photo]').forEach(el => el.addEventListener('click', () => showCustomizePhoto(el.dataset.czPhoto)));
+    $$('[data-cz-thumb]').forEach(el => el.addEventListener('click', () => showCustomizePhoto(el.dataset.czThumb)));
+    $$('[data-cz-view]').forEach(el => el.addEventListener('click', () => showCustomizeRequestDetail(el.dataset.czView)));
+
+    $$('[data-cz-status]').forEach(el => el.addEventListener('change', async () => {
+      const id = el.dataset.czStatus;
+      const status = el.value;
+      el.disabled = true;
+      try {
+        const { ok, j } = await api('POST', `/api/admin/customize/requests/${encodeURIComponent(id)}`, { status });
+        if (!ok || !j || !j.ok) throw new Error((j && j.error) || 'Update failed');
+        const row = (state.czRequests || []).find(r => r.id === id);
+        if (row) row.status = status;
+        toast(`Marked as ${status}`, 'success');
+      } catch (e) {
+        toast('Failed: ' + e.message, 'error');
+        el.value = ((state.czRequests || []).find(r => r.id === id) || {}).status || 'New';
+      }
+      el.disabled = false;
+      czRefreshList();
+    }));
+
+    $$('[data-cz-delete]').forEach(el => el.addEventListener('click', () => {
+      const id = el.dataset.czDelete;
+      showConfirm('Delete Request', `Request ${id} and its car photo will be permanently deleted.`, async () => {
+        try {
+          const { ok, j } = await api('POST', `/api/admin/customize/requests/${encodeURIComponent(id)}/delete`);
+          if (!ok || !j || !j.ok) throw new Error((j && j.error) || 'Delete failed');
+          state.czRequests = (state.czRequests || []).filter(r => r.id !== id);
+          delete state.czPhotoCache[id];
+          toast('Request deleted', 'success');
+          render();
+        } catch (e) { toast('Failed: ' + e.message, 'error'); }
+      }, 'Delete');
+    }));
+  }
+
+  function czRefreshList() {
+    const host = $('#cz-list-region');
+    if (!host) return;
+    host.innerHTML = czListRegionHTML();
+    bindCzList();
+  }
+
+  async function loadCustomizeRequests() {
+    state.czLoading = true;
+    state.czError = '';
+    render();
+    try {
+      const { ok, j, status } = await api('GET', '/api/admin/customize/requests');
+      if (ok && j && Array.isArray(j.requests)) {
+        state.czRequests = j.requests;
+      } else {
+        state.czRequests = [];
+        state.czError = (j && (j.hint || j.error)) || ('HTTP ' + status);
+      }
+    } catch (e) {
+      state.czRequests = [];
+      state.czError = String((e && e.message) || e);
+    }
+    state.czLoading = false;
+    render();
+  }
+
+  // Large, secure view of the private car photo.
+  async function showCustomizePhoto(id) {
+    showModal(`
+      <div class="modal cz-photo-modal">
+        <div class="modal-header"><h3>Car photo · ${esc(id)}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div>
+        <div class="modal-body" id="cz-photo-body"><div class="loading-state"><div class="spinner"></div> Opening secure link…</div></div>
+        <div class="modal-footer"><button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Close</button></div>
+      </div>`);
+    const body = $('#cz-photo-body');
+    try {
+      const p = await czPhoto(id);
+      body.innerHTML = `<img class="cz-photo-full" src="${esc(p.url)}" alt="Customer car photo">
+        <p class="cz-hint">${p.kind === 'signed'
+          ? `Private storage · secure link expires in ${Math.max(1, Math.round((p.expiresIn || 300) / 60))} minute(s).`
+          : 'Stored inline on the request row (Supabase Storage is not configured on this server).'}</p>`;
+    } catch (e) {
+      body.innerHTML = `<div class="empty-state"><div class="empty-icon">🖼</div><h4>Photo unavailable</h4><p>${esc(e.message)}</p></div>`;
+    }
+  }
+
+  function czDetailRow(label, value) {
+    return `<div class="cz-detail-row"><span>${esc(label)}</span><b>${value}</b></div>`;
+  }
+
+  function showCustomizeRequestDetail(id) {
+    const r = (state.czRequests || []).find(x => x.id === id);
+    if (!r) return;
+    showModal(`
+      <div class="modal cz-detail-modal">
+        <div class="modal-header"><h3>Customize request · ${esc(r.id)}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div>
+        <div class="modal-body">
+          <div class="cz-detail-grid">
+            <div class="cz-detail-photo" id="cz-detail-photo">${r.hasPhoto ? '<div class="cz-thumb-state">Loading photo…</div>' : '<div class="cz-thumb-none">No photo</div>'}</div>
+            <div class="cz-detail-fields">
+              ${czDetailRow('Submitted', esc(fmtDateTime(r.created_at)))}
+              ${czDetailRow('Category', esc(r.category_name_en || r.category_slug || r.category_id || '—'))}
+              ${czDetailRow('Car', esc([r.car_brand, r.car_model, r.model_year].filter(Boolean).join(' · ') || '—'))}
+              ${r.car_details ? czDetailRow('Car details', esc(r.car_details)) : ''}
+              ${czDetailRow('Customer', esc(r.customer_name || '—'))}
+              ${czDetailRow('Phone', esc(r.phone || '—'))}
+              ${czDetailRow('WhatsApp', r.whatsapp ? `<a href="https://wa.me/${esc(String(r.whatsapp).replace(/\D/g, ''))}" target="_blank" rel="noopener">${esc(r.whatsapp)}</a>` : '—')}
+              ${czDetailRow('Email', r.email ? `<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>` : '—')}
+              ${czDetailRow('Preferred contact', esc(r.preferred_contact || 'Phone'))}
+              ${r.additional_notes ? czDetailRow('Customer notes', esc(r.additional_notes)) : ''}
+            </div>
+          </div>
+          <div class="cz-detail-block">
+            <h4>Customization request</h4>
+            <p class="cz-detail-request">${esc(r.customization_request || '')}</p>
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="cz-detail-status">${CUSTOMIZE_STATUSES.map(s => `<option value="${esc(s)}" ${(r.status || 'New') === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
+          </div>
+          <div class="form-group">
+            <label>Internal notes (admin only)</label>
+            <textarea id="cz-detail-notes" rows="4" placeholder="Called the customer, waiting for photos of the interior…">${esc(r.admin_notes || '')}</textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-danger" id="cz-detail-delete">🗑 Delete</button>
+          <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Close</button>
+          <button class="btn btn-primary" id="cz-detail-save">Save Changes</button>
+        </div>
+      </div>`);
+
+    if (r.hasPhoto) {
+      czPhoto(id).then(p => {
+        const host = $('#cz-detail-photo');
+        if (host) host.innerHTML = `<img src="${esc(p.url)}" alt="Customer car photo" data-cz-open-photo="${esc(id)}">`;
+      }).catch(() => {
+        const host = $('#cz-detail-photo');
+        if (host) host.innerHTML = '<div class="cz-thumb-fail">Photo unavailable</div>';
+      });
+    }
+
+    const saveBtn = $('#cz-detail-save');
+    if (saveBtn) saveBtn.addEventListener('click', async () => {
+      const status = $('#cz-detail-status').value;
+      const notes = $('#cz-detail-notes').value;
+      saveBtn.disabled = true;
+      try {
+        const { ok, j } = await api('POST', `/api/admin/customize/requests/${encodeURIComponent(id)}`, { status, admin_notes: notes });
+        if (!ok || !j || !j.ok) throw new Error((j && j.error) || 'Save failed');
+        Object.assign(r, { status, admin_notes: notes });
+        toast('Request updated', 'success');
+        closeAllModals();
+        render();
+      } catch (e) {
+        toast('Failed: ' + e.message, 'error');
+        saveBtn.disabled = false;
+      }
+    });
+
+    const delBtn = $('#cz-detail-delete');
+    if (delBtn) delBtn.addEventListener('click', () => {
+      showConfirm('Delete Request', `Request ${id} and its car photo will be permanently deleted.`, async () => {
+        try {
+          const { ok, j } = await api('POST', `/api/admin/customize/requests/${encodeURIComponent(id)}/delete`);
+          if (!ok || !j || !j.ok) throw new Error((j && j.error) || 'Delete failed');
+          state.czRequests = (state.czRequests || []).filter(x => x.id !== id);
+          delete state.czPhotoCache[id];
+          toast('Request deleted', 'success');
+          closeAllModals();
+          render();
+        } catch (e) { toast('Failed: ' + e.message, 'error'); }
+      }, 'Delete');
+    });
+  }
+
+  // ========================================================================
   // SETTINGS
   // ========================================================================
   function renderSettings() {
@@ -1755,6 +2260,8 @@
       case 'content': bindContent(); break;
       case 'images': bindImages(); break;
       case 'messages': bindMessages(); break;
+      case 'customize-settings': bindCustomizeSettings(); break;
+      case 'customize-requests': bindCustomizeRequests(); break;
       case 'settings': bindSettings(); break;
     }
   }
