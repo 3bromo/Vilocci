@@ -13,13 +13,14 @@
     "migrate:apply": "node scripts/migrate.js --apply",
     "migrate:sql": "node scripts/migrate.js --print-sql",
     "postinstall": "node data/seed.js",
-    "test": "node test/smoke.js && node test/admin.js && node test/admin_cms.js && node test/db_fallback.js",
+    "test": "node test/smoke.js && node test/admin.js && node test/admin_cms.js && node test/admin_packages.js && node test/db_fallback.js",
     "test:e2e": "node test/e2e.js",
     "test:phase3": "node test/phase3_flow.js",
     "test:phase4": "node test/phase4_flow.js",
     "shot": "node test/shot.js",
     "test:db": "node test/supabase_e2e.js",
     "test:admin": "node test/admin_cms.js",
+    "test:packages": "node test/admin_packages.js",
     "test:fallback": "node test/db_fallback.js"
   },
   "engines": {
