@@ -99,6 +99,68 @@ const quiet = (fn) => {
   check('no fallback flag when json is what was asked for', db.health().usingJsonFallback === false, JSON.stringify(db.health()));
   const cat3 = await db.getCatalog();
   check('catalog served', cat3.products.length === 117);
+
+  // -----------------------------------------------------------------------
+  // Admin writes on the json driver must stay in APP shape.
+  //
+  // saveRecord() used to persist the translated SQL row (brand_slug /
+  // bundle_price / key_case_id) into the JSON store, which jsonCatalog()
+  // serves straight back with no row->app mapping. Every reader uses camelCase,
+  // so an admin edit read `undefined`: an edited bundle rendered as "EGP 0"
+  // and looked like the save had silently failed. patchRecord() compounded it
+  // by running the already-app-shaped record through FROM_ROW, which blanked
+  // brandSlug / bundlePrice / keyCaseProductId before the patch was merged —
+  // dropping every field the edit form does not expose.
+  // -----------------------------------------------------------------------
+  console.log('\n== json driver: admin writes keep the app shape ==');
+  const bundlesBefore = cat3.bundles.slice();
+  const seeded = bundlesBefore.find((b) => b.id === 'b_mercedes-benz');
+  check('seeded bundle is app-shaped', seeded.brandSlug === 'mercedes-benz' && Number(seeded.bundlePrice) > 0,
+    JSON.stringify({ brandSlug: seeded.brandSlug, bundlePrice: seeded.bundlePrice }));
+
+  // Exactly the patch the Admin → Packages ✏️ modal sends.
+  const patch = {
+    brandSlug: seeded.brandSlug, bundlePrice: 2299, normalTotal: 2999,
+    title_en: 'Fallback Patch Check', title_ar: 'فحص السقوط', active: true,
+  };
+  await db.patchRecord('bundles', seeded.id, patch);
+  const patched = (await db.getCatalog()).bundles.find((b) => b.id === seeded.id);
+  check('edited bundlePrice reads back as camelCase', Number(patched.bundlePrice) === 2299, patched.bundlePrice);
+  check('edited normalTotal reads back as camelCase', Number(patched.normalTotal) === 2999, patched.normalTotal);
+  check('edited title_en persisted', patched.title_en === 'Fallback Patch Check', patched.title_en);
+  check('no snake_case row keys leaked into the store',
+    patched.bundle_price === undefined && patched.brand_slug === undefined && patched.normal_total === undefined,
+    JSON.stringify(Object.keys(patched).filter((k) => /^(bundle_price|brand_slug|normal_total|key_case_id)$/.test(k))));
+  check('unexposed keyCaseProductId survived the patch',
+    patched.keyCaseProductId === seeded.keyCaseProductId, `${patched.keyCaseProductId} vs ${seeded.keyCaseProductId}`);
+  check('unexposed keyHolderProductId survived the patch',
+    patched.keyHolderProductId === seeded.keyHolderProductId, patched.keyHolderProductId);
+  check('unexposed medalProductId survived the patch', patched.medalProductId === seeded.medalProductId);
+  check('unexposed sub_en copy survived the patch', patched.sub_en === seeded.sub_en);
+  check('unexposed startDate survived the patch', patched.startDate === seeded.startDate, patched.startDate);
+  check('unexposed discountPercent survived the patch',
+    Number(patched.discountPercent) === Number(seeded.discountPercent), patched.discountPercent);
+
+  // A brand-new record must land app-shaped too, or its prices read as 0.
+  const createdBundle = {
+    id: 'bundle_qa_fallback', brandSlug: 'bmw', title_en: 'QA Fallback Bundle',
+    bundlePrice: 1299, normalTotal: 1999, active: true, order: 99,
+  };
+  await db.saveRecord('bundles', createdBundle);
+  const readBack = (await db.getCatalog()).bundles.find((b) => b.id === createdBundle.id);
+  check('newly saved bundle reads back app-shaped', Number(readBack.bundlePrice) === 1299, readBack.bundlePrice);
+  check('newly saved bundle keeps its brandSlug', readBack.brandSlug === 'bmw', readBack.brandSlug);
+  await db.deleteRecord('bundles', createdBundle.id);
+  check('throwaway bundle removed again', !(await db.getCatalog()).bundles.some((b) => b.id === createdBundle.id));
+
+  const catalogAfter = await db.getCatalog();
+  const otherBefore = bundlesBefore.find((b) => b.id === 'b_bmw');
+  const otherAfter = catalogAfter.bundles.find((b) => b.id === 'b_bmw');
+  check('an unedited bundle is byte-identical', JSON.stringify(otherBefore) === JSON.stringify(otherAfter));
+  check('products untouched by a bundle patch', JSON.stringify(cat3.products) === JSON.stringify(catalogAfter.products));
+  check('bundle count restored', catalogAfter.bundles.length === bundlesBefore.length,
+    `${catalogAfter.bundles.length} vs ${bundlesBefore.length}`);
+
   await quiet(() => db.close());
 
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

@@ -1352,7 +1352,7 @@
               const brand = brands.find(x => x.slug === b.brandSlug);
               const save = Math.max(0, (b.normalTotal || 0) - (b.bundlePrice || 0));
               return `<tr>
-                <td><strong>${esc(b.name_en || brand?.name_en + ' Bundle')}</strong></td>
+                <td><strong>${esc(b.title_en || b.name_en || (brand?.name_en ? brand.name_en + ' Bundle' : b.brandSlug))}</strong></td>
                 <td>${esc(brand?.name_en || b.brandSlug)}</td>
                 <td><strong style="color:var(--spinto-gold-deep);">${money(b.bundlePrice)}</strong></td>
                 <td style="text-decoration:line-through;color:var(--text-muted);">${money(b.normalTotal)}</td>
@@ -2507,47 +2507,119 @@
     }));
   }
 
+  // ------------------------------------------------------------------------
+  // Package / bundle editor — shared by "+ Add Package" (id = null) and the
+  // row ✏️ button (id = the bundle id), exactly like showProductEditor().
+  //
+  // Editing uses sbUpdate (POST /api/admin/update → db.patchRecord), which
+  // merges the patch into the stored row server-side. That matters here: a
+  // bundle carries fields this form deliberately does not expose
+  // (keyCaseProductId / keyHolderProductId / medalProductId, sub_en, sub_ar,
+  // discountMode, startDate, endDate), and a full-record upsert built from the
+  // form alone would blank every one of them.
+  // ------------------------------------------------------------------------
+  function showPackageEditor(id) {
+    if (!Array.isArray(state.data.bundles)) state.data.bundles = [];
+    const bundles = state.data.bundles;
+    const p = id ? bundles.find(x => x.id === id) : null;
+    if (id && !p) { toast('Package not found', 'error'); return; }
+
+    const brands = state.data.brands || [];
+    const currentSlug = p?.brandSlug || '';
+
+    showModal(`
+      <div class="modal">
+        <div class="modal-header"><h3>${p ? 'Edit Package/Bundle' : 'Add Package/Bundle'}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div>
+        <div class="modal-body">
+          <form id="package-form">
+            <div class="form-group"><label>Brand *</label>
+              <select name="brandSlug" required>
+                <option value="">Select brand</option>
+                ${brands.map(b => `<option value="${esc(b.slug)}" ${currentSlug === b.slug ? 'selected' : ''}>${esc(b.name_en)}</option>`).join('')}
+                ${currentSlug && !brands.some(b => b.slug === currentSlug) ? `<option value="${esc(currentSlug)}" selected>${esc(currentSlug)}</option>` : ''}
+              </select>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Package Name (EN)</label><input name="title_en" value="${esc(p?.title_en || p?.name_en || '')}" placeholder="Complete Your Set"></div>
+              <div class="form-group"><label>Package Name (AR)</label><input name="title_ar" value="${esc(p?.title_ar || p?.name_ar || '')}" dir="rtl"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Bundle Price (EGP) *</label><input name="bundlePrice" id="pkg-bundle-price" type="number" min="0" step="1" value="${p?.bundlePrice != null ? p.bundlePrice : ''}" required></div>
+              <div class="form-group"><label>Regular Total (EGP)</label><input name="normalTotal" id="pkg-normal-total" type="number" min="0" step="1" value="${p?.normalTotal != null ? p.normalTotal : 0}"></div>
+            </div>
+            <div id="pkg-savings-hint" style="font-size:12px;color:var(--text-secondary);min-height:16px;"></div>
+            <div class="form-group" style="display:flex;align-items:center;gap:16px;margin-top:8px;">
+              <label class="toggle" style="margin-bottom:0;">
+                <input type="checkbox" name="active" ${p ? (p.active !== false ? 'checked' : '') : 'checked'}>
+                <span class="toggle-slider"></span>
+              </label>
+              <span style="font-size:13px;color:var(--text-secondary);">Active</span>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-package">${p ? 'Update' : 'Create'} Package</button>
+        </div>
+      </div>`);
+
+    // Live savings readout so the two price fields can be sanity-checked
+    // before saving — this is the "Savings" column the table renders.
+    const priceEl = $('#pkg-bundle-price');
+    const totalEl = $('#pkg-normal-total');
+    const hintEl = $('#pkg-savings-hint');
+    function recalcSavings() {
+      if (!priceEl || !totalEl || !hintEl) return;
+      const price = parseFloat(priceEl.value) || 0;
+      const total = parseFloat(totalEl.value) || 0;
+      if (!total) { hintEl.textContent = ''; return; }
+      const save = total - price;
+      hintEl.textContent = save > 0
+        ? `Customer saves ${money(save)} (${Math.round((save / total) * 100)}%).`
+        : 'Bundle price is not below the regular total — the storefront will show no savings.';
+    }
+    if (priceEl) priceEl.addEventListener('input', recalcSavings);
+    if (totalEl) totalEl.addEventListener('input', recalcSavings);
+    recalcSavings();
+
+    $('#btn-save-package').addEventListener('click', async () => {
+      const form = $('#package-form');
+      const brandSlug = form.querySelector('[name=brandSlug]').value;
+      const bundlePrice = parseFloat(form.querySelector('[name=bundlePrice]').value) || 0;
+      const normalTotal = parseFloat(form.querySelector('[name=normalTotal]').value) || 0;
+      if (!brandSlug || !bundlePrice) { toast('Fill required fields', 'error'); return; }
+
+      const updates = {
+        brandSlug,
+        bundlePrice,
+        normalTotal,
+        title_en: form.querySelector('[name=title_en]').value.trim(),
+        title_ar: form.querySelector('[name=title_ar]').value.trim(),
+        active: !!form.querySelector('[name=active]')?.checked,
+      };
+
+      try {
+        if (p) {
+          await sbUpdate('bundles', p.id, updates);
+          Object.assign(p, updates);
+          toast('Package updated', 'success');
+        } else {
+          const created = Object.assign({ id: uid('bundle'), order: bundles.length }, updates);
+          await sbInsert('bundles', created);
+          bundles.push(created);
+          toast('Package created', 'success');
+        }
+        closeAllModals();
+        render();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    });
+  }
+
   function bindPackages() {
     const addBtn = $('#btn-add-package');
-    if (addBtn) addBtn.addEventListener('click', () => {
-      const brands = state.data.brands || [];
-      showModal(`
-        <div class="modal">
-          <div class="modal-header"><h3>Add Package/Bundle</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div>
-          <div class="modal-body">
-            <form id="package-form">
-              <div class="form-group"><label>Brand *</label><select name="brandSlug" required><option value="">Select brand</option>${brands.map(b => `<option value="${esc(b.slug)}">${esc(b.name_en)}</option>`).join('')}</select></div>
-              <div class="form-row">
-                <div class="form-group"><label>Bundle Price (EGP) *</label><input name="bundlePrice" type="number" min="0" required></div>
-                <div class="form-group"><label>Regular Total (EGP)</label><input name="normalTotal" type="number" min="0" value="0"></div>
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
-            <button class="btn btn-primary" id="btn-save-package">Create Package</button>
-          </div>
-        </div>`);
-      $('#btn-save-package').addEventListener('click', async () => {
-        const form = $('#package-form');
-        const data = {
-          id: uid('bundle'),
-          brandSlug: form.querySelector('[name=brandSlug]').value,
-          bundlePrice: parseFloat(form.querySelector('[name=bundlePrice]').value) || 0,
-          normalTotal: parseFloat(form.querySelector('[name=normalTotal]').value) || 0,
-          active: true,
-          order: (state.data.bundles || []).length,
-        };
-        if (!data.brandSlug || !data.bundlePrice) { toast('Fill required fields', 'error'); return; }
-        try {
-          await sbInsert('bundles', data);
-          state.data.bundles.push(data);
-          toast('Package created', 'success');
-          closeAllModals();
-          render();
-        } catch (e) { toast('Failed: ' + e.message, 'error'); }
-      });
-    });
+    if (addBtn) addBtn.addEventListener('click', () => showPackageEditor(null));
+
+    $$('[data-edit-package]').forEach(el => el.addEventListener('click', () => showPackageEditor(el.dataset.editPackage)));
 
     $$('[data-delete-package]').forEach(el => el.addEventListener('click', () => {
       const id = el.dataset.deletePackage;
