@@ -39,7 +39,11 @@
     "deliveryNote_ar": "الدفع عند الاستلام — ادفع عند استلام طلبك.",
     "heroProductId": "p_mercedes-benz_holder",
     "preorderDays": 5,
-    "standardShippingDays": 1
+    "standardShippingDays": 1,
+    "instapay": {
+      "enabled": true,
+      "url": "https://ipn.eg/spinto"
+    }
   },
   "languages": {
     "current": "en",
