@@ -465,6 +465,10 @@ function buildSettings() {
     copyright_en:'© 2026 Spinto. All rights reserved.', copyright_ar:'© 2026 سبينتو. جميع الحقوق محفوظة.',
     footerAbout_en:'SPINTO crafts premium automotive key accessories for the world\'s finest car brands.', footerAbout_ar:'تصنع سبينتو إكسسوارات مفاتيح فاخرة لأفضل ماركات السيارات في العالم.',
     deliveryNote_en:'Cash on Delivery — pay when you receive your order.', deliveryNote_ar:'الدفع عند الاستلام — ادفع عند استلام طلبك.',
+    instapay: {
+      enabled: true,
+      url: 'https://ipn.eg/spinto'
+    },
   };
 }
 
