@@ -54,13 +54,13 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // `categories: []` is the production condition: the schema exists, the
 // products are there, but nobody ever inserted category rows.
 // ---------------------------------------------------------------------------
-function buildTables() {
+function buildTables(categoryRows) {
   const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
   const settings = Object.assign({}, db.settings);
   if (db.languages) settings.languages = db.languages;   // same merge as scripts/migrate.js
   return {
     products: db.products.map(mapping.productToRow),
-    categories: [],
+    categories: categoryRows,
     brands: db.brands.map(mapping.brandToRow),
     bundles: db.bundles.map(mapping.bundleToRow),
     hero_slides: db.heroSlides.map(mapping.heroSlideToRow),
@@ -69,6 +69,22 @@ function buildTables() {
     promo_bar: [mapping.promoBarToRow(db.promoBar)],
     customize_requests: [],
   };
+}
+
+const DB = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+
+// The three rows the content migration writes — used to build the "seeded but
+// switched off" and "one hidden by the admin" fixtures. Product counts are the
+// real ones, exactly as the migration writes them.
+function seededCategoryRows(overrides) {
+  const ar = (DB.languages && DB.languages.dict && DB.languages.dict.ar) || {};
+  const en = (DB.languages && DB.languages.dict && DB.languages.dict.en) || {};
+  return mapping.CATEGORY_META.map((m) => mapping.categoryToRow(Object.assign({
+    id: m.key, slug: m.slug,
+    name_en: en[m.dictKey] || m.labelEn, name_ar: ar[m.dictKey] || '',
+    description_en: null, description_ar: null, image: null, active: true, order: m.order,
+    product_count: DB.products.filter((p) => p.category === m.key).length,
+  }, (overrides && overrides[m.key]) || {})));
 }
 
 function installPostgrestStub(tables) {
@@ -92,51 +108,78 @@ function installPostgrestStub(tables) {
 // ===========================================================================
 // 1. the data layer, through the real postgrest driver
 // ===========================================================================
+async function scenario(label, categoryRows, expectIds, expectCount) {
+  installPostgrestStub(buildTables(categoryRows));
+  for (const k of Object.keys(require.cache)) if (k.includes(`${path.sep}lib${path.sep}`)) delete require.cache[k];
+  const db = require('../lib/db');
+
+  console.log(`\n== CUSTOMIZE NAV: ${label} ==`);
+  check('the postgrest driver is active (not the JSON fallback)',
+    db.info().activeDriver === 'postgrest' && db.info().usingJsonFallback === false,
+    JSON.stringify(db.info().activeDriver) + ' / fallback=' + db.info().usingJsonFallback);
+
+  const catalog = await db.getCatalog();
+  const cats = await db.getCustomizeCategories();
+  check('the offered categories are exactly the expected ones',
+    cats.map((c) => c.id).join(',') === expectIds, cats.map((c) => c.id).join(',') || '(none)');
+  if (expectIds) {
+    check('catalogue is not empty', catalog.categories.length > 0, catalog.categories.length);
+    check('every category carries an EN and an AR name from the site dictionary',
+      cats.every((c) => c.name_en && c.name_ar), JSON.stringify(cats.map((c) => [c.name_en, c.name_ar])));
+    check('product counts come from the real catalogue',
+      cats.reduce((s, c) => s + c.product_count, 0) === expectCount, cats.reduce((s, c) => s + c.product_count, 0));
+    const payload = db.publicPayload(catalog);
+    check('/api/data reports customize.available', payload.customize.available === true);
+    check('/api/data carries the customize categories',
+      payload.customize.categories.map((c) => c.id).join(',') === expectIds,
+      payload.customize.categories.map((c) => c.id).join(',') || '(none)');
+    await db.close();
+    return payload;
+  }
+  await db.close();
+  return null;
+}
+
 async function dataLayer() {
-  console.log('\n== CUSTOMIZE NAV: data layer (postgrest driver, empty categories table) ==');
-  installPostgrestStub(buildTables());
   process.env.VITE_SUPABASE_URL = MOCK_URL;
   process.env.VITE_SUPABASE_ANON_KEY = MOCK_KEY;
   delete process.env.SUPABASE_DB_URL;
   delete process.env.DATABASE_URL;
   delete process.env.POSTGRES_URL;
   delete process.env.DATA_DRIVER;
+
+  // (a) schema applied, content migration never run: no category rows at all.
+  const empty = await scenario('postgrest, categories table EMPTY', [], 'keycase,keyholder,medal', 117);
+
+  // (b) THE LIVE SHAPE: the migration wrote the three rows, but every one of
+  //     them is switched off — and RLS `using (active = true)` hides them from
+  //     the browser, which is why the storefront saw nothing.
+  await scenario('postgrest, three seeded rows ALL inactive (live production shape)',
+    seededCategoryRows({ keycase: { active: false }, keyholder: { active: false }, medal: { active: false } }),
+    'keycase,keyholder,medal', 117);
+
+  // (c) an admin hiding ONE category must still hide exactly that one.
+  await scenario('postgrest, admin switched ONE category off (intent preserved)',
+    seededCategoryRows({ keyholder: { active: false } }), 'keycase,medal', 88);
+
+  // (d) The Admin Customize ON/OFF switch is a SEPARATE control from
+  //     categories.active and must still win.
+  installPostgrestStub(buildTables(seededCategoryRows()));
   for (const k of Object.keys(require.cache)) if (k.includes(`${path.sep}lib${path.sep}`)) delete require.cache[k];
-
   const db = require('../lib/db');
-  check('the postgrest driver is active (not the JSON fallback)',
-    db.info().activeDriver === 'postgrest' && db.info().usingJsonFallback === false,
-    JSON.stringify(db.info().activeDriver) + ' / fallback=' + db.info().usingJsonFallback);
-
   const catalog = await db.getCatalog();
-  check('an empty categories table no longer yields an empty catalogue',
-    Array.isArray(catalog.categories) && catalog.categories.length === 3,
-    catalog.categories.length);
-
-  const cats = await db.getCustomizeCategories();
-  check('the 3 Customize categories are offered', cats.length === 3, cats.length);
-  check('they are the site\'s real categories, in order',
-    cats.map((c) => c.id).join(',') === 'keycase,keyholder,medal', cats.map((c) => c.id).join(','));
-  check('each has an EN and an AR name from the site dictionary',
-    cats.every((c) => c.name_en && c.name_ar), JSON.stringify(cats.map((c) => [c.name_en, c.name_ar])));
-  check('product counts are derived from the real catalogue',
-    cats.reduce((s, c) => s + c.product_count, 0) === 117, cats.reduce((s, c) => s + c.product_count, 0));
-
-  const payload = db.publicPayload(catalog);
-  check('/api/data reports customize.available', payload.customize.available === true);
-  check('/api/data carries the 3 customize categories',
-    payload.customize.categories.length === 3, payload.customize.categories.length);
-
-  // The Admin ON/OFF switch must still win once categories exist.
-  const off = db.publicPayload(Object.assign({}, catalog, {
-    settings: Object.assign({}, catalog.settings, { customize: { categories: { keycase: true, keyholder: false, medal: true } } }),
+  const toggled = db.publicPayload(Object.assign({}, catalog, {
+    settings: Object.assign({}, catalog.settings, {
+      customize: { categories: { keycase: true, keyholder: false, medal: true } },
+    }),
   }));
+  console.log('\n== CUSTOMIZE NAV: admin Customize ON/OFF switch ==');
   check('the Admin OFF switch still removes a category',
-    off.customize.categories.map((c) => c.id).join(',') === 'keycase,medal',
-    off.customize.categories.map((c) => c.id).join(','));
-
+    toggled.customize.categories.map((c) => c.id).join(',') === 'keycase,medal',
+    toggled.customize.categories.map((c) => c.id).join(','));
   await db.close();
-  return payload;
+
+  return empty;
 }
 
 // ===========================================================================
