@@ -1506,7 +1506,7 @@
           <a href="#/brands" data-nav="${pt('brands')}">${pt('brands')}</a>
         </nav>
         <div class="header-actions">
-          <div style="position:relative">
+          <div class="header-search">
             <button class="icon-btn" id="search-btn" aria-label="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg></button>
             <div class="search-panel hidden" id="search-panel">
               <input id="search-input" placeholder="${VEL.esc(pt('search'))}...">
@@ -2655,50 +2655,135 @@
     }));
   }
 
+  // ============================================================ QUICK ADD
+  // Strict two-step flow, exactly as labelled in the modal:
+  //
+  //   1. SELECT YOUR KEY SHAPE  →  2. SELECT YOUR COLOR  →  ADD TO CART
+  //
+  // The customer MUST pick a key shape first; only then are that product's
+  // colors revealed. The color list is never invented here — it is the
+  // product's own admin-configured set (Admin → Products → Colors): enabled
+  // colors only, in the admin's order, rendered as ROUND swatches from the
+  // stored HEX values. Products without configured colors keep the existing
+  // fallback (shape → add) and never render a color step.
+  //
+  // The Add button stays tappable on purpose (aria-disabled + .is-locked):
+  // tapping it before both choices are made performs NO add and surfaces the
+  // existing localized validation message (pt('select_key_shape') /
+  // pt('color_required')), which is the same behaviour the product page uses.
   function openProductQuickAdd(p) {
-    // open a quick modal to choose a shape (if required) and a color variant
-    // (when the product has admin-configured colors), then add
     const avail = (p.keyShapes || []).filter(s => s.available);
     if (!avail.length) { notify(pt('out_of_stock')); return; }
+    // only one quick-add modal may exist at a time (duplicate element ids would
+    // otherwise break lookups if a customer re-opens it quickly)
+    const open = document.querySelector('.modal-overlay.qa-overlay');
+    if (open) open.remove();
     const pcolors = activeColorsOf(p);
-    const colorBlock = pcolors.length ? `
-      <div class="label" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:16px 0 10px">${pt('select_color')}</div>
-      <div class="color-options qa-colors">${pcolors.map(c => `<button class="color-opt" data-qac="${VEL.esc(c.id)}" title="${VEL.esc(colorLabel(c))}"><span class="color-swatch" style="background:${VEL.esc(c.hex)}"></span><div class="lbl">${VEL.esc(colorLabel(c))}</div></button>`).join('')}</div>` : '';
+    const hasColors = pcolors.length > 0;
+
+    const stepBar = `<ol class="qa-steps">
+      <li class="qa-step is-active" data-qastep="1"><span class="qa-step-n">1</span><span class="qa-step-t">${pt('select_key_shape')}</span></li>
+      ${hasColors ? `<li class="qa-step" data-qastep="2"><span class="qa-step-n">2</span><span class="qa-step-t">${pt('select_color')}</span></li>` : ''}
+    </ol>`;
+
+    const shapeBlock = `<section class="qa-block" data-qablock="shape">
+      <div class="label qa-label">${pt('select_key_shape')} <span class="sel qa-shape-sel" id="qa-shape-sel"></span></div>
+      <div class="shape-options qa-shapes">${avail.map(sh => `<button type="button" class="shape-opt selectable" data-qa="${sh.shape}">${VEL.keyShapeSVG(sh.shape, { color: '#2b2b2b', w: 52, h: 80 })}<div class="lbl">${pt('shape')} ${sh.shape}</div></button>`).join('')}</div>
+    </section>`;
+
+    // The color step is revealed only after a shape has been chosen — the
+    // colors always belong to THIS product and come straight from its data.
+    const colorBlock = hasColors ? `<section class="qa-block is-locked" data-qablock="color">
+      <div class="label qa-label">${pt('select_color')} <span class="sel qa-color-sel" id="qa-color-sel"></span></div>
+      <div class="color-options qa-colors">${pcolors.map(c => `<button type="button" class="color-opt" data-qac="${VEL.esc(c.id)}" title="${VEL.esc(colorLabel(c))}" aria-label="${VEL.esc(colorLabel(c))}"><span class="color-swatch" style="background:${VEL.esc(c.hex)}"></span><div class="lbl">${VEL.esc(colorLabel(c))}</div></button>`).join('')}</div>
+    </section>` : '';
+
     const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.innerHTML = `<div class="modal">
-      <h3 style="margin:0 0 6px">${VEL.esc(prodName(p))}</h3>
-      <div style="color:var(--muted);font-size:13px;margin-bottom:16px">${VEL.money(p.price)}</div>
-      <div class="label" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">${pt('select_key_shape')}</div>
-      <div class="shape-options">${avail.map(sh => `<button class="shape-opt selectable" data-qa="${sh.shape}" style="width:88px">${VEL.keyShapeSVG(sh.shape, { color: '#2b2b2b', w: 52, h: 80 })}<div class="lbl">${pt('shape')} ${sh.shape}</div></button>`).join('')}</div>
+    modal.className = 'modal-overlay qa-overlay';
+    modal.innerHTML = `<div class="modal qa-modal" role="dialog" aria-modal="true" aria-label="${VEL.esc(prodName(p))}">
+      <button type="button" class="qa-close" id="qa-close" aria-label="${VEL.esc(L() === 'ar' ? 'إغلاق' : 'Close')}">×</button>
+      <h3 class="qa-title">${VEL.esc(prodName(p))}</h3>
+      <div class="qa-price">${VEL.money(p.price)}</div>
+      ${stepBar}
+      ${shapeBlock}
       ${colorBlock}
-      <button class="btn btn-gold btn-block" style="margin-top:18px" id="qa-add" disabled>${pt('add_to_cart')}</button>
+      <div class="qa-error hidden" id="qa-error" role="alert"></div>
+      <button type="button" class="btn btn-gold btn-block qa-add is-locked" id="qa-add" aria-disabled="true">${pt('add_to_cart')}</button>
     </div>`;
     document.body.appendChild(modal);
+    const $m = (s) => modal.querySelector(s);
+    const addBtn = $m('.qa-add');
+    const errBox = $m('.qa-error');
+    const colorStep = $m('[data-qablock="color"]');
     let chosen = '';
     let chosenColor = '';
+
+    const isReady = () => !!chosen && (!hasColors || !!chosenColor);
+
+    function showError(msg) {
+      if (!errBox) return;
+      errBox.textContent = msg;
+      errBox.classList.remove('hidden');
+      clearTimeout(showError._t);
+      showError._t = setTimeout(() => errBox.classList.add('hidden'), 3200);
+    }
+
+    // Locked ≠ disabled: the button must stay tappable so the localized
+    // validation message can be shown when a choice is still missing.
     const syncAdd = () => {
-      const ready = chosen && (!pcolors.length || chosenColor);
-      modal.querySelector('#qa-add').disabled = !ready;
+      const ready = isReady();
+      addBtn.classList.toggle('is-locked', !ready);
+      addBtn.setAttribute('aria-disabled', ready ? 'false' : 'true');
     };
+
     modal.querySelectorAll('[data-qa]').forEach(b => b.addEventListener('click', () => {
       modal.querySelectorAll('[data-qa]').forEach(x => x.classList.remove('selected'));
-      b.classList.add('selected'); chosen = b.getAttribute('data-qa');
+      b.classList.add('selected');
+      chosen = b.getAttribute('data-qa');
+      $m('.qa-shape-sel').textContent = '— ' + pt('shape') + ' ' + chosen;
+      $m('[data-qastep="1"]').classList.add('is-done');
+      // reveal step 2 (colors of THIS product) now that a shape is chosen
+      if (colorStep) {
+        colorStep.classList.remove('is-locked');
+        $m('[data-qastep="2"]').classList.add('is-active');
+        setTimeout(() => { try { colorStep.scrollIntoView({ block: 'nearest' }); } catch (e) { /* jsdom / old browsers */ } }, 30);
+      }
+      if (errBox) errBox.classList.add('hidden');
       syncAdd();
     }));
+
     modal.querySelectorAll('[data-qac]').forEach(b => b.addEventListener('click', () => {
       modal.querySelectorAll('[data-qac]').forEach(x => x.classList.remove('selected'));
-      b.classList.add('selected'); chosenColor = b.getAttribute('data-qac');
+      b.classList.add('selected');
+      chosenColor = b.getAttribute('data-qac');
+      const c = pcolors.find(x => x.id === chosenColor);
+      $m('.qa-color-sel').textContent = c ? '— ' + colorLabel(c) : '';
+      $m('[data-qastep="2"]').classList.add('is-done');
+      errBox && errBox.classList.add('hidden');
       syncAdd();
     }));
-    modal.querySelector('#qa-add').addEventListener('click', () => {
-      if (!chosen) return;
+
+    addBtn.addEventListener('click', () => {
+      // never add without both choices — show the existing localized message
+      if (!chosen) { showError(pt('select_key_shape')); notify(pt('select_key_shape')); return; }
       const color = pcolors.find(c => c.id === chosenColor) || null;
-      if (pcolors.length && !color) return;
+      if (hasColors && !color) {
+        showError(pt('color_required'));
+        notify(pt('color_required'));
+        if (colorStep) colorStep.classList.add('needs-attention');
+        return;
+      }
+      // shape AND color travel with the cart item (and on through checkout)
       addToCart(p.id, chosen, 1, { color });
       modal.remove();
     });
+
+    $m('.qa-close').addEventListener('click', () => modal.remove());
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    document.addEventListener('keydown', function onEsc(e) {
+      if (e.key === 'Escape' && document.body.contains(modal)) { modal.remove(); }
+      if (!document.body.contains(modal)) document.removeEventListener('keydown', onEsc);
+    });
   }
 
   function openPreorderModal(p) {
