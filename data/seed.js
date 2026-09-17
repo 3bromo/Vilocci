@@ -108,6 +108,88 @@ const pimg = (category, slug, style) => [
   asset('detail-b', slug),
 ];
 
+// ---------------------------------------------------------------------------
+// PRODUCT COLOR VARIANTS
+// Every product is seeded with a starter palette (EN + AR names and real HEX
+// values). These are ordinary product data — the Admin panel can add, edit,
+// reorder, enable/disable and delete them per product, and the storefront
+// always renders exactly what is stored (nothing is hard-coded in the
+// frontend, and Customize reuses the very same list).
+// ---------------------------------------------------------------------------
+const COLOR_DEFS = {
+  carbon: [
+    { name_en: 'Black Carbon', name_ar: 'أسود كربوني', hex: '#232326' },
+    { name_en: 'Champagne Gold', name_ar: 'ذهبي شمباني', hex: '#C8A15A' },
+    { name_en: 'Gunmetal', name_ar: 'رمادي مدفعي', hex: '#4A4E55' },
+  ],
+  leather: [
+    { name_en: 'Black', name_ar: 'أسود', hex: '#1D1D1F' },
+    { name_en: 'Chestnut Brown', name_ar: 'بني كستنائي', hex: '#7B4A2D' },
+    { name_en: 'Midnight Blue', name_ar: 'أزرق منتصف الليل', hex: '#1F2A44' },
+  ],
+  metal: [
+    { name_en: 'Champagne Gold', name_ar: 'ذهبي شمباني', hex: '#C8A15A' },
+    { name_en: 'Silver', name_ar: 'فضي', hex: '#C9CCD1' },
+    { name_en: 'Black', name_ar: 'أسود', hex: '#1D1D1F' },
+  ],
+  medal: [
+    { name_en: 'Gold', name_ar: 'ذهبي', hex: '#D4AF37' },
+    { name_en: 'Silver', name_ar: 'فضي', hex: '#C9CCD1' },
+  ],
+};
+const colorSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+function defaultColorsFor(p) {
+  const hay = [p.slug, p.badge_en, p.material_en, p.name_en].join(' ').toLowerCase();
+  let palette;
+  if (/carbon/.test(hay)) palette = COLOR_DEFS.carbon;
+  else if (/leather|saffiano/.test(hay)) palette = COLOR_DEFS.leather;
+  else if (p.category === 'medal') palette = COLOR_DEFS.medal;
+  else if (p.category === 'keycase') palette = COLOR_DEFS.leather;
+  else palette = COLOR_DEFS.metal;
+  return palette.map((c) => ({
+    id: 'c_' + colorSlug(c.name_en),
+    name_en: c.name_en, name_ar: c.name_ar, hex: c.hex, enabled: true,
+  }));
+}
+
+// Adds colors ONLY to products where the field does not exist yet (idempotent
+// — an admin-managed list is never touched, including a deliberately EMPTY
+// list, which means "this product has no color variants"). Returns how many
+// products were given colors.
+function ensureProductColors(list) {
+  let touched = 0;
+  (list || []).forEach((p) => {
+    if (p.colors === undefined || p.colors === null) { p.colors = defaultColorsFor(p); touched += 1; }
+  });
+  return touched;
+}
+
+// Color-related dictionary strings, merged into stores that predate the color
+// system (existing translations are never overwritten).
+const COLOR_DICT = {
+  en: {
+    color: 'Color', colors: 'Colors', select_color: 'SELECT YOUR COLOR',
+    color_required: 'Please choose a color first.',
+  },
+  ar: {
+    color: 'اللون', colors: 'الألوان', select_color: 'اختر اللون',
+    color_required: 'يرجى اختيار اللون أولاً.',
+  },
+};
+function ensureColorDict(languages) {
+  const dict = (languages && languages.dict) || {};
+  let touched = 0;
+  ['en', 'ar'].forEach((lang) => {
+    dict[lang] = dict[lang] || {};
+    Object.entries(COLOR_DICT[lang]).forEach(([k, v]) => {
+      if (dict[lang][k] == null) { dict[lang][k] = v; touched += 1; }
+    });
+  });
+  if (languages) languages.dict = dict;
+  return touched;
+}
+
 // choose stock availability for a product's shapes; most brands have A/B/C
 // available and D out-of-stock (like the reference). Some vary.
 function shapePlan(index) {
@@ -239,7 +321,8 @@ function buildProducts() {
     active:true, order: 100,
   });
 
-  return products;
+  // every product ships with its own starter color list (admin-editable)
+  return products.map(p => Object.assign({}, p, { colors: defaultColorsFor(p) }));
 }
 
 // ---------------------------------------------------------------------------
@@ -339,6 +422,8 @@ function buildLanguages() {
       easy_returns:'EASY RETURNS', er_sub:'7 days policy',
       add_to_cart:'ADD TO CART', out_of_stock:'OUT OF STOCK', only_left:'Only {n} left in stock',
       select_key_shape:'SELECT YOUR KEY SHAPE', shape:'Shape',
+      color:'Color', colors:'Colors', select_color:'SELECT YOUR COLOR',
+      color_required:'Please choose a color first.',
       quantity:'Quantity', total:'Total', subtotal:'Subtotal', bundle_discount:'Bundle Discount',
       delivery_fee:'Delivery Fee', proceed_to_checkout:'PROCEED TO CHECKOUT',
       your_cart:'YOUR CART', complete_your_set:'COMPLETE YOUR {brand} SET & SAVE',
@@ -399,6 +484,8 @@ function buildLanguages() {
       easy_returns:'استرجاع سهل', er_sub:'سياسة 7 أيام',
       add_to_cart:'أضف إلى السلة', out_of_stock:'غير متوفر', only_left:'متبقي {n} فقط في المخزون',
       select_key_shape:'حدد شكل المفتاح', shape:'الشكل',
+      color:'اللون', colors:'الألوان', select_color:'اختر اللون',
+      color_required:'يرجى اختيار اللون أولاً.',
       quantity:'الكمية', total:'الإجمالي', subtotal:'الإجمالي الفرعي', bundle_discount:'خصم المجموعة',
       delivery_fee:'رسوم التوصيل', proceed_to_checkout:'متابعة الشراء',
       your_cart:'سلة المشتريات', complete_your_set:'أكمل طقم {brand} و وفّر',
@@ -487,9 +574,21 @@ function buildPromoBar() {
 // Main entry
 let products = [];
 function seed(force) {
-  if (store.load().products.length && store.load().settings.shopName && !force) {
+  // Idempotent upgrade for stores that predate the color system: give every
+  // product that has NO colors yet its starter palette and merge the color
+  // dictionary strings. Products that already carry admin-managed colors (or
+  // an explicit empty list is NOT touched — only missing lists are filled).
+  const existing = store.load();
+  const addedColors = ensureProductColors(existing.products);
+  const addedDict = ensureColorDict(existing.languages);
+  if (addedColors || addedDict) {
+    store.save();
+    console.log(`[seed] color system backfill: ${addedColors} products, ${addedDict} dictionary keys.`);
+  }
+
+  if (existing.products.length && existing.settings.shopName && !force) {
     console.log('[seed] store already populated — skipping (use --force to reseed).');
-    return store.load();
+    return existing;
   }
   products = buildProducts();
   // ensure every product carries the admin-editable specs + explicit fitment list

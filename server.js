@@ -17,6 +17,7 @@ const storage = require('./lib/storage');
 
 const { seed } = require('./data/seed');
 const { asset } = require('./lib/assets');
+const mapping = require('./lib/mapping');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -358,6 +359,19 @@ app.post('/api/orders', async (req, res) => {
       let shape = item.keyShape || '';
       const shapeAvailable = (p.keyShapes || []).find(sh => sh.shape === shape && sh.available);
       if (!shapeAvailable) shape = '';
+
+      // Color variant — resolved against the product's OWN admin-managed color
+      // list (never trusted from the client). Products that have enabled
+      // colors REQUIRE a valid selection; products without colors carry none.
+      const selectableColors = mapping.activeColors(p);
+      let color = null;
+      if (selectableColors.length) {
+        color = mapping.resolveProductColor(p, item.colorId !== undefined ? item.colorId : item.color);
+        if (!color) {
+          return res.status(400).json({ error: `Please choose a color for "${p.name_en || p.id}".` });
+        }
+      }
+
       const linePrice = p.price * qty;
       subtotal += linePrice;
       const fit = (item.fitment && (item.fitment.brand || item.fitment.model || item.fitment.year))
@@ -370,6 +384,7 @@ app.post('/api/orders', async (req, res) => {
         price: p.price, lineTotal: linePrice,
         image: (p.images && p.images[0]) || '/img/detail_a.png',
         fitment: fit,
+        color,
       });
     }
 

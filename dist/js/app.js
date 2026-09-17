@@ -20,6 +20,7 @@
     fitStep: 0,             // which fitment step is active (1 brand, 2 model, 3 year, 4 shape)
     route: { name: 'home', params: {} },
     productShape: {},       // pdp selected key shape per productId
+    productColor: {},       // pdp selected color variant per productId
     productQty: 1,
     productOption: 0,       // complete-your-set combo index
     lastOrder: null,        // most recently placed order, for the thank-you page
@@ -118,35 +119,42 @@
     const style = opts.style ? ` style="${opts.style}"` : '';
     const v = vehicleLabel(it.fitment);
     const shapePart = it.keyShape ? pt('shape') + ' ' + it.keyShape : '';
-    if (v) return `<div class="di-vehicle"${style}>${VEL.esc(v)}${shapePart ? ' · ' + VESt(shapePart) : ''}</div>`;
-    return `<div class="di-meta"${style}>${VEL.esc(brandName(brandOfAsset(it.prod)))}${shapePart ? ' · ' + VESt(shapePart) : ''}</div>`;
+    const colorPart = it.color && it.color.hex ? `${colorDot(it.color, 10)} ${VEL.esc(colorLabel(it.color))}` : '';
+    const suffix = [shapePart ? VESt(shapePart) : '', colorPart].filter(Boolean).join(' · ');
+    if (v) return `<div class="di-vehicle"${style}>${VEL.esc(v)}${suffix ? ' · ' + suffix : ''}</div>`;
+    return `<div class="di-meta"${style}>${VEL.esc(brandName(brandOfAsset(it.prod)))}${suffix ? ' · ' + suffix : ''}</div>`;
   }
 
+  // opts.color — the color variant the customer picked (from the product's own
+  // admin-managed list). The same snapshot travels through cart → checkout →
+  // order, so what the customer chose is what the shop fulfills.
   function addToCart(productId, keyShape, qty, opts) {
     opts = opts || {};
     const prod = product(productId);
     if (!prod) return;
     const fit = opts.fitment || fitForItem(prod);
-    // if already in cart with same shape, bump qty
-    const existing = state.cart.find(i => i.productId === productId && i.keyShape === (keyShape || ''));
+    const color = opts.color || null;
+    const colorId = color ? (color.id || '') : '';
+    // if already in cart with same shape AND color, bump qty
+    const existing = state.cart.find(i => i.productId === productId && i.keyShape === (keyShape || '') && (i.colorId || '') === colorId);
     if (existing) { existing.qty += (qty || 1); existing.fitment = existing.fitment || fit; }
     else {
-      state.cart.push({ productId, keyShape: keyShape || '', qty: qty || 1, fitment: fit });
+      state.cart.push({ productId, keyShape: keyShape || '', qty: qty || 1, fitment: fit, colorId, color });
     }
     saveCart();
     if (opts.openCart === true) { openCart(); }
     notify(pt('add_to_cart'), 'gold');
   }
 
-  function setQty(productId, keyShape, qty) {
-    const item = state.cart.find(i => i.productId === productId && i.keyShape === keyShape);
+  function setQty(productId, keyShape, colorId, qty) {
+    const item = state.cart.find(i => i.productId === productId && i.keyShape === keyShape && (i.colorId || '') === (colorId || ''));
     if (!item) return;
     qty = parseInt(qty) || 1;
-    if (qty <= 0) { state.cart = state.cart.filter(i => !(i.productId === productId && i.keyShape === keyShape)); }
+    if (qty <= 0) { state.cart = state.cart.filter(i => !(i.productId === productId && i.keyShape === keyShape && (i.colorId || '') === (colorId || ''))); }
     else item.qty = qty;
     saveCart();
   }
-  function removeCartItem(productId, keyShape) { state.cart = state.cart.filter(i => !(i.productId === productId && i.keyShape === keyShape)); saveCart(); }
+  function removeCartItem(productId, keyShape, colorId) { state.cart = state.cart.filter(i => !(i.productId === productId && i.keyShape === keyShape && (i.colorId || '') === (colorId || ''))); saveCart(); }
 
   // Cart totals — mirrors server logic (full set => bundle discount)
   function cartTotals() {
@@ -198,6 +206,20 @@
   function cartHasBrandCat(slug, cat) { return state.cart.some(i => { const p = product(i.productId); return p && p.brandSlug === slug && p.category === cat; }); }
   function cartHasProduct(id) { return state.cart.some(i => i.productId === id); }
 
+  // ============================================================ COLOR VARIANTS
+  // A product's colors come straight from the catalog (Admin → Products →
+  // Colors). Nothing here is hard-coded: the storefront renders exactly the
+  // enabled colors stored for that product, in the admin's order.
+  function colorsOf(p) { return (p && Array.isArray(p.colors)) ? p.colors.filter(c => c && c.hex) : []; }
+  function activeColorsOf(p) { return colorsOf(p).filter(c => c.enabled !== false); }
+  function colorLabel(c) { return c ? (L() === 'ar' ? (c.name_ar || c.name_en) : (c.name_en || c.name_ar)) || '' : ''; }
+  // A filled circle straight from the HEX value — the one color preview used
+  // everywhere (PDP, quick-add, cart, checkout, success, cards).
+  function colorDot(c, size, extra) {
+    const s = size || 14;
+    return `<span class="cdot ${extra || ''}" style="--cdot:${VEL.esc(c.hex)};width:${s}px;height:${s}px;background:${VEL.esc(c.hex)}" title="${VEL.esc(colorLabel(c))}" aria-label="${VEL.esc(colorLabel(c))}"></span>`;
+  }
+
   // ================================================================ RENDER
   const app = () => $('#app');
   const img = (p) => (p && p.images && p.images[0]) || '/img/detail_a.png';
@@ -208,6 +230,12 @@
     const br = brandOfAsset(p);
     const deliveryLabel = p.preorder ? (L()==='ar'?'طلب مسبق':'Pre-order') : '';
     const brandLogo = br ? `<img src="${VEL.brandLogoUrl(br.slug)}" alt="${VEL.esc(brandName(br))}" class="pc-brand-logo" loading="lazy">` : '';
+    // available color variants of THIS product (admin order, max 6 dots)
+    const pcolors = activeColorsOf(p);
+    const shown = pcolors.slice(0, 6);
+    const swatchesHTML = pcolors.length ? `<div class="pc-colors" aria-label="${VEL.esc(pt('colors'))}">
+      ${shown.map(c => colorDot(c, 12)).join('')}${pcolors.length > shown.length ? `<span class="pc-colors-more">+${pcolors.length - shown.length}</span>` : ''}
+    </div>` : '';
     return `<article class="product-card reveal ${opts.fadeClass || ''}" data-slug="${p.slug}">
       <div class="media">
         <a href="#/product/${p.slug}"><img src="${img(p)}" alt="${VEL.esc(p.name_en)}" loading="lazy"></a>
@@ -218,6 +246,7 @@
       <div class="body">
         <span class="cat">${brandLogo}<span class="cat-text">${VEL.esc(brandName(br))}</span></span>
         <a href="#/product/${p.slug}" class="name">${VEL.esc(prodName(p))}</a>
+        ${swatchesHTML}
         <div class="price-row">
           <span class="price">${VEL.money(p.price)}</span>
           ${p.oldPrice ? `<span class="old">${VEL.money(p.oldPrice)}</span>` : ''}
@@ -649,11 +678,29 @@
       if (fs && mOk && yOk && shapes.some(s => s.shape === fs && s.available)) state.productShape[p.id] = fs;
     }
     const activeShape = shapes.find(sh => sh.shape === (state.productShape[p.id] || ''));
+    // Color variants — exactly the enabled colors the admin configured for THIS
+    // product (order preserved). Products without colors show no selector.
+    const pcolors = activeColorsOf(p);
+    const activeColor = pcolors.find(c => c.id === (state.productColor[p.id] || '')) || null;
     const qty = state.productQty || 1;
-    const canAdd = !p.outOfStock && activeShape && activeShape.available;
+    const canAdd = !p.outOfStock && activeShape && activeShape.available && (!pcolors.length || activeColor);
 
     const b = bundleOfBrand(p.brandSlug);
     const setItems = b ? brandSetItems(p.brandSlug) : null;
+
+    // selected color options html (live circles straight from the stored HEX)
+    const colorHTML = pcolors.length ? `<div class="color-selector">
+      <div class="label">${pt('select_color')} <span style="color:var(--gold-deep)">${activeColor ? '— ' + VEL.esc(colorLabel(activeColor)) : ''}</span></div>
+      <div class="color-options">
+        ${pcolors.map(c => {
+          const sel = activeColor && activeColor.id === c.id ? 'selected' : '';
+          return `<button class="color-opt ${sel}" data-color="${VEL.esc(c.id)}" title="${VEL.esc(colorLabel(c))}" aria-label="${VEL.esc(colorLabel(c))}">
+            <span class="color-swatch" style="background:${VEL.esc(c.hex)}"></span>
+            <div class="lbl">${VEL.esc(colorLabel(c))}</div>
+          </button>`;
+        }).join('')}
+      </div>
+    </div>` : '';
 
     // selected shape options html
     const shapeHTML = `<div class="shape-selector">
@@ -753,6 +800,7 @@
           ${deliveryHTML}
           ${preorderHTML}
           ${giftPackagingHTML}
+          ${colorHTML}
           ${shapeHTML}
           ${invHTML}
           <div class="qty-row">
@@ -1286,14 +1334,14 @@
             <div class="di-name">${VEL.esc(prodName(it.prod))}</div>
             ${cartItemMeta(it)}
             <div class="di-qty">
-              <button data-qtyd="${it.productId}|${it.keyShape}" data-qtyv="-1">−</button>
+              <button data-qtyd="${it.productId}|${it.keyShape}|${it.colorId || ''}" data-qtyv="-1">−</button>
               <input type="text" value="${it.qty}" readonly>
-              <button data-qtyd="${it.productId}|${it.keyShape}" data-qtyv="1">+</button>
+              <button data-qtyd="${it.productId}|${it.keyShape}|${it.colorId || ''}" data-qtyv="1">+</button>
             </div>
           </div>
           <div class="di-side">
             <div class="di-price">${VEL.money(it.prod.price * it.qty)}</div>
-            <button class="di-remove" data-remove="${it.productId}|${it.keyShape}" title="${lang === 'ar' ? 'إزالة' : 'Remove'}" aria-label="${lang === 'ar' ? 'إزالة من السلة' : 'Remove from cart'}">✕</button>
+            <button class="di-remove" data-remove="${it.productId}|${it.keyShape}|${it.colorId || ''}" title="${lang === 'ar' ? 'إزالة' : 'Remove'}" aria-label="${lang === 'ar' ? 'إزالة من السلة' : 'Remove from cart'}">✕</button>
           </div>
         </div>`).join('');
     } else {
@@ -1670,7 +1718,9 @@
       const v = vehicleLabel(it.fitment);
       const nm = L() === 'ar' ? (it.name_ar || it.name_en) : (it.name_en || it.name_ar);
       const shape = it.keyShape ? VESt(pt('shape') + ' ' + it.keyShape) : '';
-      return `<div class="s-item"><img src="${it.image}" alt=""><div class="s-info"><div class="s-name">${VESt(nm)}</div>${v ? `<div class="s-vehicle">${VESt(v)}${shape ? ' · ' + shape : ''}</div>` : (shape ? `<div class="s-vehicle">${shape}</div>` : '')}<div class="s-qty">${pt('quantity')}: ${it.qty}</div></div><div class="s-price">${VEL.money(it.lineTotal)}</div></div>`;
+      const colorPart = it.color && it.color.hex ? `${colorDot(it.color, 10)} ${VESt(colorLabel(it.color))}` : '';
+      const meta = [shape, colorPart].filter(Boolean).join(' · ');
+      return `<div class="s-item"><img src="${it.image}" alt=""><div class="s-info"><div class="s-name">${VESt(nm)}</div>${v ? `<div class="s-vehicle">${VESt(v)}${meta ? ' · ' + meta : ''}</div>` : (meta ? `<div class="s-vehicle">${meta}</div>` : '')}<div class="s-qty">${pt('quantity')}: ${it.qty}</div></div><div class="s-price">${VEL.money(it.lineTotal)}</div></div>`;
     }).join('');
     return `<div class="container"><div class="success">
       <div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></div>
@@ -2329,6 +2379,14 @@
       route();
     }));
 
+    // color select (admin-managed variants of THIS product)
+    $$('[data-color]').forEach(b => b.addEventListener('click', () => {
+      const slug = currentSlug(); const p = productBySlug(slug);
+      if (!p) return;
+      state.productColor[p.id] = b.getAttribute('data-color');
+      route();
+    }));
+
     // qty
     $('#qty-inc') && $('#qty-inc').addEventListener('click', () => { state.productQty = Math.min(99, state.productQty + 1); $('#qty').value = state.productQty; });
     $('#qty-dec') && $('#qty-dec').addEventListener('click', () => { state.productQty = Math.max(1, state.productQty - 1); $('#qty').value = state.productQty; });
@@ -2338,6 +2396,13 @@
       const p = productBySlug(currentSlug()); if (!p) return;
       const shape = state.productShape[p.id];
       if (!shape) { notify(pt('select_key_shape')); return; }
+      const pcolors = activeColorsOf(p);
+      if (pcolors.length) {
+        const color = pcolors.find(c => c.id === state.productColor[p.id]);
+        if (!color) { notify(pt('color_required')); return; }
+        addToCart(p.id, shape, state.productQty, { color });
+        return;
+      }
       addToCart(p.id, shape, state.productQty);
     });
 
@@ -2363,7 +2428,9 @@
         if (!it) return;
         const shape = (it.keyShapes || []).find(s => s.available);
         if (cartHasProduct(it.id)) return;
-        addToCart(it.id, shape ? shape.shape : '', 1, { openCart: false });
+        // one-tap set: use the product's FIRST enabled color variant as the
+        // default (customers can always change it from the product page)
+        addToCart(it.id, shape ? shape.shape : '', 1, { openCart: false, color: activeColorsOf(it)[0] || null });
         added = true;
       });
       if (!added) { notify(pt('empty_cart')); return; }
@@ -2477,11 +2544,11 @@
       drawer.dataset.dlgBound = '1';
       drawer.addEventListener('click', (e) => {
         const q = e.target.closest('[data-qtyd]');
-        if (q) { const [pid, sh] = q.getAttribute('data-qtyd').split('|'); const item = state.cart.find(i => i.productId === pid && i.keyShape === sh); if (item) setQty(pid, sh, item.qty + parseInt(q.getAttribute('data-qtyv') || '1')); return; }
+        if (q) { const [pid, sh, cid] = q.getAttribute('data-qtyd').split('|'); const item = state.cart.find(i => i.productId === pid && i.keyShape === sh && (i.colorId || '') === (cid || '')); if (item) setQty(pid, sh, cid, item.qty + parseInt(q.getAttribute('data-qtyv') || '1')); return; }
         const rm = e.target.closest('[data-remove]');
-        if (rm) { const [pid, sh] = rm.getAttribute('data-remove').split('|'); removeCartItem(pid, sh); notify(L() === 'ar' ? 'تمت الإزالة' : 'Item removed'); return; }
+        if (rm) { const [pid, sh, cid] = rm.getAttribute('data-remove').split('|'); removeCartItem(pid, sh, cid); notify(L() === 'ar' ? 'تمت الإزالة' : 'Item removed'); return; }
         const ab = e.target.closest('[data-addbundle]');
-        if (ab) { const p = product(ab.getAttribute('data-addbundle')); if (!p) return; const shape = (p.keyShapes||[]).find(s=>s.available); addToCart(p.id, shape?shape.shape:'', 1); return; }
+        if (ab) { const p = product(ab.getAttribute('data-addbundle')); if (!p) return; const shape = (p.keyShapes||[]).find(s=>s.available); addToCart(p.id, shape?shape.shape:'', 1, { color: activeColorsOf(p)[0] || null }); return; }
       });
     }
 
@@ -2581,15 +2648,22 @@
       const f = state.fitment || {};
       const shape = p ? (p.keyShapes || []).find(s => s.shape === f.shape && s.available) : null;
       if (!p) return;
-      if (shape) { addToCart(p.id, shape.shape, 1); }
+      // products with color variants always go through the picker so the
+      // customer chooses a color before the item lands in the cart
+      if (shape && !activeColorsOf(p).length) { addToCart(p.id, shape.shape, 1); }
       else openProductQuickAdd(p);
     }));
   }
 
   function openProductQuickAdd(p) {
-    // open a quick modal to choose a shape (if required) then add
+    // open a quick modal to choose a shape (if required) and a color variant
+    // (when the product has admin-configured colors), then add
     const avail = (p.keyShapes || []).filter(s => s.available);
     if (!avail.length) { notify(pt('out_of_stock')); return; }
+    const pcolors = activeColorsOf(p);
+    const colorBlock = pcolors.length ? `
+      <div class="label" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:16px 0 10px">${pt('select_color')}</div>
+      <div class="color-options qa-colors">${pcolors.map(c => `<button class="color-opt" data-qac="${VEL.esc(c.id)}" title="${VEL.esc(colorLabel(c))}"><span class="color-swatch" style="background:${VEL.esc(c.hex)}"></span><div class="lbl">${VEL.esc(colorLabel(c))}</div></button>`).join('')}</div>` : '';
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.innerHTML = `<div class="modal">
@@ -2597,16 +2671,33 @@
       <div style="color:var(--muted);font-size:13px;margin-bottom:16px">${VEL.money(p.price)}</div>
       <div class="label" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">${pt('select_key_shape')}</div>
       <div class="shape-options">${avail.map(sh => `<button class="shape-opt selectable" data-qa="${sh.shape}" style="width:88px">${VEL.keyShapeSVG(sh.shape, { color: '#2b2b2b', w: 52, h: 80 })}<div class="lbl">${pt('shape')} ${sh.shape}</div></button>`).join('')}</div>
+      ${colorBlock}
       <button class="btn btn-gold btn-block" style="margin-top:18px" id="qa-add" disabled>${pt('add_to_cart')}</button>
     </div>`;
     document.body.appendChild(modal);
     let chosen = '';
+    let chosenColor = '';
+    const syncAdd = () => {
+      const ready = chosen && (!pcolors.length || chosenColor);
+      modal.querySelector('#qa-add').disabled = !ready;
+    };
     modal.querySelectorAll('[data-qa]').forEach(b => b.addEventListener('click', () => {
       modal.querySelectorAll('[data-qa]').forEach(x => x.classList.remove('selected'));
       b.classList.add('selected'); chosen = b.getAttribute('data-qa');
-      modal.querySelector('#qa-add').disabled = false;
+      syncAdd();
     }));
-    modal.querySelector('#qa-add').addEventListener('click', () => { if (chosen) addToCart(p.id, chosen, 1); modal.remove(); });
+    modal.querySelectorAll('[data-qac]').forEach(b => b.addEventListener('click', () => {
+      modal.querySelectorAll('[data-qac]').forEach(x => x.classList.remove('selected'));
+      b.classList.add('selected'); chosenColor = b.getAttribute('data-qac');
+      syncAdd();
+    }));
+    modal.querySelector('#qa-add').addEventListener('click', () => {
+      if (!chosen) return;
+      const color = pcolors.find(c => c.id === chosenColor) || null;
+      if (pcolors.length && !color) return;
+      addToCart(p.id, chosen, 1, { color });
+      modal.remove();
+    });
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
   }
 
@@ -2640,7 +2731,20 @@
     const f = new FormData(form);
     const customer = { fullName: f.get('fullName'), phone: f.get('phone'), city: f.get('city'), area: f.get('area'), address: f.get('address'), notes: f.get('notes') };
     const payment = f.get('paymentMethod') || 'Cash on Delivery';
-    const cart = state.cart.map(i => ({ productId: i.productId, keyShape: i.keyShape, qty: i.qty, fitment: i.fitment || null }));
+
+    // A color is mandatory for every product that has color variants. A stale
+    // cart item from before the color system existed gets the customer sent to
+    // the product page to choose one — the server enforces the same rule.
+    for (const i of state.cart) {
+      const prod = product(i.productId);
+      if (prod && activeColorsOf(prod).length && !prod.colors.find(c => c.id === i.colorId && c.enabled !== false)) {
+        notify(pt('color_required'));
+        location.hash = '#/product/' + prod.slug;
+        return;
+      }
+    }
+
+    const cart = state.cart.map(i => ({ productId: i.productId, keyShape: i.keyShape, qty: i.qty, fitment: i.fitment || null, colorId: i.colorId || null }));
     const btn = form.querySelector('button[type=submit]');
     btn.disabled = true; btn.textContent = '…';
     submitOrder({ customer, cart, payment }).then(({ ok, j }) => {
@@ -2649,7 +2753,7 @@
         state.lastOrder = {
           id: j.orderId, createdAt: new Date().toISOString(), customer,
           payment,
-          items: totals.items.map(it => ({ productId: it.productId, keyShape: it.keyShape, qty: it.qty, fitment: it.fitment || null, name_en: it.prod.name_en, name_ar: it.prod.name_ar, price: it.prod.price, lineTotal: it.prod.price * it.qty, image: img(it.prod), brandSlug: it.prod.brandSlug, category: it.prod.category })),
+          items: totals.items.map(it => ({ productId: it.productId, keyShape: it.keyShape, qty: it.qty, fitment: it.fitment || null, color: it.color || null, name_en: it.prod.name_en, name_ar: it.prod.name_ar, price: it.prod.price, lineTotal: it.prod.price * it.qty, image: img(it.prod), brandSlug: it.prod.brandSlug, category: it.prod.category })),
           subtotal: totals.subtotal, bundleDiscount: totals.bundleDiscount, deliveryFee: totals.deliveryFee, total: totals.total,
         };
         state.cart = []; saveCart(); location.hash = '#/success/' + j.orderId;

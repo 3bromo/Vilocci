@@ -37,6 +37,7 @@ const MIGRATIONS = [
   { version: '001', title: 'Baseline schema (products, categories, brands, bundles, orders, content, RLS)', file: 'supabase-schema.sql' },
   { version: '002', title: 'CMS core (order_items, product_images, product_prices, customer_phone/address, CMS columns)', file: 'supabase/migrations/002_cms_core.sql' },
   { version: '003', title: 'Customize (customize_requests, customize category settings, private storage bucket)', file: 'supabase/migrations/003_customize.sql' },
+  { version: '004', title: 'Product colors (products.colors variants, order_items.color snapshot)', file: 'supabase/migrations/004_product_colors.sql' },
 ];
 
 const argv = process.argv.slice(2);
@@ -411,11 +412,11 @@ async function seedCustomizeSetting(client) {
 
 const JSONB_TABLES = {
   // products.images is text[] (node-postgres builds the array literal), the rest are jsonb
-  products: ['key_shapes', 'fitment', 'models', 'years', 'specs', 'vehicles'],
+  products: ['key_shapes', 'fitment', 'models', 'years', 'specs', 'vehicles', 'colors'],
   brands: ['models'],
   home_sections: ['config'],
   orders: ['customer', 'items', 'status_history'],
-  order_items: ['fitment'],
+  order_items: ['fitment', 'color'],
   preorders: ['customer'],
   settings: ['value'],
 };

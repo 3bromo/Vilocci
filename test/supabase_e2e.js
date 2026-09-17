@@ -76,8 +76,17 @@ async function main() {
     check('migration CLI exited 0', () => assert.strictEqual(apply.status, 0, `exit ${apply.status}`));
 
     const applied = await q('select version from supabase_migrations.schema_migrations order by version');
-    check('all migrations recorded (001 + 002 + 003)', () =>
-      assert.deepStrictEqual(applied.map((r) => r.version), ['001', '002', '003']));
+    check('all migrations recorded (001 + 002 + 003 + 004)', () =>
+      assert.deepStrictEqual(applied.map((r) => r.version), ['001', '002', '003', '004']));
+
+    const colorCols = await q(`select table_name, column_name from information_schema.columns
+      where table_schema = 'public' and column_name in ('colors','color')
+        and ((table_name = 'products' and column_name = 'colors') or (table_name = 'order_items' and column_name = 'color'))`);
+    check('004 added products.colors + order_items.color', () =>
+      assert.strictEqual(colorCols.length, 2, JSON.stringify(colorCols)));
+    const seededColors = await one(`select count(*)::int n from public.products where jsonb_array_length(coalesce(colors,'[]'::jsonb)) > 0`);
+    check('mapped products carry their seeded color variants', () =>
+      assert.strictEqual(seededColors.n, 117, `got ${seededColors.n}`));
 
     // ------------------------------------------------------------------ 2
     section('2. Existing storefront content is in the database (mapped, not sample data)');
@@ -94,7 +103,8 @@ async function main() {
       // 25 storefront settings + the language dictionary + the seeded
       // Customize category setting (003 / post-import default)
       settings: 27,
-      promo_bar: 1, website_content: 167,
+      // 167 original copy strings + the 4 color-system dictionary keys
+      promo_bar: 1, website_content: 171,
       orders: 23, order_items: 65, product_images: 279, product_prices: 117,
       customize_requests: 0,
     };
@@ -205,10 +215,28 @@ async function main() {
       assert.strictEqual(data.settings.shopName, 'SPINTO');
     });
 
+    const pickColor = (pid) => {
+      const p = data.products.find((x) => x.id === pid);
+      const c = (p.colors || []).find((x) => x && x.id && x.enabled !== false);
+      assert.ok(c, `seeded product ${pid} must carry an enabled color`);
+      return c.id;
+    };
     const cart = [
-      { productId: 'p_mercedes-benz_case_carbon', qty: 2, keyShape: 'A' },
-      { productId: 'p_mercedes-benz_holder', qty: 1, keyShape: 'A' },
+      { productId: 'p_mercedes-benz_case_carbon', qty: 2, keyShape: 'A', colorId: pickColor('p_mercedes-benz_case_carbon') },
+      { productId: 'p_mercedes-benz_holder', qty: 1, keyShape: 'A', colorId: pickColor('p_mercedes-benz_holder') },
     ];
+    // The new required-color rule applies to the SQL driver too.
+    const noColorRes = await fetch(`${base}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customer: { fullName: 'E2E Tester', phone: '+201099998888', city: 'Cairo', area: 'Maadi', address: '9 Test Street, building 2' },
+        cart: [{ productId: 'p_mercedes-benz_case_carbon', qty: 1, keyShape: 'A' }],
+      }),
+    });
+    check('order without a required color is rejected (SQL driver)', () => {
+      assert.strictEqual(noColorRes.status, 400);
+    });
     const orderRes = await fetch(`${base}/api/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -238,7 +266,7 @@ async function main() {
     check('server recomputed the total (2 x 1450 + 850, free delivery)', () =>
       assert.strictEqual(Number(orderRow.total), 3750, `got ${orderRow.total}`));
 
-    const items = await q('select product_id, qty, unit_price, line_total, key_shape, brand_slug from public.order_items where order_id = $1 order by product_id', [newOrderId]);
+    const items = await q('select product_id, qty, unit_price, line_total, key_shape, brand_slug, color from public.order_items where order_id = $1 order by product_id', [newOrderId]);
     check('order_items rows written (one per line)', () => {
       assert.strictEqual(items.length, 2);
       const caseItem = items.find((i) => i.product_id === 'p_mercedes-benz_case_carbon');
@@ -247,6 +275,13 @@ async function main() {
       assert.strictEqual(Number(caseItem.line_total), 2900);
       assert.strictEqual(caseItem.key_shape, 'A');
       assert.strictEqual(caseItem.brand_slug, 'mercedes-benz');
+    });
+    check('order_items.color carries the chosen color snapshot (SQL path)', () => {
+      for (const it of items) {
+        assert.ok(it.color && typeof it.color === 'object', 'color jsonb missing');
+        assert.ok(it.color.id && it.color.name_en && it.color.name_ar, 'snapshot fields missing');
+        assert.match(it.color.hex, /^#[0-9A-F]{6}$/i);
+      }
     });
 
     const adminOrders = await (await fetch(`${base}/api/admin/orders`, { headers: adminHeaders })).json();
@@ -264,7 +299,7 @@ async function main() {
       assert.strictEqual(adminData.categories.length, 3);
       assert.strictEqual(adminData.orders.length, 24);
       assert.ok(adminData.orders.some((o) => o.id === newOrderId));
-      assert.strictEqual(adminData.websiteContent.length, 167);
+      assert.strictEqual(adminData.websiteContent.length, 171);
     });
 
     const unauth = await fetch(`${base}/api/admin/data`);

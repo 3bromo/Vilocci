@@ -94,7 +94,15 @@ function read(url) {
   // select an available shape
   const selShape = document.querySelector('.shape-opt.selectable');
   if (selShape) { click(selShape); await new Promise(r => setTimeout(r, 40)); }
-  check('add enabled after shape selection', !!document.querySelector('#addbtn') && document.querySelector('#addbtn').disabled === false);
+  // color variants: products with admin-configured colors also require a
+  // color choice before the item can be added
+  const colorOpts = document.querySelectorAll('.color-selector .color-opt');
+  if (colorOpts.length) {
+    check('color selector rendered from the product data', colorOpts.length >= 2);
+    check('add still disabled until a color is picked', !!document.querySelector('#addbtn') && document.querySelector('#addbtn').disabled === true);
+    click(colorOpts[0]); await new Promise(r => setTimeout(r, 40));
+  }
+  check('add enabled after shape (+color) selection', !!document.querySelector('#addbtn') && document.querySelector('#addbtn').disabled === false);
   check('bundle card "COMPLETE YOUR SET" present', /COMPLETE.*SET/i.test(text('.bundle-card')));
 
   console.log('\n== ADD TO CART ==');
