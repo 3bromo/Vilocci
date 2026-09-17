@@ -373,3 +373,47 @@ in the verification sandbox.
 in Supabase are still `active = false`. The app now derives them, so nothing is
 broken, but switching them on in `Admin → Categories` would make the stored
 rows the source of truth again and let the admin edit their names and images.
+
+---
+
+## 9. Addendum 2026-09-17 — Customize UI exposure (nav prominence + cache-buster)
+
+**Report.** "Customize exists in code/API but cannot be found in the UI — not in
+the public nav, not in the Admin Dashboard."
+
+**Finding.** The implementation was already complete and deployed (§7/§8): the
+header, mobile menu and footer all render a `Customize → #/customize` entry
+unconditionally, `/customize` serves the 5-step flow, and the Admin sidebar has
+a `Customize` group (`Customize Settings` + `Customize Requests`). No backend,
+route, API, table, bucket or category-system change was needed, so none was
+made. Two things made the feature easy to miss:
+
+1. The header entry was a plain text link among six others — nothing drew the
+   eye to the primary bespoke flow.
+2. The §8 fix shipped without a cache-buster bump, so browsers/CDN could keep
+   serving the pre-fix `app.js` (no `Customize` entry) under the same
+   `?v=20260916b` URL.
+
+**Change (UI exposure only, build `20260917a`).**
+
+- Public site: the `Customize` desktop nav entry is now a gold pill
+  (`.nav-customize`, `✦` marker via CSS only — link text and `#/customize`
+  target unchanged); the mobile-menu entry is a highlighted gold-tinted row
+  (`.nav-customize-m`); footer Quick Links unchanged. Position, order and all
+  other nav items unchanged; the 5-step flow untouched.
+- Admin: new `🎨 Customize — bespoke requests` quick-access card on the
+  dashboard (new/total counts, enabled-categories count, buttons to both
+  Customize screens via the existing global `[data-nav]` binding + store-page
+  link). Sidebar group untouched.
+- Cache-busters: `index.html` refs bumped `20260916b → 20260917a`;
+  `admin.html` refs gained `?v=20260917a`. `root/public/dist` copies kept
+  byte-identical (enforced by `test/customize.js`).
+- No changes to products, packages, orders, checkout, InstaPay, categories,
+  brands, admin auth, or any API/route/table.
+
+**Verified locally.** `npm test`: **261 passed, 0 failed** (smoke 39, admin 7,
+admin CMS 36, admin packages 48, fallback 36, customize 55, customize-nav 40)
+against a local server. jsdom checks on the exact deployed bytes: desktop pill
+and mobile entry render with `#/customize` and open the 5-step wizard; admin
+sidebar group + badge + dashboard card render and the card buttons navigate to
+both Customize screens.

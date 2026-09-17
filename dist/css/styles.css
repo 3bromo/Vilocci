@@ -188,6 +188,20 @@ html[dir="rtl"] .link-all:hover svg { transform: translateX(-3px) scaleX(-1); }
 }
 .nav a:hover::after, .nav a.active::after { right: 0; }
 
+/* Customize entry — a primary customer flow, rendered as a gold pill so it is
+   unmistakable in the desktop header. Other nav items are untouched. */
+.nav a.nav-customize {
+  background: var(--gold-grad);
+  color: #fff;
+  padding: 9px 20px;
+  border-radius: 999px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(156,107,22,.28), inset 0 1px 0 rgba(255,255,255,.28);
+}
+.nav a.nav-customize:hover { background: var(--gold-grad-hover); color: #fff; }
+.nav a.nav-customize::after { display: none; }
+.nav a.nav-customize::before { content: "✦\00a0"; }
+
 .header-actions { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; min-width: 0; }
 .icon-btn { background: none; border: none; padding: 7px; color: var(--ink); position: relative; display: flex; transition: color .2s; border-radius: 6px; flex-shrink: 0; }
 .icon-btn:hover { color: var(--gold-deep); }
@@ -1079,6 +1093,17 @@ html[dir="rtl"] .hero-copy .eyebrow::before { order: 2; }
   .nav-mobile.open { transform: none; }
   .nav-mobile a { padding: 14px 12px; font-weight: 500; font-size: 15px; border-top: 1px solid var(--line); letter-spacing: .04em; }
   .nav-mobile a:hover { background: var(--ivory); }
+  /* Customize entry — highlighted row so it stands out in the mobile menu. */
+  .nav-mobile a.nav-customize-m {
+    background: #fdf6e9;
+    border: 1px solid var(--gold-soft);
+    border-radius: 10px;
+    color: var(--gold-deep);
+    font-weight: 700;
+    margin-top: 8px;
+  }
+  .nav-mobile a.nav-customize-m:hover { background: #faf0da; }
+  .nav-mobile a.nav-customize-m::before { content: "✦\00a0"; }
   .nav-mobile .close { align-self: flex-end; background: var(--ivory); border: 1px solid var(--line); border-radius: 50%; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--ink); cursor: pointer; transition: all .2s; margin-bottom: 8px; }
   .nav-mobile .close:hover { background: var(--cream); border-color: var(--gold); color: var(--gold-deep); }
   .nav-mobile .nav-brands-section {
