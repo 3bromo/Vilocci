@@ -2,9 +2,10 @@
    VELOCCI — Storefront application (single-file client SPA)
    Loads the shared store once, renders the whole site, and keeps the cart in
    localStorage. Reads live data from /api/data so admin changes reflect.
-   Build 20260917b — Customize entry exposed in header/mobile/footer nav,
-   plus the premium minimal Customize banner directly after "Complete Your Set"
-   on the homepage (same #/customize target, same five-step flow).
+   Build 20260917c — mobile UX pass (search sheet, promo bar, homepage hero
+   spacing, product-page containment) and the two-step Quick Add flow:
+   key shape, then the product's own admin-managed colors, then add to cart.
+   No public admin entry anywhere in the customer-facing nav.
    ========================================================================== */
 (function () {
   'use strict';
