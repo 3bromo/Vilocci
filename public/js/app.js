@@ -2,6 +2,7 @@
    VELOCCI — Storefront application (single-file client SPA)
    Loads the shared store once, renders the whole site, and keeps the cart in
    localStorage. Reads live data from /api/data so admin changes reflect.
+   Build 20260917a — Customize entry exposed in header/mobile/footer nav.
    ========================================================================== */
 (function () {
   'use strict';
@@ -1410,7 +1411,9 @@
           <span class="word">SPINTO</span>
         </a>
         <nav class="nav">
-          ${navLinks.map(l => `<a href="${l[1]}" data-nav="${l[0]}">${l[0]}</a>`).join('')}
+          ${navLinks.map(l => l[1] === '#/customize'
+            ? `<a href="${l[1]}" data-nav="${l[0]}" class="nav-customize">${l[0]}</a>`
+            : `<a href="${l[1]}" data-nav="${l[0]}">${l[0]}</a>`).join('')}
           <a href="#/brands" data-nav="${pt('brands')}">${pt('brands')}</a>
         </nav>
         <div class="header-actions">
@@ -1431,7 +1434,9 @@
       <div class="nav-mobile hidden" id="nav-mobile">
         <button class="close" id="mobile-close">×</button>
         <a href="#/">${pt('home')}</a>
-        ${navLinks.map(l => `<a href="${l[1]}">${l[0]}</a>`).join('')}
+        ${navLinks.map(l => l[1] === '#/customize'
+          ? `<a href="${l[1]}" class="nav-customize-m">${l[0]}</a>`
+          : `<a href="${l[1]}">${l[0]}</a>`).join('')}
         <a href="#/fitment">${pt('find_your_key')}</a>
         <a href="#/about">${pt('about_velocci')}</a>
         <div class="nav-brands-section">

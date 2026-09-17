@@ -1,6 +1,7 @@
 /* ==========================================================================
    SPINTO — Admin Dashboard Application
    Professional e-commerce admin panel with Supabase integration.
+   Build 20260917a — Customize exposed in sidebar + dashboard quick access.
    ========================================================================== */
 (() => {
   'use strict';
@@ -712,6 +713,37 @@
     return Number.isFinite(n) && n > 0 ? n : 0;
   }
 
+  // Dashboard quick-access card for the Customize flow. The full screens live
+  // in the sidebar under "Customize" (Customize Settings + Customize
+  // Requests); this card surfaces them on the dashboard too. Navigation uses
+  // the global [data-nav] binding, so no per-page bind code is needed.
+  function czDashboardCard() {
+    const cfg = (state.data && state.data.customize) || {};
+    const stats = cfg.stats || {};
+    const list = Array.isArray(cfg.list) ? cfg.list : [];
+    const enabled = list.filter((c) => c && c.enabled !== false).length;
+    const total = Number(stats.total);
+    const fresh = getNewCustomizeCount();
+    return `
+    <div class="card" style="margin-bottom:20px;border:1px solid var(--spinto-gold-soft);">
+      <div class="card-header">
+        <h3>🎨 Customize — bespoke requests</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" data-nav="customize-settings">Customize Settings</button>
+          <button class="btn btn-primary btn-sm" data-nav="customize-requests">View Requests${fresh ? ` (${fresh} new)` : ''}</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;gap:28px;flex-wrap:wrap;font-size:13px;color:var(--text-secondary);">
+          <span><strong style="font-size:17px;color:var(--text-primary);">${fresh}</strong> new requests</span>
+          <span><strong style="font-size:17px;color:var(--text-primary);">${Number.isFinite(total) ? total : 0}</strong> total requests</span>
+          <span><strong style="font-size:17px;color:var(--text-primary);">${enabled} of ${list.length}</strong> categories available for Customize</span>
+        </div>
+        <p style="margin:10px 0 0;font-size:12px;color:var(--text-muted);">Customers submit from the store <a href="/#/customize" target="_blank" rel="noopener">Customize page</a>. Availability here never changes the normal shop pages.</p>
+      </div>
+    </div>`;
+  }
+
   function renderHeader() {
     const titles = {
       dashboard: 'Dashboard', products: 'Products', categories: 'Categories',
@@ -840,6 +872,8 @@
         <div class="stat-label">New Orders</div>
       </div>
     </div>
+
+    ${czDashboardCard()}
 
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:20px;">
       <div class="card">
