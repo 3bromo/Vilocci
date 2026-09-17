@@ -596,3 +596,101 @@ the sandbox, exactly as noted in §9:
    `public/js/app.js`, not by a live Arabic screenshot.
 
 Everything else above was observed directly on the production URLs.
+
+---
+
+## 12. Addendum 2026-09-17 — Product color system: migration + PRODUCTION verification
+
+**Scope.** The complete product color system (PR #24, merged to `main` as
+`0862157`): per-product color variants in `products.colors`, the required
+storefront color selector, cart/checkout/order snapshots in `order_items.color`,
+and the Admin → Products → Colors editor.
+
+### 12.1 Production database migration (applied BEFORE the code deploy)
+
+Deliberate order: migration first, code second — the new code always writes the
+`colors` / `color` fields, so the columns had to exist first.
+
+- Migration `004_product_colors.sql` (adds `products.colors` + `order_items.color`)
+  was applied to the production Supabase project `zbqnkebsmhhemknpazme` via the
+  Supabase SQL Editor by the operator, together with the colors-only backfill
+  (`supabase/colors-backfill.sql` in this repo):
+  - 117 targeted `UPDATE products SET colors = …` statements (the repo palettes,
+    nothing else touched — prices, images, packages, orders untouched by design);
+  - a `jsonb_set` merge of the 4 color dictionary keys into `settings.languages`
+    (every other dictionary key preserved).
+- Operator-confirmed verification output: `products_with_colors = 117`,
+  `en_select_color = SELECT YOUR COLOR`, `ar_select_color = اختر اللون`.
+- Before pasting, the identical script was executed against a real PostgreSQL
+  18.4 shaped like production (migrations 001–003 only): columns added
+  idempotently, palettes landed, existing dictionary survived byte-for-byte,
+  products absent from the source file untouched, re-run a no-op.
+
+### 12.2 Deployment
+
+- PR #24 merged to `main` as `0862157` (2026-09-17).
+- All **6** linked Vercel projects built Production `success` on `0862157`
+  between 17:52:21Z and 17:53:24Z (`01a07cb5-…-4`, `vilocci-i54t`,
+  `vilocci-pvpw`, `velocciiiii`, `vilocci-b31u`, `vilocciii3bro`).
+
+### 12.3 Verified on PRODUCTION after the deploy
+
+All observed live on `https://vilocciii3bro.vercel.app` (the Supabase-backed,
+customer-facing instance) unless noted:
+
+1. **Driver healthy, no fallback.** `GET /api/admin/diagnose` →
+   `dataDriverActive: "postgrest"`, `usingJsonFallback: false`,
+   `serviceKeyRole: "service-role"`, project `zbqnkebsmhhemknpazme`. The new
+   code runs against the migrated schema with zero fallback flapping.
+2. **Colors served from the production API.** `GET /api/data` products now carry
+   their `colors` arrays straight from Supabase — spot-checked across all four
+   palette families, e.g. `p_bentley_case_carbon` → Black Carbon `#232326` /
+   Champagne Gold `#C8A15A` / Gunmetal `#4A4E55`; `p_lamborghini_holder` →
+   Champagne Gold / Silver / Black. All other product fields (price, images,
+   stock, fitment, specs) unchanged.
+3. **Dictionary keys live.** `/api/data` → `languages.dict` contains
+   `select_color: "SELECT YOUR COLOR"`, `color_required: "Please choose a color
+   first."` (EN) and `"اختر اللون"` / `"يرجى اختيار اللون أولاً."` (AR), with all
+   pre-existing keys intact.
+4. **Storefront color selector is in the served bundle.** The live `/js/app.js`
+   contains the PDP builder: `activeColorsOf(p)` renders one swatch per enabled
+   color from the stored HEX under the `select_color` label, and
+   `canAdd = … && (!pcolors.length || activeColor)` keeps add-to-cart disabled
+   until a color is picked. Cart drawer, checkout and the order-success page all
+   render the color via `cartItemMeta` / `colorDot`. Rendering behavior itself is
+   asserted by `test/smoke.js` + `test/colors.js` driving the byte-identical
+   file in jsdom (the sandbox has no browser binary).
+5. **Admin colors editor is in the served bundle + API locked.** Live
+   `/js/admin-app.js` contains the Colors section save path (HEX validation and
+   3→6-digit normalization, EN/AR name requirement, `colors: finalColors` into
+   `sbUpsert('products', …)`, keyShapes/models/years/specs/order explicitly
+   preserved). `GET /api/admin/data` without a token → `401
+   {"error":"Unauthorized — no token"}`.
+6. **No regressions.** Homepage renders fully (hero, 59/29/29 categories,
+   brands, hero products, New Arrivals, Complete Your Set, and the PR #23
+   Customize banner directly after it); `/api/customize/categories` →
+   `available: true` with the same 3 categories. The JSON-fallback instances
+   (e.g. `vilocci-b31u`) serve the same palettes from the bundled store.
+
+### 12.4 Verified locally against the exact merged commit
+
+- `npm test` — **323 passed, 0 failed** (smoke 41, admin 7, admin-cms 36,
+  packages 48, db-fallback 36, customize 55, customize-nav 71, colors 29).
+- `npm run test:db` (embedded Postgres 18.4, real SQL driver) — **76 passed,
+  0 failed**, including: order WITHOUT a required color → 400, UNKNOWN color →
+  400, valid color → `order_items.color` snapshot `{id,name_en,name_ar,hex}`
+  that survives later catalog renames; admin color CRUD (add/edit/reorder/
+  disable/delete) round-tripping through the same tables production uses.
+
+### 12.5 NOT verified live — and exactly why
+
+1. **Admin panel click-through on production** (login → edit a color → save).
+   Requires the production admin login; no admin credentials exist in the
+   verification sandbox. Covered instead by the jsdom tests driving the exact
+   served `admin-app.js` against a real server + SQL driver (§12.4), and by
+   §12.3.5 proving the same bytes are deployed and the API is live-locked.
+2. **A real order POST on production.** Exercising it would write a genuine
+   order row into the production database — deliberately not done to avoid
+   polluting live data. Covered by §12.4 (full order flow incl. enforcement on
+   the SQL driver at this exact commit) and by §12.3.4 (client snapshot path in
+   the served bundle).
