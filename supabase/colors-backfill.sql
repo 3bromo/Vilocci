@@ -1,5 +1,5 @@
 -- ============================================================================
--- SPINTO / VELOCCI — Product colors backfill for the PRODUCTION Supabase
+-- VILOCCI / VELOCCI — Product colors backfill for the PRODUCTION Supabase
 -- Project ref: zbqnkebsmhhemknpazme  (instance: vilocciii3bro.vercel.app)
 -- Generated from data/velocci-db.json + supabase/migrations/004_product_colors.sql
 --

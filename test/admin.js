@@ -1,4 +1,4 @@
-// Headless test for the SPINTO admin panel (Supabase Auth).
+// Headless test for the VILOCCI admin panel (Supabase Auth).
 // Uses a stubbed window.supabase client so no real Supabase project is
 // needed. Verifies:
 //   1. Supabase config bootstrap via /api/admin/config (static admin.html)

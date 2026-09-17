@@ -1,5 +1,5 @@
 // ============================================================================
-// SPINTO — Vercel serverless entry point
+// VILOCCI — Vercel serverless entry point
 // Vercel routes every request here (see vercel.json). We simply re-export the
 // Express app so all existing routes, static assets, SPA fallbacks and admin
 // endpoints continue to work unchanged.
