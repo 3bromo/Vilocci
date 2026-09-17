@@ -298,3 +298,78 @@ The production project still has **no** Supabase environment variables, so:
 4. Redeploy, then re-run the §6.4 checklist plus
    `GET /api/customize/categories` and one end-to-end Customize submission from
    `Admin → Customize → Requests` (status change, internal note, delete).
+
+---
+
+## 8. Addendum 2026-09-17 — Customize was unreachable on the live site (fixed)
+
+**Symptom.** The Customize flow was implemented and deployed, but the live
+storefront showed **no Customize entry at all** — not in the header, not in the
+mobile menu, not in the footer.
+
+**Why the earlier "verified" claim was wrong.** §1 of this document names
+`https://vilocci-b31u.vercel.app` as production. That project runs on the
+**JSON fallback driver**, which *derives* the categories from the products, so
+it reported 3 categories and the nav entry appeared. The real customer-facing
+instance is the Supabase-backed one:
+
+| Project | Driver | `/api/customize/categories` before the fix |
+| --- | --- | --- |
+| `vilocciii3bro.vercel.app` | `postgrest` (Supabase `zbqnkebsmhhemknpazme`) | `{"available":false,"categories":[]}` |
+| `vilocci-b31u.vercel.app` | `json` fallback | 3 categories |
+| `velocciiiii.vercel.app`, `vilocci-pvpw.vercel.app` | `json` fallback | 3 categories |
+
+Verifying only the JSON-backed project hid the bug completely.
+
+**Two independent causes, both fixed.**
+
+1. `headerHTML()` pushed the entry only when the catalogue reported categories:
+   `if (czCategories().length) navLinks.push([… '#/customize'])`. A primary
+   customer flow must not depend on a data condition to appear. It is now
+   pushed unconditionally (desktop `.nav`, mobile `.nav-mobile`, footer), and
+   `czCategories()` falls back to the site's own categories instead of `[]`.
+2. `lib/db.js getCatalog()` derived the categories from the products for the
+   **JSON** driver only. The production database has the three `categories` rows
+   written by the migration but **all switched off**, so the `postgrest` driver
+   reported an empty catalogue. Note the RLS trap that makes this easy to
+   misread:
+
+   ```sql
+   create policy "Public read active categories" on public.categories
+     for select using (active = true);
+   ```
+
+   A read with the **anon** key returns `[]` for *both* "no rows" and "no active
+   rows"; only the service role the server uses can tell them apart. The fix
+   derives whenever **no stored category is active**, which covers both.
+
+`/customize` also works as a direct path now (Vercel rewrite → `index.html`,
+normalised into the existing hash route on boot), so there is still exactly one
+implementation of the page.
+
+**Verified on production after deploy** (`main` → `29821c0`, 6 Vercel
+projects `success`):
+
+- `GET https://vilocciii3bro.vercel.app/api/customize/categories` →
+  `available: true`, Key Cases **59**, Key Holders **29**, Car Medals **29**.
+- `GET https://vilocciii3bro.vercel.app/customize` → 200, the real 5-step flow
+  (Choose → Photo → Car info → Your request → Your details) with the three
+  categories and their real product counts.
+- Storefront home unchanged: products, brands, fitment, packages, bundles,
+  cart and InstaPay all render.
+- `npm test`: **261 passed, 0 failed**, including the new
+  `test/customize_nav.js`, which drives the real `postgrest` driver against a
+  PostgREST stub for three shapes — empty table, all rows inactive (the live
+  shape) and one category hidden by the admin — then the real
+  `public/js/app.js` in jsdom for the nav, the categories and both routes.
+
+**Not verified:** a visual/pixel check of the rendered header on the live
+domain. The nav is asserted in the DOM by `test/customize_nav.js` against the
+same `app.js` bytes that are deployed, and the deployed bundle was read back to
+confirm the unconditional `navLinks.push`, but no browser binary is installable
+in the verification sandbox.
+
+**Operator follow-up (recommended, not required).** The three `categories` rows
+in Supabase are still `active = false`. The app now derives them, so nothing is
+broken, but switching them on in `Admin → Categories` would make the stored
+rows the source of truth again and let the admin edit their names and images.
