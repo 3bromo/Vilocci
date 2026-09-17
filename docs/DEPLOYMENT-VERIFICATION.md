@@ -515,3 +515,84 @@ in the same position; the banner survives "Complete Your Set" being disabled;
 and the CSS + cache-buster ship in the served copies.
 
 **Production verification** — recorded in §11 after the merge and deploy.
+
+---
+
+## 11. Addendum 2026-09-17 — Customize homepage banner VERIFIED ON PRODUCTION
+
+**Merge.** PR #22 (`arena/01a0af6d-vilocci` → `main`) merged 2026-09-17
+13:18:34 UTC as **`2d92a40`**.
+
+**Vercel Production — all 6 projects `success` on `2d92a40`:**
+
+| Project | State | Updated (UTC) |
+|---|---|---|
+| `vilocci-pvpw` | success | 13:18:51 |
+| `vilocciii3bro` | success | 13:18:52 |
+| `velocciiiii` | success | 13:18:58 |
+| `01a07cb5-…-4` | success | 13:19:11 |
+| `vilocci-b31u` | success | 13:19:26 |
+| `vilocci-i54t` | success | 13:19:40 |
+
+**Live homepage — the banner is directly after "Complete Your Set".**
+`GET https://vilocciii3bro.vercel.app/` renders, in this order:
+
+```
+Complete Your Set / Packages & Sets … [ADD 3-PIECE SET]
+Bespoke Atelier                                          ← gold kicker
+Customize                                                ← serif h2
+Tell us exactly what you have in mind and our atelier    ← bespoke-request copy
+  will craft it for your car.
+[Customize Your Car →](…#/customize)                     ← gold CTA
+```
+
+The CTA's `href` resolves to `#/customize` — the existing route. Nothing
+renders between "Complete Your Set" and the banner (adjacent siblings).
+Identical result on `https://vilocci-b31u.vercel.app/`.
+
+**Live bundle bytes.**
+
+- `GET /js/app.js` header now reads `Build 20260917b — … plus the premium
+  minimal Customize banner directly after "Complete Your Set"`.
+- `GET /css/styles.css` serves the new `.section-czbanner` / `.czbanner-card` /
+  `.czbanner-kicker` / `.czbanner-title` / `.czbanner-desc` / `.czbanner-cta`
+  block, including the `html[dir="rtl"]` arrow-mirroring rules and the
+  `@media (max-width: 768px)` mobile rules.
+- `GET /index.html` references `?v=20260917b` for `styles.css`, `engine.js` and
+  `app.js`, so live browsers cannot keep the pre-banner bundles.
+
+**The two pre-existing Customize entries are unchanged live.**
+
+- Served `headerHTML()` still contains the unconditional
+  `navLinks.push([cz('customize'), '#/customize'])`, and the router still has
+  exactly one `else if (first === 'customize') html = customizeHTML();`.
+- Served CSS still carries the desktop gold pill `.nav a.nav-customize` (with
+  its `✦` `::before` marker) and the mobile highlighted row
+  `.nav-mobile a.nav-customize-m` — byte-for-byte the §9 rules.
+
+**The flow itself is untouched live.**
+`GET /api/customize/categories` → `available: true`, Key Cases **59**,
+Key Holders **29**, Car Medals **29**. `GET /customize` → 200 and the real
+five-step flow (Choose → Photo → Car info → Your request → Your details) with
+those three categories.
+
+**Verified locally before merge.** `npm test`: **292 passed, 0 failed**
+(smoke 39, admin 7, admin CMS 36, admin packages 48, fallback 36, customize 55,
+customize-nav 71). No pre-existing test was modified or weakened — the previous
+261 all still pass.
+
+**Honest scope of this verification.** Two things could not be exercised from
+the sandbox, exactly as noted in §9:
+
+1. The page fetcher strips `<header>/<nav>` from its markdown output, so the
+   desktop pill and the mobile-menu row were verified in the *served bundle and
+   stylesheet bytes* plus jsdom against those exact bytes — not in a screenshot.
+   No browser binary is installable here.
+2. The live site renders English by default and the language toggle needs a real
+   browser, so the **Arabic** banner (kicker `أتيليه خاص`, heading `تخصيص`,
+   localised copy, CTA `خصّص سيارتك →`, RTL with the mirrored arrow, same
+   position after "Complete Your Set") is proven by the jsdom checks in
+   `test/customize_nav.js` driving the byte-identical deployed
+   `public/js/app.js`, not by a live Arabic screenshot.
+
+Everything else above was observed directly on the production URLs.
