@@ -443,3 +443,75 @@ its markdown, so the header pill was verified in the served bundle bytes
 (marker + nav code + CSS rules) rather than in a screenshot; no browser binary
 is installable in the verification sandbox. Admin login itself was not
 exercised (no admin credentials in the sandbox).
+
+---
+
+## 10. Addendum 2026-09-17 — Customize homepage banner (after "Complete Your Set")
+
+**Provenance — read this first.** This change was requested as "deploy the
+already-completed banner from commit `d8a0a7d` on branch
+`arena/01a0af2f-vilocci`". That commit does not exist and never did:
+
+- `git cat-file -t d8a0a7d` → *Not a valid object name* (after a full
+  `--unshallow` fetch of all 46 commits).
+- GitHub REST `GET /repos/3bromo/Vilocci/commits/d8a0a7d` →
+  `422 {"message":"No commit found for SHA: d8a0a7d"}`. Same `422` for
+  `3bromo/Vilocciiii`, `3bromo/Streetpants`, `3bromo/Streetpantss`.
+- No object with that prefix in any of the 18 remote branches or in any of the
+  21 `refs/pull/*` refs.
+- `arena/01a0af2f-vilocci` tips at `e6159aa`, already an ancestor of `main`
+  (`aa3f809`). Its PRs #20/#21 shipped the **nav pill + mobile highlight +
+  admin dashboard card** — *not* a homepage banner. Nothing was left to
+  cherry-pick.
+- The quoted "280 passed" run does not exist either; the suite on `main` was
+  **261 passed, 0 failed**, matching §9.
+
+So there was nothing to deploy. With that established, the banner was
+implemented fresh to the stated spec (build `20260917b`).
+
+**What shipped.** A premium minimal Customize banner rendered directly AFTER
+the "Complete Your Set" homepage section:
+
+- `js/app.js` — new `customizeBannerSection()`, and `homeHTML()` now inserts it
+  immediately after the `completeset` section. It is *not* an Admin-reorderable
+  home section: it renders unconditionally, and still renders if an admin
+  switches "Complete Your Set" off (the API only sends `enabled !== false`
+  sections), so Customize can never become unreachable again.
+- Copy is EN + AR from the **existing `CZ_TEXT` dictionary**. The banner reuses
+  `kicker` ("Bespoke Atelier" / "أتيليه خاص"), `customize` ("Customize" /
+  "تخصيص") and `title` ("Customize Your Car" / "خصّص سيارتك") so the homepage
+  and the flow cannot drift apart; exactly one new key was added (`home_sub`,
+  the short bespoke-request line). No change to the site dictionary, the seed,
+  the API or the database.
+- The CTA is `href="#/customize"` — the same route the header pill, the mobile
+  menu and the footer already use, opening the same five-step flow. No second
+  implementation, no new route.
+- `css/styles.css` — new `.section-czbanner` block modelled on the existing
+  `.findkey-card` (dark premium card, gold kicker with hairline rule, serif
+  heading, muted copy, gold CTA), plus a `max-width: 768px` mobile rule and an
+  RTL rule mirroring the arrow. Arabic serif/`text-transform` come free from the
+  existing global `[lang="ar"] h2` / `[lang="ar"] .btn` rules.
+- Cache-busters `index.html` `20260917a → 20260917b`. `admin.html` untouched
+  (no admin asset changed). `root/public/dist` copies kept byte-identical
+  (enforced by `test/customize.js`).
+
+**Explicitly unchanged.** Products, packages/bundles, cart, checkout, InstaPay,
+orders, APIs, routes, database, categories, admin auth, the Customize flow
+itself, and both pre-existing Customize nav entries (desktop gold pill
+`.nav-customize`, mobile highlighted row `.nav-customize-m`) — all asserted by
+tests rather than assumed.
+
+**Verified locally.** `npm test`: **292 passed, 0 failed** (smoke 39, admin 7,
+admin CMS 36, admin packages 48, fallback 36, customize 55, customize-nav 71 —
+up from 40). The 31 new checks drive the real `public/js/app.js` in jsdom and
+assert: the banner renders; it is the **adjacent sibling directly after** the
+"Complete Your Set" section; all four required pieces are present and correctly
+styled (gold kicker, serif `h2` "Customize", short copy, gold "Customize Your
+Car →"); the CTA targets `#/customize` and opens the same 5-step sequence;
+still exactly one `customizeHTML`/`czCategories`; the banner builder contains no
+`fetch`; the desktop pill, mobile row and footer link are unchanged and still
+work; the full Arabic variant renders RTL with localised kicker/heading/copy/CTA
+in the same position; the banner survives "Complete Your Set" being disabled;
+and the CSS + cache-buster ship in the served copies.
+
+**Production verification** — recorded in §11 after the merge and deploy.
