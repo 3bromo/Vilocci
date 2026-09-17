@@ -312,10 +312,193 @@ async function storefront(payload) {
   dom.window.close();
 }
 
+// ===========================================================================
+// 4. the HOMEPAGE banner — premium minimal, directly after "Complete Your Set"
+// ---------------------------------------------------------------------------
+// The banner is an ENTRY POINT only: it must sit immediately after the
+// "Complete Your Set" section, exist in EN and AR, and open the very same
+// #/customize route + five-step flow the header pill and the mobile menu
+// already use. Neither of those two entries may change.
+// ===========================================================================
+
+// Walk up to the direct child of #main that contains `el` — i.e. the
+// homepage SECTION the element belongs to.
+function outerSection(el) {
+  let n = el;
+  while (n && n.parentElement && n.parentElement.id !== 'main') n = n.parentElement;
+  return n;
+}
+
+function homeDom(payload, lang) {
+  const html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on('jsdomError', (e) => {
+    if (!/Could not load|Not implemented/.test(e.message)) console.log('  ! page error:', e.message);
+  });
+  const dom = new JSDOM(html, {
+    virtualConsole,
+    url: 'http://localhost:3000/',
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      window.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} };
+      window.alert = () => {};
+      window.scrollTo = () => {};
+      window.localStorage.setItem('velocci_lang', lang || 'en');
+      window.fetch = (u) => {
+        const url = typeof u === 'string' ? u : u.url;
+        if (url.indexOf('/api/data') >= 0) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(payload) });
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) });
+      };
+    },
+  });
+  dom.window.eval(fs.readFileSync(path.join(PUBLIC, 'js', 'engine.js'), 'utf8'));
+  dom.window.eval(fs.readFileSync(path.join(PUBLIC, 'js', 'app.js'), 'utf8'));
+  return dom;
+}
+
+async function homepageBanner(payload) {
+  console.log('\n== CUSTOMIZE NAV: homepage banner after "Complete Your Set" ==');
+  const cssText = fs.readFileSync(path.join(PUBLIC, 'css', 'styles.css'), 'utf8');
+  const appSrc = fs.readFileSync(path.join(PUBLIC, 'js', 'app.js'), 'utf8');
+
+  // ---------------------------------------------------------- EN homepage
+  const dom = homeDom(payload, 'en');
+  await wait(220);
+  const doc = dom.window.document;
+  const txt = (el) => (el ? el.textContent.replace(/\s+/g, ' ').trim() : '');
+
+  const banner = doc.querySelector('.section-czbanner');
+  check('the homepage renders the Customize banner', !!banner);
+
+  // -- placement: DIRECTLY after "Complete Your Set", nothing in between ---
+  const setOuter = outerSection(doc.querySelector('#main .set-banner'));
+  check('the "Complete Your Set" section is still on the homepage', !!setOuter);
+  check('the banner sits DIRECTLY after "Complete Your Set" (adjacent sibling)',
+    !!setOuter && setOuter.nextElementSibling === banner,
+    setOuter && setOuter.nextElementSibling ? (setOuter.nextElementSibling.className || setOuter.nextElementSibling.id) : 'none');
+  check('the banner is inside #main with the other homepage sections',
+    !!banner && banner.parentElement && banner.parentElement.id === 'main');
+
+  // -- the four required pieces -------------------------------------------
+  const kicker = banner && banner.querySelector('.czbanner-kicker');
+  check('1. gold kicker is present', !!kicker && txt(kicker) === 'Bespoke Atelier', txt(kicker));
+  check('   …and the kicker is styled in gold',
+    /\.czbanner-kicker\s*\{[^}]*var\(--gold-soft\)/.test(cssText));
+
+  const title = banner && banner.querySelector('.czbanner-title');
+  check('2. serif "Customize" heading is present', !!title && txt(title) === 'Customize', txt(title));
+  check('   …it is an h2 set in the serif display face',
+    !!title && title.tagName === 'H2' && /\.czbanner-title\s*\{[^}]*var\(--serif\)/.test(cssText));
+
+  const desc = banner && banner.querySelector('.czbanner-desc');
+  check('3. short bespoke-request copy is present',
+    !!desc && txt(desc).length > 20 && txt(desc).length < 160, txt(desc));
+
+  const cta = banner && banner.querySelector('a.czbanner-cta');
+  check('4. gold "Customize Your Car →" button is present',
+    !!cta && cta.classList.contains('btn') && cta.classList.contains('btn-gold') &&
+    txt(cta) === 'Customize Your Car →', txt(cta) + ' [' + (cta ? cta.className : '') + ']');
+  check('   …the CTA targets the existing #/customize route',
+    !!cta && cta.getAttribute('href') === '#/customize', cta && cta.getAttribute('href'));
+
+  // -- the button opens the EXISTING 5-step flow ---------------------------
+  dom.window.location.hash = cta.getAttribute('href');
+  dom.window.dispatchEvent(new dom.window.HashChangeEvent('hashchange'));
+  await wait(120);
+  const steps = Array.from(doc.querySelectorAll('#cz-steps .cz-step')).map((s) => txt(s));
+  check('the homepage button opens the existing 5-step Customize flow',
+    !!doc.querySelector('#cz-form') && steps.length === 5, steps.length + ' → ' + steps.join(' | '));
+  check('it is the SAME flow the route already served (sequence unchanged)',
+    steps.map((s) => s.replace(/^(?:\d+|✓)\s*/, '')).join(' | ') ===
+      'Choose | Photo | Car info | Your request | Your details',
+    steps.map((s) => s.replace(/^(?:\d+|✓)\s*/, '')).join(' | '));
+  check('the banner added no second Customize implementation',
+    (appSrc.match(/function customizeHTML\(/g) || []).length === 1 &&
+    (appSrc.match(/function czCategories\(/g) || []).length === 1);
+  const bannerFn = (appSrc.match(/function customizeBannerSection\(\)[\s\S]*?\n {2}\}/) || [''])[0];
+  check('the banner builder is an entry point only (no fetch / no new API)',
+    bannerFn.length > 0 && !/fetch\(/.test(bannerFn));
+
+  // -- the two existing entries are untouched ------------------------------
+  dom.window.location.hash = '#/';
+  dom.window.dispatchEvent(new dom.window.HashChangeEvent('hashchange'));
+  await wait(100);
+  const pill = Array.from(doc.querySelectorAll('.nav a')).find((a) => txt(a) === 'Customize');
+  check('the desktop gold nav pill is unchanged',
+    !!pill && pill.classList.contains('nav-customize') && pill.getAttribute('href') === '#/customize',
+    pill ? pill.className + ' → ' + pill.getAttribute('href') : 'missing');
+  const mob = Array.from(doc.querySelectorAll('.nav-mobile > a')).find((a) => txt(a) === 'Customize');
+  check('the side/mobile menu Customize item is unchanged (highlighted row, same target)',
+    !!mob && mob.classList.contains('nav-customize-m') && mob.getAttribute('href') === '#/customize',
+    mob ? mob.className + ' → ' + mob.getAttribute('href') : 'missing');
+  check('the footer Quick Links still show Customize',
+    Array.from(doc.querySelectorAll('.footer a')).some((a) => a.getAttribute('href') === '#/customize'));
+
+  // the side-menu entry must still open the flow, exactly as before
+  dom.window.location.hash = '#/';
+  dom.window.dispatchEvent(new dom.window.HashChangeEvent('hashchange'));
+  await wait(80);
+  dom.window.location.hash = mob.getAttribute('href');
+  dom.window.dispatchEvent(new dom.window.HashChangeEvent('hashchange'));
+  await wait(100);
+  check('the side-menu Customize item still opens the 5-step flow',
+    !!doc.querySelector('#cz-form') &&
+    doc.querySelectorAll('#cz-steps .cz-step').length === 5,
+    doc.querySelectorAll('#cz-steps .cz-step').length);
+  dom.window.close();
+
+  // ---------------------------------------------------------- AR homepage
+  const domAr = homeDom(payload, 'ar');
+  await wait(220);
+  const docAr = domAr.window.document;
+  check('Arabic: the document switches to lang=ar / dir=rtl',
+    docAr.documentElement.getAttribute('lang') === 'ar' && docAr.documentElement.getAttribute('dir') === 'rtl');
+  const bAr = docAr.querySelector('.section-czbanner');
+  check('Arabic: the banner renders', !!bAr);
+  check('Arabic: gold kicker is localised',
+    txt(bAr && bAr.querySelector('.czbanner-kicker')) === 'أتيليه خاص', txt(bAr && bAr.querySelector('.czbanner-kicker')));
+  check('Arabic: serif heading is localised to "تخصيص"',
+    txt(bAr && bAr.querySelector('.czbanner-title')) === 'تخصيص', txt(bAr && bAr.querySelector('.czbanner-title')));
+  check('Arabic: bespoke copy is localised',
+    /أتيليهنا/.test(txt(bAr && bAr.querySelector('.czbanner-desc'))), txt(bAr && bAr.querySelector('.czbanner-desc')));
+  const cAr = bAr && bAr.querySelector('a.czbanner-cta');
+  check('Arabic: the gold CTA is localised and still targets #/customize',
+    !!cAr && /خصّص سيارتك/.test(txt(cAr)) && cAr.getAttribute('href') === '#/customize', txt(cAr));
+  const setAr = outerSection(docAr.querySelector('#main .set-banner'));
+  check('Arabic: the banner is still directly after "Complete Your Set"',
+    !!setAr && setAr.nextElementSibling === bAr);
+  check('Arabic: an RTL rule mirrors the CTA arrow',
+    /html\[dir="rtl"\] \.czbanner-cta \.btn-arrow/.test(cssText));
+  domAr.window.close();
+
+  // ------------------------------------------------- unconditional render
+  const noSet = JSON.parse(JSON.stringify(payload));
+  noSet.homeSections = (noSet.homeSections || []).filter((s) => s.type !== 'completeset');
+  const domOff = homeDom(noSet, 'en');
+  await wait(220);
+  check('the banner still renders when "Complete Your Set" is switched off',
+    !!domOff.window.document.querySelector('.section-czbanner') &&
+    !domOff.window.document.querySelector('#main .set-banner'));
+  domOff.window.close();
+
+  // ------------------------------------------------- shipped / cache-busted
+  check('the banner CSS ships in the served stylesheet',
+    /\.section-czbanner/.test(cssText) && /\.czbanner-card/.test(cssText) && /\.czbanner-title/.test(cssText));
+  check('the banner CSS keeps a mobile/responsive rule',
+    /max-width:\s*768px[\s\S]{0,600}\.czbanner-card/.test(cssText));
+  const idx = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
+  const appV = (idx.match(/\/js\/app\.js\?v=([0-9a-z]+)/) || [])[1];
+  const cssV = (idx.match(/\/css\/styles\.css\?v=([0-9a-z]+)/) || [])[1];
+  check('index.html bumps app.js + styles.css to the same new cache-buster',
+    !!appV && appV === cssV && appV !== '20260917a', appV + ' / ' + cssV);
+}
+
 (async function main() {
   try {
     const payload = await dataLayer();
     await storefront(payload);
+    await homepageBanner(payload);
   } catch (e) {
     console.error('customize-nav test crashed:', e);
     process.exit(1);

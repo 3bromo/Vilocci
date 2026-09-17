@@ -2,7 +2,9 @@
    VELOCCI — Storefront application (single-file client SPA)
    Loads the shared store once, renders the whole site, and keeps the cart in
    localStorage. Reads live data from /api/data so admin changes reflect.
-   Build 20260917a — Customize entry exposed in header/mobile/footer nav.
+   Build 20260917b — Customize entry exposed in header/mobile/footer nav,
+   plus the premium minimal Customize banner directly after "Complete Your Set"
+   on the homepage (same #/customize target, same five-step flow).
    ========================================================================== */
 (function () {
   'use strict';
@@ -329,7 +331,23 @@
       </div>
     </section>`;
 
-    const sectionsHtml = (state.data.homeSections || []).map(sec => renderHomeSection(sec)).join('');
+    // The Customize banner is deliberately NOT an Admin-reorderable home
+    // section: it renders unconditionally, directly AFTER the "Complete Your
+    // Set" section. If an admin has switched that section off (the API only
+    // sends sections with enabled !== false), the banner still renders — at
+    // the end of the homepage sections — so Customize is never unreachable.
+    const sections = state.data.homeSections || [];
+    let sectionsHtml = '';
+    let bannerPlaced = false;
+    sections.forEach((sec) => {
+      const html = renderHomeSection(sec);
+      sectionsHtml += html;
+      if (!bannerPlaced && sec.type === 'completeset' && html) {
+        sectionsHtml += customizeBannerSection();
+        bannerPlaced = true;
+      }
+    });
+    if (!bannerPlaced) sectionsHtml += customizeBannerSection();
     return heroHTML + sectionsHtml;
   }
 
@@ -452,6 +470,29 @@
               </a>`).join('')}
             </div>
             <a class="btn btn-gold btn-sm" href="#/fitment">${lang === 'ar' ? 'استخدم أداة البحث المتقدمة' : 'Use Advanced Fitment Tool'} →</a>
+          </div>
+        </div>
+      </div>
+    </section>`;
+  }
+
+  // CUSTOMIZE — premium minimal homepage banner.
+  //
+  // Rendered directly AFTER the "Complete Your Set" section (see homeHTML()).
+  // It is a pure entry point: the button targets the SAME `#/customize` route
+  // and therefore the SAME five-step flow. No second Customize implementation,
+  // no new route, and no change to the flow itself. All copy comes from the
+  // existing CZ_TEXT EN/AR dictionary, so the banner is localised exactly like
+  // the page it links to.
+  function customizeBannerSection() {
+    return `<section class="section section-czbanner" data-section="czbanner">
+      <div class="container">
+        <div class="czbanner-card">
+          <div class="czbanner-content">
+            <span class="czbanner-kicker">${czE('kicker')}</span>
+            <h2 class="czbanner-title">${czE('customize')}</h2>
+            <p class="czbanner-desc">${czE('home_sub')}</p>
+            <a class="btn btn-gold btn-sm czbanner-cta" href="#/customize">${czE('title')} <span class="btn-arrow">→</span></a>
           </div>
         </div>
       </div>
@@ -1694,6 +1735,12 @@
     title: ['Customize Your Car', 'خصّص سيارتك'],
     sub: ['Choose a category, show us your car and tell us exactly what you have in mind. Our atelier will contact you to make it real.',
       'اختر الفئة، وأرسل لنا صورة سيارتك، وأخبرنا بالضبط بما تريده. سيتواصل معك الأتيليه لتنفيذه.'],
+    // Copy for the HOMEPAGE banner only. The banner deliberately reuses
+    // `kicker`, `customize` and `title` above, so the homepage and the
+    // five-step flow can never drift apart (and nothing here touches the
+    // site dictionary, the API or the database).
+    home_sub: ['Tell us exactly what you have in mind and our atelier will craft it for your car.',
+      'أخبرنا بما تريده بالضبط وسيقوم أتيليهنا بتنفيذه خصيصًا لسيارتك.'],
     step1: ['Choose', 'الفئة'],
     step2: ['Photo', 'الصورة'],
     step3: ['Car info', 'السيارة'],

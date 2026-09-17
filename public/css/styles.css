@@ -2358,3 +2358,49 @@ pre, code { max-width: 100%; overflow-x: auto; }
   .cz-wrap { max-width: 900px; }
   .cz-steps { justify-content: center; }
 }
+
+/* ==========================================================================
+   Customize — premium minimal homepage banner
+   Renders directly AFTER the "Complete Your Set" section and points at the
+   SAME `#/customize` route as the header pill, the mobile menu and the footer
+   Quick Links. Minimal by design: gold kicker, serif heading, one line of
+   bespoke-request copy and a single gold CTA — no second Customize
+   implementation and no change to the five-step flow.
+   ========================================================================== */
+.section-czbanner { padding: 0 0 44px; }
+.czbanner-card {
+  background: linear-gradient(135deg, #1a1710 0%, #252016 50%, #1a1710 100%);
+  border: 1px solid #3c372d; border-radius: 14px; padding: 34px 36px;
+  position: relative; overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,.1), 0 1px 4px rgba(0,0,0,.06);
+}
+.czbanner-card::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(620px 300px at 84% 18%, rgba(200,161,90,.10), transparent 62%);
+}
+.czbanner-content { position: relative; z-index: 1; max-width: 560px; }
+.czbanner-kicker {
+  font-size: 10px; letter-spacing: .32em; text-transform: uppercase;
+  color: var(--gold-soft); font-weight: 600;
+  display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+}
+.czbanner-kicker::before { content: ""; width: 28px; height: 1px; background: var(--gold); }
+.czbanner-title {
+  font-family: var(--serif); font-size: clamp(26px, 3.4vw, 38px); font-weight: 500;
+  color: #fff; margin: 0 0 10px; line-height: 1.12;
+}
+.czbanner-desc { font-size: 13px; color: #b9b2a0; line-height: 1.7; margin: 0 0 20px; }
+.czbanner-cta:hover .btn-arrow { transform: translateX(3px); }
+
+/* RTL — the arrow must point the other way (flex/kicker mirror automatically) */
+html[dir="rtl"] .czbanner-cta .btn-arrow { transform: scaleX(-1); }
+html[dir="rtl"] .czbanner-cta:hover .btn-arrow { transform: scaleX(-1) translateX(3px); }
+
+@media (max-width: 768px) {
+  .section-czbanner { padding: 0 0 32px; }
+  .czbanner-card { padding: 22px 18px; border-radius: 12px; }
+  .czbanner-kicker { font-size: 9.5px; letter-spacing: .24em; gap: 9px; margin-bottom: 10px; }
+  .czbanner-title { font-size: clamp(23px, 7vw, 28px); margin-bottom: 8px; }
+  .czbanner-desc { font-size: 12.5px; margin-bottom: 16px; }
+  .czbanner-cta { width: 100%; }
+}
