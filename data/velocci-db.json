@@ -1,7 +1,7 @@
 {
   "meta": {
     "version": 1,
-    "updatedAt": "2026-09-06T06:04:07.309Z"
+    "updatedAt": "2026-09-17T15:06:32.244Z"
   },
   "settings": {
     "shopName": "SPINTO",
@@ -220,7 +220,11 @@
         "gift_desc": "Your item arrives in a luxury gift box with a gold ribbon and personalized gift card.",
         "hero_products": "Hero Products",
         "collections": "Collections",
-        "choose_collection": "Choose a Collection"
+        "choose_collection": "Choose a Collection",
+        "color": "Color",
+        "colors": "Colors",
+        "select_color": "SELECT YOUR COLOR",
+        "color_required": "Please choose a color first."
       },
       "ar": {
         "home": "الرئيسية",
@@ -390,7 +394,11 @@
         "gift_desc": "يصلك منتجك في صندوق هدية فاخر مزيّن بشريط ذهبي وبطاقة إهداء مخصصة.",
         "hero_products": "منتجات مميزة",
         "collections": "المجموعات",
-        "choose_collection": "اختر مجموعة"
+        "choose_collection": "اختر مجموعة",
+        "color": "اللون",
+        "colors": "الألوان",
+        "select_color": "اختر اللون",
+        "color_required": "يرجى اختيار اللون أولاً."
       }
     }
   },
@@ -2874,7 +2882,30 @@
           "year": 2024
         }
       ],
-      "heroProduct": true
+      "heroProduct": true,
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_mercedes-benz_case_leather",
@@ -3027,7 +3058,30 @@
           "year": 2024
         }
       ],
-      "heroProduct": true
+      "heroProduct": true,
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_mercedes-benz_holder",
@@ -3180,7 +3234,30 @@
           "year": 2024
         }
       ],
-      "heroProduct": true
+      "heroProduct": true,
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_mercedes-benz_medal",
@@ -3333,7 +3410,23 @@
           "year": 2024
         }
       ],
-      "heroProduct": true
+      "heroProduct": true,
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_bmw_case_carbon",
@@ -3484,6 +3577,29 @@
           "brand": "bmw",
           "model": "X5",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
         }
       ]
     },
@@ -3637,6 +3753,29 @@
           "model": "X5",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
       ]
     },
     {
@@ -3788,6 +3927,29 @@
           "brand": "bmw",
           "model": "X5",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
         }
       ]
     },
@@ -3941,6 +4103,22 @@
           "model": "X5",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
       ]
     },
     {
@@ -4092,6 +4270,29 @@
           "brand": "audi",
           "model": "Q5",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
         }
       ]
     },
@@ -4245,6 +4446,29 @@
           "model": "Q5",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
       ]
     },
     {
@@ -4396,6 +4620,29 @@
           "brand": "audi",
           "model": "Q5",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
         }
       ]
     },
@@ -4549,6 +4796,22 @@
           "model": "Q5",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
       ]
     },
     {
@@ -4700,6 +4963,29 @@
           "brand": "porsche",
           "model": "Macan",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
         }
       ]
     },
@@ -4853,6 +5139,29 @@
           "model": "Macan",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
       ]
     },
     {
@@ -5004,6 +5313,29 @@
           "brand": "porsche",
           "model": "Macan",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
         }
       ]
     },
@@ -5157,6 +5489,22 @@
           "model": "Macan",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
       ]
     },
     {
@@ -5287,6 +5635,29 @@
           "brand": "land-rover",
           "model": "Discovery",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
         }
       ]
     },
@@ -5419,6 +5790,29 @@
           "model": "Discovery",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
       ]
     },
     {
@@ -5550,6 +5944,29 @@
           "model": "Discovery",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -5680,6 +6097,22 @@
           "brand": "land-rover",
           "model": "Discovery",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -5833,6 +6266,29 @@
           "model": "Evoque",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -5984,6 +6440,29 @@
           "brand": "range-rover",
           "model": "Evoque",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -6137,6 +6616,29 @@
           "model": "Evoque",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -6288,6 +6790,22 @@
           "brand": "range-rover",
           "model": "Evoque",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -6441,6 +6959,29 @@
           "model": "NX",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -6592,6 +7133,29 @@
           "brand": "lexus",
           "model": "NX",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -6745,6 +7309,29 @@
           "model": "NX",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -6896,6 +7483,22 @@
           "brand": "lexus",
           "model": "NX",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -7049,6 +7652,29 @@
           "model": "Land Cruiser",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -7200,6 +7826,29 @@
           "brand": "toyota",
           "model": "Land Cruiser",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -7353,6 +8002,29 @@
           "model": "Land Cruiser",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -7504,6 +8176,22 @@
           "brand": "toyota",
           "model": "Land Cruiser",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -7657,6 +8345,29 @@
           "model": "Compass",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -7808,6 +8519,29 @@
           "brand": "jeep",
           "model": "Compass",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -7961,6 +8695,29 @@
           "model": "Compass",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -8112,6 +8869,22 @@
           "brand": "jeep",
           "model": "Compass",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -8265,6 +9038,29 @@
           "model": "Tiguan",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -8416,6 +9212,29 @@
           "brand": "volkswagen",
           "model": "Tiguan",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -8569,6 +9388,29 @@
           "model": "Tiguan",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -8720,6 +9562,22 @@
           "brand": "volkswagen",
           "model": "Tiguan",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -8873,6 +9731,29 @@
           "model": "S60",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -9024,6 +9905,29 @@
           "brand": "volvo",
           "model": "S60",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -9177,6 +10081,29 @@
           "model": "S60",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -9328,6 +10255,22 @@
           "brand": "volvo",
           "model": "S60",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -9481,6 +10424,29 @@
           "model": "F-150",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -9632,6 +10598,29 @@
           "brand": "ford",
           "model": "F-150",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -9785,6 +10774,29 @@
           "model": "F-150",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -9936,6 +10948,22 @@
           "brand": "ford",
           "model": "F-150",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -10089,6 +11117,29 @@
           "model": "CR-V",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -10240,6 +11291,29 @@
           "brand": "honda",
           "model": "CR-V",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -10393,6 +11467,29 @@
           "model": "CR-V",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -10544,6 +11641,22 @@
           "brand": "honda",
           "model": "CR-V",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -10697,6 +11810,29 @@
           "model": "Santa Fe",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -10848,6 +11984,29 @@
           "brand": "hyundai",
           "model": "Santa Fe",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -11001,6 +12160,29 @@
           "model": "Santa Fe",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -11152,6 +12334,22 @@
           "brand": "hyundai",
           "model": "Santa Fe",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -11305,6 +12503,29 @@
           "model": "Sorento",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -11456,6 +12677,29 @@
           "brand": "kia",
           "model": "Sorento",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -11609,6 +12853,29 @@
           "model": "Sorento",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -11760,6 +13027,22 @@
           "brand": "kia",
           "model": "Sorento",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -11913,6 +13196,29 @@
           "model": "Model S",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -12064,6 +13370,29 @@
           "brand": "tesla",
           "model": "Model S",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -12217,6 +13546,29 @@
           "model": "Model S",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -12368,6 +13720,22 @@
           "brand": "tesla",
           "model": "Model S",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -12521,6 +13889,29 @@
           "model": "Levante",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -12672,6 +14063,29 @@
           "brand": "maserati",
           "model": "Levante",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -12825,6 +14239,29 @@
           "model": "Levante",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -12976,6 +14413,22 @@
           "brand": "maserati",
           "model": "Levante",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
         }
       ]
     },
@@ -13129,6 +14582,29 @@
           "model": "SF90",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
       ]
     },
     {
@@ -13280,6 +14756,29 @@
           "brand": "ferrari",
           "model": "SF90",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
         }
       ]
     },
@@ -13433,6 +14932,29 @@
           "model": "SF90",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
       ]
     },
     {
@@ -13585,6 +15107,22 @@
           "model": "SF90",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
       ]
     },
     {
@@ -13715,6 +15253,29 @@
           "brand": "lamborghini",
           "model": "Urus",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
         }
       ]
     },
@@ -13847,6 +15408,29 @@
           "model": "Urus",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
       ]
     },
     {
@@ -13977,6 +15561,29 @@
           "brand": "lamborghini",
           "model": "Urus",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
         }
       ]
     },
@@ -14109,6 +15716,22 @@
           "model": "Urus",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
       ]
     },
     {
@@ -14239,6 +15862,29 @@
           "brand": "bentley",
           "model": "Flying Spur",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
         }
       ]
     },
@@ -14371,6 +16017,29 @@
           "model": "Flying Spur",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
       ]
     },
     {
@@ -14501,6 +16170,29 @@
           "brand": "bentley",
           "model": "Flying Spur",
           "year": 2024
+        }
+      ],
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
         }
       ]
     },
@@ -14633,6 +16325,22 @@
           "model": "Flying Spur",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
       ]
     },
     {
@@ -14753,6 +16461,29 @@
           "model": "Model Y",
           "year": 2024
         }
+      ],
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
       ]
     },
     {
@@ -14817,7 +16548,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_mg_case2",
@@ -14881,7 +16635,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_mg_holder",
@@ -14945,7 +16722,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_mg_medal",
@@ -14996,7 +16796,23 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_peugeot_case1",
@@ -15062,7 +16878,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_peugeot_case2",
@@ -15128,7 +16967,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_peugeot_holder",
@@ -15194,7 +17056,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_peugeot_medal",
@@ -15247,7 +17132,23 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_byd_case1",
@@ -15308,7 +17209,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_byd_case2",
@@ -15369,7 +17293,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_byd_holder",
@@ -15430,7 +17377,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_byd_medal",
@@ -15478,7 +17448,23 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_gac_case1",
@@ -15541,7 +17527,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_gac_case2",
@@ -15604,7 +17613,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_gac_holder",
@@ -15667,7 +17699,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_gac_medal",
@@ -15717,7 +17772,23 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_jetour_case1",
@@ -15779,7 +17850,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_jetour_case2",
@@ -15841,7 +17935,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_jetour_holder",
@@ -15903,7 +18020,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_jetour_medal",
@@ -15952,7 +18092,23 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_citroen_case1",
@@ -16018,7 +18174,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_citroen_case2",
@@ -16084,7 +18263,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_citroen_holder",
@@ -16150,7 +18352,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_citroen_medal",
@@ -16203,7 +18428,23 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_haval_case1",
@@ -16266,7 +18507,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_haval_case2",
@@ -16329,7 +18593,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_haval_holder",
@@ -16392,7 +18679,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_haval_medal",
@@ -16442,7 +18752,23 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_cupra_case1",
@@ -16505,7 +18831,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_cupra_case2",
@@ -16568,7 +18917,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_cupra_holder",
@@ -16631,7 +19003,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_cupra_medal",
@@ -16681,7 +19076,23 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_skoda_case1",
@@ -16748,7 +19159,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black_carbon",
+          "name_en": "Black Carbon",
+          "name_ar": "أسود كربوني",
+          "hex": "#232326",
+          "enabled": true
+        },
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_gunmetal",
+          "name_en": "Gunmetal",
+          "name_ar": "رمادي مدفعي",
+          "hex": "#4A4E55",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_skoda_case2",
@@ -16815,7 +19249,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        },
+        {
+          "id": "c_chestnut_brown",
+          "name_en": "Chestnut Brown",
+          "name_ar": "بني كستنائي",
+          "hex": "#7B4A2D",
+          "enabled": true
+        },
+        {
+          "id": "c_midnight_blue",
+          "name_en": "Midnight Blue",
+          "name_ar": "أزرق منتصف الليل",
+          "hex": "#1F2A44",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_skoda_holder",
@@ -16882,7 +19339,30 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_champagne_gold",
+          "name_en": "Champagne Gold",
+          "name_ar": "ذهبي شمباني",
+          "hex": "#C8A15A",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        },
+        {
+          "id": "c_black",
+          "name_en": "Black",
+          "name_ar": "أسود",
+          "hex": "#1D1D1F",
+          "enabled": true
+        }
+      ]
     },
     {
       "id": "p_skoda_medal",
@@ -16936,7 +19416,23 @@
         }
       ],
       "vehicles": [],
-      "customization": null
+      "customization": null,
+      "colors": [
+        {
+          "id": "c_gold",
+          "name_en": "Gold",
+          "name_ar": "ذهبي",
+          "hex": "#D4AF37",
+          "enabled": true
+        },
+        {
+          "id": "c_silver",
+          "name_en": "Silver",
+          "name_ar": "فضي",
+          "hex": "#C9CCD1",
+          "enabled": true
+        }
+      ]
     }
   ],
   "orders": [

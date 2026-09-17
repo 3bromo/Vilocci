@@ -42,6 +42,9 @@ create table if not exists public.products (
   images text[] default '{}',
   main_image text,
   fitment jsonb default '{}'::jsonb,
+  -- per-product color variants: [ { id, name_en, name_ar, hex, enabled } ]
+  -- (managed in Admin → Products; order in the array = display order)
+  colors jsonb default '[]'::jsonb,
   "order" integer default 0,
   created_at timestamptz default now(),
   updated_at timestamptz default now()

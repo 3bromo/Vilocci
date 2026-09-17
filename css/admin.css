@@ -1146,3 +1146,39 @@ img { max-width: 100%; height: auto; display: block; }
   .cz-detail-row { flex-direction: column; gap: 2px; }
   .cz-detail-row b { text-align: start; }
 }
+
+/* ==========================================================================
+   PRODUCT COLOR VARIANTS — Admin → Products → Colors
+   One row per color: live swatch, HEX text + native picker, EN/AR names,
+   enable toggle, reorder and delete. The storefront renders exactly this
+   list (enabled colors only), so the swatch here is a true preview.
+   ========================================================================== */
+.pcolor-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px; background: var(--bg); border: 1px solid var(--border-light);
+  border-radius: 8px; margin-bottom: 6px;
+}
+.pcolor-row.pcolor-off { opacity: .55; background: #fbfbfc; }
+.pcolor-swatch {
+  width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto;
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.95), 0 0 0 1px var(--border);
+}
+.pcolor-hex-text { width: 82px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; text-transform: uppercase; }
+.pcolor-hex-picker { width: 40px; height: 30px; padding: 1px 2px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; }
+.pcolor-name { flex: 1; min-width: 120px; }
+.pcolor-toggle { flex: 0 0 auto; margin: 0; }
+
+/* mini swatches in the product list */
+.pcolor-cell { display: inline-flex; align-items: center; gap: 4px; }
+.pcolor-dot {
+  width: 16px; height: 16px; border-radius: 50%; display: inline-block; flex: 0 0 auto;
+  box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.95), 0 0 0 1px var(--border);
+}
+.pcolor-dot.off { opacity: .35; }
+.pcolor-more { font-size: 10px; color: var(--text-muted); font-weight: 600; }
+.pcolor-count { font-size: 10px; color: var(--text-muted); margin-inline-start: 3px; }
+
+@media (max-width: 900px) {
+  .pcolor-row { gap: 6px; }
+  .pcolor-name { min-width: 100px; }
+}

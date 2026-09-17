@@ -84,6 +84,7 @@ a { color: inherit; text-decoration: none; }
 [lang="ar"] .pdp .brand-line,
 [lang="ar"] .pdp-tabs .tab,
 [lang="ar"] .shape-selector .label,
+[lang="ar"] .color-selector .label,
 [lang="ar"] .bundle-card .bs-head,
 [lang="ar"] .drawer-head h3,
 [lang="ar"] .drawer-bundle .db-title {
@@ -692,6 +693,39 @@ html[dir="rtl"] .link-all:hover svg { transform: translateX(-3px) scaleX(-1); }
 .shape-opt.unavailable { opacity: .6; position: relative; pointer-events: none; background: #f6f3eb; }
 .shape-opt.unavailable .oos { position: absolute; bottom: 8px; left: 6px; right: 6px; background: var(--black); color: #fff; font-size: 7.5px; font-weight: 700; letter-spacing: .04em; padding: 4px 0; border-radius: 3px; text-transform: uppercase; }
 .shape-opt .xstar { position: absolute; top: 8px; right: 8px; width: 14px; height: 14px; }
+
+/* color variant selector (product page) — the swatches are rendered live from
+   the admin-configured HEX values, never from a hard-coded palette */
+.color-selector { margin: 8px 0 6px; }
+.color-selector .label { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; color: var(--ink); flex-wrap: wrap; }
+.color-options { display: flex; gap: 12px; flex-wrap: wrap; }
+.color-opt {
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 9px; background: #fff;
+  text-align: center; min-width: 84px; position: relative; transition: all .22s ease;
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+}
+.color-opt .color-swatch {
+  width: 34px; height: 34px; border-radius: 50%; display: block;
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.9), inset 0 0 0 3px rgba(28,24,16,.12);
+}
+.color-opt .lbl { font-size: 11px; font-weight: 600; letter-spacing: .03em; line-height: 1.25; max-width: 92px; }
+.color-opt:hover { border-color: var(--gold); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.color-opt.selected { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold-soft); background: #fdfaf2; }
+.color-opt.selected::after { content: "✓"; position: absolute; top: 6px; right: 7px; background: var(--gold-grad); color: #fff; width: 16px; height: 16px; border-radius: 50%; font-size: 9px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+/* quick-add modal variant: compact row of circles */
+.color-options.qa-colors { gap: 10px; }
+.color-options.qa-colors .color-opt { min-width: 62px; padding: 8px 8px 7px; }
+.color-options.qa-colors .color-opt .color-swatch { width: 26px; height: 26px; }
+.color-options.qa-colors .color-opt .lbl { font-size: 10px; max-width: 70px; }
+
+/* a single color circle (cart, checkout, success, product cards) */
+.cdot { display: inline-block; border-radius: 50%; vertical-align: -1px; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.9), inset 0 0 0 2.5px rgba(28,24,16,.12); }
+.di-meta .cdot, .di-vehicle .cdot, .s-vehicle .cdot { margin-inline-end: 2px; }
+
+/* available colors on product cards */
+.product-card .pc-colors { display: flex; align-items: center; gap: 5px; margin-top: 8px; min-height: 12px; }
+.product-card .pc-colors .cdot { box-shadow: inset 0 0 0 1px rgba(255,255,255,.9), inset 0 0 0 2px rgba(28,24,16,.10); }
+.product-card .pc-colors-more { font-size: 9.5px; color: var(--muted); font-weight: 600; }
 
 .inv-note { font-size: 13px; font-weight: 600; color: var(--danger); margin-top: 14px; display: flex; align-items: center; gap: 8px; }
 .inv-note::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--gold-grad); }

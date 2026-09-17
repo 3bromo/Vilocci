@@ -994,6 +994,7 @@
               <th>Product</th>
               <th>Category</th>
               <th>Brand</th>
+              <th>Colors</th>
               <th>Price</th>
               <th>Stock</th>
               <th>Status</th>
@@ -1016,6 +1017,17 @@
                 </td>
                 <td>${esc(p.category || '—')}</td>
                 <td>${esc(brand?.name_en || p.brandSlug || '—')}</td>
+                <td>${(() => {
+                  const list = Array.isArray(p.colors) ? p.colors.filter(c => c && c.hex) : [];
+                  if (!list.length) return '<span style="font-size:11px;color:var(--text-muted);">—</span>';
+                  const enabled = list.filter(c => c.enabled !== false);
+                  const shown = list.slice(0, 5);
+                  return `<div class="pcolor-cell" title="${esc(list.map(c => `${c.name_en || c.name_ar || c.hex}${c.enabled === false ? ' (off)' : ''}`).join(', '))}">
+                    ${shown.map(c => `<span class="pcolor-dot${c.enabled === false ? ' off' : ''}" style="background:${esc(c.hex)}"></span>`).join('')}
+                    ${list.length > shown.length ? `<span class="pcolor-more">+${list.length - shown.length}</span>` : ''}
+                    <span class="pcolor-count">${enabled.length}/${list.length}</span>
+                  </div>`;
+                })()}</td>
                 <td><strong>${money(p.price)}</strong>${p.sale_price ? `<br><span style="font-size:11px;color:var(--success);">Sale: ${money(p.sale_price)}</span>` : ''}</td>
                 <td><span style="color:${(p.stock||0) <= 5 ? 'var(--danger)' : 'var(--text-primary)'};font-weight:600;">${p.stock || 0}</span></td>
                 <td>${p.active ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-inactive">Inactive</span>'}</td>
@@ -2476,6 +2488,13 @@
               </div>` : ''}
             </div>
 
+            <div class="editor-section-title">Colors</div>
+            <div class="form-group">
+              <p style="font-size:11px;color:var(--text-muted);margin:-2px 0 10px;">This product's own color variants. The storefront shows exactly this list (enabled colors only, in this order) — add, edit, reorder, enable/disable or delete freely.</p>
+              <div id="product-colors-list"></div>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-add-color">+ Add color</button>
+            </div>
+
             <div class="editor-section-title">Stock &amp; visibility</div>
             <div class="form-row">
               <div class="form-group">
@@ -2543,6 +2562,90 @@
     $('#btn-add-image').addEventListener('click', () => { const i = $('#pf-new-image'); addImage(i.value); i.value = ''; });
     $$('[data-lib-pick]').forEach(el => el.addEventListener('click', () => addImage(el.dataset.libPick)));
 
+    // ---- color variants (per-product list: add / edit / reorder / enable / delete) ----
+    // Working copy — nothing is persisted until Save. The preview circle is
+    // rendered live from the HEX field, exactly like the storefront swatches.
+    let colors = Array.isArray(p?.colors) ? p.colors.map(c => Object.assign({}, c)) : [];
+
+    const normalizeHex = (raw) => {
+      let s = String(raw || '').trim().replace(/^#/, '');
+      if (/^[0-9a-fA-F]{3}$/.test(s)) s = s.split('').map(ch => ch + ch).join('');
+      return /^[0-9a-fA-F]{6}$/.test(s) ? ('#' + s.toUpperCase()) : '';
+    };
+
+    const colorListEl = $('#product-colors-list');
+    function renderColorList() {
+      if (!colorListEl) return;
+      colorListEl.innerHTML = colors.length ? colors.map((c, i) => {
+        const hex = normalizeHex(c.hex);
+        const enabled = c.enabled !== false;
+        return `
+        <div class="pcolor-row${enabled ? '' : ' pcolor-off'}">
+          <span class="pcolor-swatch" data-csw="${i}" style="background:${hex || 'transparent'};${hex ? '' : 'border:1px dashed var(--border);'}" title="${esc(hex || 'no HEX')}"></span>
+          <input class="pcolor-hex-text" data-chex="${i}" value="${esc(c.hex || '')}" maxlength="7" placeholder="#HEX" spellcheck="false">
+          <input class="pcolor-hex-picker" type="color" data-cpick="${i}" value="${hex || '#000000'}" title="Pick color">
+          <input class="pcolor-name" data-cname="${i}" value="${esc(c.name_en || '')}" placeholder="Color name (EN)" maxlength="60">
+          <input class="pcolor-name" data-cnamear="${i}" value="${esc(c.name_ar || '')}" placeholder="اسم اللون (عربي)" dir="rtl" maxlength="60">
+          <label class="toggle pcolor-toggle" title="${enabled ? 'Enabled — visible on the storefront' : 'Disabled — hidden on the storefront'}">
+            <input type="checkbox" data-cenable="${i}" ${enabled ? 'checked' : ''}>
+            <span class="toggle-slider"></span>
+          </label>
+          <button type="button" class="btn btn-ghost btn-sm" data-cup="${i}" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-cdown="${i}" title="Move down" ${i === colors.length - 1 ? 'disabled' : ''}>↓</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-cdel="${i}" title="Delete color">🗑</button>
+        </div>`;
+      }).join('')
+      : '<p style="font-size:12px;color:var(--text-muted);margin:0 0 8px;">No colors yet — the storefront will not show a color selector for this product until you add one.</p>';
+
+      // live HEX editing: text field + native picker stay in sync and the
+      // preview circle updates immediately from the HEX value.
+      $$('[data-chex]', colorListEl).forEach(inp => inp.addEventListener('input', () => {
+        const i = Number(inp.dataset.chex);
+        colors[i].hex = inp.value;
+        const hex = normalizeHex(inp.value);
+        const sw = colorListEl.querySelector(`[data-csw="${i}"]`);
+        if (sw) { sw.style.background = hex || 'transparent'; sw.style.border = hex ? '' : '1px dashed var(--border)'; sw.title = hex || 'no HEX'; }
+        const pick = colorListEl.querySelector(`[data-cpick="${i}"]`);
+        if (pick && hex) pick.value = hex;
+      }));
+      $$('[data-cpick]', colorListEl).forEach(inp => inp.addEventListener('input', () => {
+        const i = Number(inp.dataset.cpick);
+        colors[i].hex = inp.value.toUpperCase();
+        const txt = colorListEl.querySelector(`[data-chex="${i}"]`);
+        if (txt) txt.value = colors[i].hex;
+        const sw = colorListEl.querySelector(`[data-csw="${i}"]`);
+        if (sw) { sw.style.background = colors[i].hex; sw.style.border = ''; sw.title = colors[i].hex; }
+      }));
+      $$('[data-cname]', colorListEl).forEach(inp => inp.addEventListener('input', () => { colors[Number(inp.dataset.cname)].name_en = inp.value; }));
+      $$('[data-cnamear]', colorListEl).forEach(inp => inp.addEventListener('input', () => { colors[Number(inp.dataset.cnamear)].name_ar = inp.value; }));
+      $$('[data-cenable]', colorListEl).forEach(inp => inp.addEventListener('change', () => {
+        colors[Number(inp.dataset.cenable)].enabled = inp.checked;
+        renderColorList();
+      }));
+      $$('[data-cup]', colorListEl).forEach(b => b.addEventListener('click', () => {
+        const i = Number(b.dataset.cup); if (i > 0) { [colors[i - 1], colors[i]] = [colors[i], colors[i - 1]]; renderColorList(); }
+      }));
+      $$('[data-cdown]', colorListEl).forEach(b => b.addEventListener('click', () => {
+        const i = Number(b.dataset.cdown); if (i < colors.length - 1) { [colors[i + 1], colors[i]] = [colors[i], colors[i + 1]]; renderColorList(); }
+      }));
+      $$('[data-cdel]', colorListEl).forEach(b => b.addEventListener('click', () => {
+        const i = Number(b.dataset.cdel);
+        const c = colors[i];
+        showConfirm('Delete Color', `Remove "${c.name_en || c.hex || 'this color'}" from ${p ? '"' + (p.name_en || 'this product') + '"' : 'the new product'}? Existing orders keep their chosen color.`, () => {
+          colors.splice(i, 1); renderColorList();
+        });
+      }));
+    }
+    renderColorList();
+
+    $('#btn-add-color').addEventListener('click', () => {
+      colors.push({ id: '', name_en: '', name_ar: '', hex: '#000000', enabled: true });
+      renderColorList();
+      const inputs = colorListEl.querySelectorAll('[data-cname]');
+      const last = inputs[inputs.length - 1];
+      if (last) last.focus();
+    });
+
     // ---- discount auto-calculation ----
     const priceEl = $('#pf-price');
     const oldEl = $('#pf-oldprice');
@@ -2565,6 +2668,25 @@
       const category = val('category');
       const brandSlug = val('brandSlug');
       if (!nameEn || !category || !brandSlug) { toast('Please fill the required fields', 'error'); return; }
+
+      // ---- validate + normalize the color list (EN/AR names + HEX) ----
+      const finalColors = [];
+      for (let i = 0; i < colors.length; i += 1) {
+        const c = colors[i] || {};
+        const hex = (String(c.hex || '').trim().replace(/^#/, ''));
+        const clean = /^[0-9a-fA-F]{3}$/.test(hex)
+          ? '#' + hex.split('').map(ch => ch + ch).join('').toUpperCase()
+          : /^[0-9a-fA-F]{6}$/.test(hex) ? '#' + hex.toUpperCase() : '';
+        const nameEn = String(c.name_en || '').trim();
+        const nameAr = String(c.name_ar || '').trim();
+        if (!clean) { toast(`Color #${i + 1}: enter a valid HEX value (e.g. #C8A15A)`, 'error'); return; }
+        if (!nameEn && !nameAr) { toast(`Color #${i + 1}: enter a name (English or Arabic)`, 'error'); return; }
+        finalColors.push({
+          id: c.id || uid('color'),
+          name_en: nameEn, name_ar: nameAr, hex: clean,
+          enabled: c.enabled !== false,
+        });
+      }
 
       const price = numVal('price') || 0;
       const oldPrice = numVal('oldPrice') || null;
@@ -2590,6 +2712,7 @@
         inventory: parseInt(form.querySelector('[name=inventory]').value, 10) || 0,
         images,
         main_image: images[0] || '',
+        colors: finalColors,
         active: checked('active'),
         featured: checked('featured'),
         bestSeller: checked('bestSeller'),
@@ -2899,7 +3022,7 @@
             Order items <span style="color:var(--text-muted);font-weight:400;">(${items.length} line${items.length === 1 ? '' : 's'} from order_items)</span>
           </h4>
           <table class="data-table" style="font-size:12px;">
-            <thead><tr><th style="width:44px;"></th><th>Product</th><th>Key shape</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead>
+            <thead><tr><th style="width:44px;"></th><th>Product</th><th>Color</th><th>Key shape</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead>
             <tbody>
               ${items.length ? items.map(it => `<tr>
                 <td>${it.image ? `<img src="${esc(it.image)}" alt="" style="width:36px;height:30px;object-fit:cover;border-radius:5px;background:var(--cream);">` : ''}</td>
@@ -2907,11 +3030,14 @@
                   <div style="font-weight:600;">${esc(it.name_en || it.productId || '—')}</div>
                   <div style="font-size:11px;color:var(--text-muted);">${esc(it.category || '')}${it.brandSlug ? ' · ' + esc(it.brandSlug) : ''}${it.fitment && it.fitment.model ? ' · ' + esc(it.fitment.model) + ' ' + esc(it.fitment.year || '') : ''}</div>
                 </td>
+                <td>${it.color && it.color.hex
+                  ? `<span style="display:inline-flex;align-items:center;gap:6px;"><span class="pcolor-dot" style="background:${esc(it.color.hex)}"></span>${esc(it.color.name_en || it.color.name_ar || it.color.hex)}</span>`
+                  : '<span style="color:var(--text-muted);">—</span>'}</td>
                 <td>${esc(it.keyShape || '—')}</td>
                 <td>${it.qty}</td>
                 <td>${money(it.price)}</td>
                 <td><strong>${money(it.lineTotal != null ? it.lineTotal : (it.price || 0) * (it.qty || 0))}</strong></td>
-              </tr>`).join('') : '<tr><td colspan="6" style="color:var(--text-muted);">No line items stored for this order.</td></tr>'}
+              </tr>`).join('') : '<tr><td colspan="7" style="color:var(--text-muted);">No line items stored for this order.</td></tr>'}
             </tbody>
           </table>
 

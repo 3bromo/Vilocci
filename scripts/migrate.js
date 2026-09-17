@@ -6,6 +6,7 @@
 //   npm run migrate                # DRY RUN (default): prints the whole plan
 //   npm run migrate -- --apply     # applies the SQL migrations, then maps the
 //                                  # EXISTING storefront content into the tables
+//                                  # (--write is an alias of --apply)
 //   npm run migrate -- --print-sql # prints the SQL bundle (for the Supabase SQL
 //                                  # editor, when no DB credential is available)
 //   npm run migrate -- --json      # machine-readable summary
@@ -37,10 +38,12 @@ const MIGRATIONS = [
   { version: '001', title: 'Baseline schema (products, categories, brands, bundles, orders, content, RLS)', file: 'supabase-schema.sql' },
   { version: '002', title: 'CMS core (order_items, product_images, product_prices, customer_phone/address, CMS columns)', file: 'supabase/migrations/002_cms_core.sql' },
   { version: '003', title: 'Customize (customize_requests, customize category settings, private storage bucket)', file: 'supabase/migrations/003_customize.sql' },
+  { version: '004', title: 'Product colors (products.colors variants, order_items.color snapshot)', file: 'supabase/migrations/004_product_colors.sql' },
 ];
 
 const argv = process.argv.slice(2);
-const APPLY = argv.includes('--apply');
+// `--write` is accepted as an alias of `--apply` (same upsert-only run).
+const APPLY = argv.includes('--apply') || argv.includes('--write');
 const PRINT_SQL = argv.includes('--print-sql');
 const AS_JSON = argv.includes('--json');
 const ONLY = (argv.find((a) => a.startsWith('--only=')) || '').slice(7);
@@ -411,11 +414,11 @@ async function seedCustomizeSetting(client) {
 
 const JSONB_TABLES = {
   // products.images is text[] (node-postgres builds the array literal), the rest are jsonb
-  products: ['key_shapes', 'fitment', 'models', 'years', 'specs', 'vehicles'],
+  products: ['key_shapes', 'fitment', 'models', 'years', 'specs', 'vehicles', 'colors'],
   brands: ['models'],
   home_sections: ['config'],
   orders: ['customer', 'items', 'status_history'],
-  order_items: ['fitment'],
+  order_items: ['fitment', 'color'],
   preorders: ['customer'],
   settings: ['value'],
 };
