@@ -417,3 +417,29 @@ against a local server. jsdom checks on the exact deployed bytes: desktop pill
 and mobile entry render with `#/customize` and open the 5-step wizard; admin
 sidebar group + badge + dashboard card render and the card buttons navigate to
 both Customize screens.
+
+**Verified on PRODUCTION after deploy** (`main` → `d1e73d7`, PR #20, all 6
+Vercel projects `success`):
+
+- `GET https://vilocciii3bro.vercel.app/api/customize/categories` →
+  `available: true`, Key Cases **59**, Key Holders **29**, Car Medals **29**.
+- `GET https://vilocciii3bro.vercel.app/customize` → 200, the real 5-step flow
+  (Choose → Photo → Car info → Your request → Your details) with the three
+  categories; same on `vilocci-b31u`.
+- Live `/js/app.js` serves build `20260917a` with the unconditional
+  `navLinks.push([cz('customize'), '#/customize'])`.
+- Live `/css/styles.css` serves the gold-pill `.nav-customize` (desktop) and
+  the highlighted `.nav-customize-m` (mobile menu) rules.
+- Live `/js/admin-app.js` serves build `20260917a` with the sidebar
+  `customize-settings` + `customize-requests` entries (incl. the new-request
+  badge) and the `czDashboardCard()` quick-access card.
+- Live `/admin` (vilocciii3bro) renders the Sign In form — the project is
+  Supabase-configured, so the Customize sidebar group and dashboard card are
+  reachable after login (rendering + navigation + bindings proven in jsdom
+  against the exact live bytes).
+
+**Note.** The page fetcher used for verification strips `<header>/<nav>` from
+its markdown, so the header pill was verified in the served bundle bytes
+(marker + nav code + CSS rules) rather than in a screenshot; no browser binary
+is installable in the verification sandbox. Admin login itself was not
+exercised (no admin credentials in the sandbox).
