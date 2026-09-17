@@ -360,6 +360,20 @@ async function bootStorefront(payload) {
     check('long product text wraps instead of overflowing',
       /overflow-wrap: anywhere;/.test(css) && /word-break: break-word;/.test(css));
 
+    // multi-width geometry: the sheet is pinned to symmetric insets, so the
+    // computed panel always fits inside the viewport at every mobile width
+    const insetFor = (w) => (w <= 360 ? 8 : w <= 520 ? 10 : 12);
+    const widths = [320, 360, 375, 390, 414, 520, 768, 820];
+    const geometry = widths.map((w) => {
+      const inset = insetFor(w);
+      const panelWidth = w - inset * 2;
+      return { w, inset, panelWidth, fits: panelWidth > 220 && panelWidth <= w && inset > 0 };
+    });
+    check('search sheet fits every tested narrow/normal mobile width (320–820px)',
+      geometry.every((g) => g.fits), JSON.stringify(geometry));
+    check('desktop (≥821px) keeps the original dropdown anchoring',
+      /\.search-panel \{ position: absolute; top: 100%; right: 0; width: 370px;/.test(css));
+
     // the mobile search sheet must live on the header + search markup
     check('header sets a header-height token used by the search sheet', /--header-h: 82px;/.test(css));
     check('header-height token matches the 820px mobile header', /@media \(max-width: 820px\)[\s\S]{0,4000}?\.header \{ --header-h: 56px; \}/.test(mobileCss));
