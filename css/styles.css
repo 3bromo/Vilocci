@@ -1,5 +1,5 @@
 /* ==========================================================================
-   SPINTO — Premium luxury automotive design system
+   VILOCCI — Premium luxury automotive design system
    Warm ivory / cream, champagne gold, elegant serif display, refined spacing.
    ========================================================================== */
 :root {
@@ -971,7 +971,7 @@ html[dir="rtl"] .link-all:hover svg { transform: translateX(-3px) scaleX(-1); }
 .success .check svg { width: 38px; height: 38px; }
 .success h1 { font-family: var(--serif); font-size: 34px; font-weight: 500; margin: 0 0 10px; }
 
-/* poster / media card (home sections: why Spinto) */
+/* poster / media card (home sections: why Vilocci) */
 .poster { background: var(--black); color: #fff; border-radius: 12px; overflow: hidden; position: relative; min-height: 320px; display: flex; align-items: flex-end; padding: 34px; }
 .poster img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .5; }
 .poster .pbody { position: relative; z-index: 1; }
@@ -1200,7 +1200,7 @@ html[dir="rtl"] .hero-copy .eyebrow::before { order: 2; }
 }
 
 /* ==========================================================================
-   SPINTO — PHASE 2 · FITMENT FINDER
+   VILOCCI — PHASE 2 · FITMENT FINDER
    (premium visual 4-step wizard, persistent vehicle context, product badge)
    ========================================================================== */
 
@@ -1391,7 +1391,7 @@ html[dir="rtl"] .fit-model-card.sel::after { right: auto; left: 10px; }
 }
 
 /* ==========================================================================
-   SPINTO — Product page: Specifications & Compatible Vehicles
+   VILOCCI — Product page: Specifications & Compatible Vehicles
    ========================================================================== */
 .pdp .s-head {
   font-family: var(--serif); font-size: 20px; font-weight: 500; margin: 0 0 14px;

@@ -1,5 +1,5 @@
 -- ============================================================================
--- SPINTO — Admin User Migration
+-- VILOCCI — Admin User Migration
 -- Inserts the admin user into admin_users table.
 --
 -- PREREQUISITE: The user must already exist in Supabase Authentication.

@@ -1,5 +1,5 @@
 -- ============================================================================
--- SPINTO — Admin Setup
+-- VILOCCI — Admin Setup
 -- Creates admin_users table and links existing Supabase Auth user.
 -- Run this ONCE in Supabase SQL Editor.
 -- ============================================================================

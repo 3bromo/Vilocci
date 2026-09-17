@@ -355,7 +355,7 @@
               <a class="btn btn-ghost" href="${fld(slide, 'btn2_link') || '#/brands'}">${VEL.esc(fld(slide, 'btn2'))} <span class="btn-arrow">→</span></a>
             </div>
           </div>
-          <div class="hero-media"><img src="${slide.image || '/img/hero.jpg'}" alt="SPINTO premium key accessory"></div>
+          <div class="hero-media"><img src="${slide.image || '/img/hero.jpg'}" alt="VILOCCI premium key accessory"></div>
         </div>
       </div>
     </section>`;
@@ -1015,7 +1015,7 @@
     const totalProducts = list.length;
 
     // Update page title for SEO
-    document.title = `${brandName(br)} — ${lang === 'ar' ? 'إكسسوارات مفاتيح فاخرة' : 'Premium Key Accessories'} | SPINTO`;
+    document.title = `${brandName(br)} — ${lang === 'ar' ? 'إكسسوارات مفاتيح فاخرة' : 'Premium Key Accessories'} | VILOCCI`;
 
     return `${crumbs([pt('breadcrumb_home'), bName])}
       <div class="container">
@@ -1280,8 +1280,8 @@
       keyguide: { title: 'Key Guide', body: keyGuideHTML() },
       shipping: { title: pt('shipping'), body: `<p>${VEL.esc(state.data.settings.deliveryNote_en)}</p><p>Free delivery on orders over ${VEL.money(state.data.settings.freeShippingThreshold)}. Delivery fee is ${VEL.money(state.data.settings.shippingFee)} otherwise.</p><p><b>${pt('easy_returns')}:</b> ${VEL.esc(state.data.settings.returnPolicy.note_en)}</p>` },
       warranty: { title: pt('warranty_page'), body: `<p>${VEL.esc(state.data.settings.warranty_en)}</p><ul><li>Coverage against manufacturing defects</li><li>2-year warranty on Carbon Edition</li><li>1-year warranty on leather, holders and medals</li></ul>` },
-      about: { title: pt('about_velocci'), body: `<p>${VEL.esc(state.data.settings.footerAbout_en)}</p><p>SPINTO was born from a simple belief — that the key you carry every day deserves the same attention to design as the car you love. Every case, holder and medal is engineered with real materials and guaranteed compatibility.</p>` },
-      workshop: { title: pt('workshop'), body: `<p>Every Spinto piece passes through our workshop where craftsmen check the fit, the finish and the feel. From carbon-fibre layup to the final gold bezel, nothing leaves without being tested against a real car key.</p>` }
+      about: { title: pt('about_velocci'), body: `<p>${VEL.esc(state.data.settings.footerAbout_en)}</p><p>VILOCCI was born from a simple belief — that the key you carry every day deserves the same attention to design as the car you love. Every case, holder and medal is engineered with real materials and guaranteed compatibility.</p>` },
+      workshop: { title: pt('workshop'), body: `<p>Every Vilocci piece passes through our workshop where craftsmen check the fit, the finish and the feel. From carbon-fibre layup to the final gold bezel, nothing leaves without being tested against a real car key.</p>` }
     };
     const pg = pages[kind];
     if (!pg) return notFound();
@@ -1497,7 +1497,7 @@
         <button class="mobile-toggle" id="menu-btn" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
         <a class="logo" href="#/">
           <span class="mark">${VEL.logoMark(26, '#B8862E')}</span>
-          <span class="word">SPINTO</span>
+          <span class="word">VILOCCI</span>
         </a>
         <nav class="nav">
           ${navLinks.map(l => l[1] === '#/customize'
@@ -1548,7 +1548,7 @@
       <div class="container">
         <div class="footer-grid">
           <div>
-            <a class="logo" href="#/"><span class="mark">${VEL.logoMark(28, '#DCC58F')}</span><span class="word" style="color:#fff">SPINTO</span></a>
+            <a class="logo" href="#/"><span class="mark">${VEL.logoMark(28, '#DCC58F')}</span><span class="word" style="color:#fff">VILOCCI</span></a>
             <p>${VEL.esc(fld(s, 'footerAbout'))}</p>
             <div class="socials">
               <a href="https://instagram.com/${VEL.esc(s.instagram)}" target="_blank" rel="noopener" aria-label="Instagram"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17" cy="7" r="1"/></svg></a>
@@ -2860,7 +2860,7 @@
     const savedFit = localStorage.getItem(FIT_KEY); if (savedFit) { try { state.fitment = JSON.parse(savedFit); } catch (e) {} }
     state.fitStep = fitDeep();
     normalizeCleanUrl();
-    $('#app').innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:var(--muted)">SPINTO …</div>`;
+    $('#app').innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:var(--muted)">VILOCCI …</div>`;
     fetch('/api/data').then(r => r.json()).then(data => {
       state.data = data;
       renderSite();

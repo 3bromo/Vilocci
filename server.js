@@ -1,5 +1,5 @@
 // ============================================================================
-// SPINTO — Application server
+// VILOCCI — Application server
 // Serves the storefront + admin SPA and exposes a single data API.
 // Admin authentication uses Supabase Auth (JWT-verified, no hardcoded passwords).
 // Data is read/written through lib/db.js (Supabase), with the JSON store as a
@@ -953,7 +953,7 @@ app.get(/^\/(?!api|img|css|js|admin).*/, (req, res) => res.sendFile(path.join(PU
 // instead of binding a port.
 if (require.main === module) {
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`SPINTO running on http://0.0.0.0:${PORT}`);
+    console.log(`VILOCCI running on http://0.0.0.0:${PORT}`);
     if (db.DRIVER === 'json') console.warn('[data] no database configured — using the JSON store fallback.');
   });
 }

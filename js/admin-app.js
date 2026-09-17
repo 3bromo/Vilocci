@@ -1,5 +1,5 @@
 /* ==========================================================================
-   SPINTO — Admin Dashboard Application
+   VILOCCI — Admin Dashboard Application
    Professional e-commerce admin panel with Supabase integration.
    Build 20260917a — Customize exposed in sidebar + dashboard quick access.
    ========================================================================== */
@@ -412,7 +412,7 @@
 
       state.user = data.user;
       state.loginError = '';
-      toast('Welcome to Spinto Admin', 'gold');
+      toast('Welcome to Vilocci Admin', 'gold');
 
       // Redirect to /admin after successful login
       setAdminRoute('admin');
@@ -588,7 +588,7 @@
       <div class="login-card">
         <div class="login-brand">
           <div class="logo-mark">S</div>
-          <h1>Spinto</h1>
+          <h1>Vilocci</h1>
           <p>Admin Dashboard</p>
         </div>
         <form class="login-form" id="login-form">
@@ -615,7 +615,7 @@
       <div class="login-card">
         <div class="login-brand">
           <div class="logo-mark">S</div>
-          <h1>Spinto</h1>
+          <h1>Vilocci</h1>
           <p>Admin Dashboard</p>
         </div>
         <div style="text-align:center;padding:20px 0;">
@@ -658,7 +658,7 @@
       <div class="sidebar-brand">
         <div class="s-logo">S</div>
         <div>
-          <div class="s-name">Spinto</div>
+          <div class="s-name">Vilocci</div>
           <div class="s-sub">Admin Panel</div>
         </div>
       </div>
@@ -2149,7 +2149,7 @@
         <div class="form-row">
           <div class="form-group">
             <label>Shop Name</label>
-            <input type="text" id="s-name" value="${esc(s.shopName || 'Spinto')}">
+            <input type="text" id="s-name" value="${esc(s.shopName || 'Vilocci')}">
           </div>
           <div class="form-group">
             <label>Tagline</label>
@@ -3583,7 +3583,7 @@
       const instapayEnabled = $('#s-instapay-enabled') ? $('#s-instapay-enabled').checked : false;
       const instapayUrl = $('#s-instapay-url') ? $('#s-instapay-url').value.trim() : '';
       const settings = {
-        shopName: $('#s-name').value.trim() || 'Spinto',
+        shopName: $('#s-name').value.trim() || 'Vilocci',
         tagline: $('#s-tagline').value.trim(),
         contact: {
           email: $('#s-email').value.trim(),

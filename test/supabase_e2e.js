@@ -126,7 +126,7 @@ async function main() {
 
     const p = await one(`select name_en, price, brand_slug, category, images from public.products where id = 'p_mercedes-benz_case_carbon'`);
     check('product row carries the real catalog values', () => {
-      assert.strictEqual(p.name_en, 'Spinto Carbon Key Case — Mercedes-Benz');
+      assert.strictEqual(p.name_en, 'Vilocci Carbon Key Case — Mercedes-Benz');
       assert.strictEqual(Number(p.price), 1450);
       assert.strictEqual(p.brand_slug, 'mercedes-benz');
       assert.strictEqual(p.category, 'keycase');
@@ -212,7 +212,7 @@ async function main() {
       assert.strictEqual(data.products.length, 117);
       assert.strictEqual(data.categories.length, 3);
       assert.strictEqual(data.brands.length, 29);
-      assert.strictEqual(data.settings.shopName, 'SPINTO');
+      assert.strictEqual(data.settings.shopName, 'VILOCCI');
     });
 
     const pickColor = (pid) => {
@@ -314,7 +314,7 @@ async function main() {
         collection: 'products',
         record: {
           id: 'p_mercedes-benz_case_carbon',
-          name_en: 'Spinto Carbon Key Case — Mercedes-Benz',
+          name_en: 'Vilocci Carbon Key Case — Mercedes-Benz',
           slug: 'mercedes-benz-carbon-key-case',
           category: 'keycase',
           brandSlug: 'mercedes-benz',

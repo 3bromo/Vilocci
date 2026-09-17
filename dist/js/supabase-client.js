@@ -1,5 +1,5 @@
 /* ==========================================================================
-   SPINTO — Supabase client (browser)
+   VILOCCI — Supabase client (browser)
    Uses the anon key. All sensitive writes are protected by Row Level Security.
    ========================================================================== */
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';

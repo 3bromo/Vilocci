@@ -1,5 +1,5 @@
 // ============================================================================
-// SPINTO — Seed data
+// VILOCCI — Seed data
 // Builds a fully-populated store: brands, models/years/shapes, ~80 products,
 // bundles, hero slides, homepage sections, settings and translations.
 // Run with:  npm run seed   (or)   node data/seed.js
@@ -223,12 +223,12 @@ function buildProducts() {
     products.push({
       id:'p_'+slugify(b.slug)+'_case_carbon', slug:slugify(b.slug)+'-carbon-key-case',
       category:'keycase', brandSlug:b.slug,
-      name_en:`Spinto Carbon Key Case — ${brandNameEN}`,
+      name_en:`Vilocci Carbon Key Case — ${brandNameEN}`,
       name_ar:`جراب مفاتيح كربون فاخر — ${brandNameAR}`,
       short_en:'Matte carbon fibre shell with a champagne-gold alloy bezel.',
       short_ar:'هيكل ألياف كربون مطفي مع إطار سبيكة ذهبي شامبين.',
-      description_en:`The Spinto Carbon Key Case for the ${brandNameEN} is precision-machined from aerospace-grade carbon fibre. A soft-touch matte shell and a champagne-gold alloy bezel protect your key from scratches while keeping full button access. Engineered to match the character of your car.`,
-      description_ar:`جراب مفاتيح سبينتو الكربوني لسيارة ${brandNameAR} مصنوع بدقة من ألياف كربون عالية الجودة. هيكل خارجي ناعم الملمس مع إطار سبيكة ذهبي شامبين يحمي مفتاحك من الخدوش مع بقاء الأزرار سهلة الوصول. مصمم ليتناسب مع شخصية سيارتك.`,
+      description_en:`The Vilocci Carbon Key Case for the ${brandNameEN} is precision-machined from aerospace-grade carbon fibre. A soft-touch matte shell and a champagne-gold alloy bezel protect your key from scratches while keeping full button access. Engineered to match the character of your car.`,
+      description_ar:`جراب مفاتيح فيلوتشي الكربوني لسيارة ${brandNameAR} مصنوع بدقة من ألياف كربون عالية الجودة. هيكل خارجي ناعم الملمس مع إطار سبيكة ذهبي شامبين يحمي مفتاحك من الخدوش مع بقاء الأزرار سهلة الوصول. مصمم ليتناسب مع شخصية سيارتك.`,
       material_en:'Carbon fibre, alloy bezel', material_ar:'ألياف كربون، إطار سبيكة',
       price:p.case, oldPrice:p.case+150, discount:Math.round(150/(p.case+150)*100),
       images:pimg('keycase', b.slug, 'carbon'),
@@ -243,12 +243,12 @@ function buildProducts() {
     products.push({
       id:'p_'+slugify(b.slug)+'_case_leather', slug:slugify(b.slug)+'-premium-leather-key-case',
       category:'keycase', brandSlug:b.slug,
-      name_en:`Spinto Premium Leather Key Case — ${brandNameEN}`,
+      name_en:`Vilocci Premium Leather Key Case — ${brandNameEN}`,
       name_ar:`جراب مفاتيح جلد فاخر — ${brandNameAR}`,
       short_en:'Hand-stitched full-grain leather with a supple premium hand feel.',
       short_ar:'جلد كامل الحبيبات مخيط يدويًا بملمس فاخر وناعم.',
-      description_en:`Wrapped in full-grain Italian-style leather and hand-stitched by master craftsmen, the Spinto Premium Leather Key Case for the ${brandNameEN} offers timeless elegance and everyday protection with a luxurious, supple feel.`,
-      description_ar:`جراب مفاتيح سبينتو الجلدي الفاخر لسيارة ${brandNameAR} مغلف بجلد كامل الحبيبات ومخيط يدويًا على يد حرفيين مهرة، يمنحك أناقة خالدة وحماية يومية بملمس فاخر وناعم.`,
+      description_en:`Wrapped in full-grain Italian-style leather and hand-stitched by master craftsmen, the Vilocci Premium Leather Key Case for the ${brandNameEN} offers timeless elegance and everyday protection with a luxurious, supple feel.`,
+      description_ar:`جراب مفاتيح فيلوتشي الجلدي الفاخر لسيارة ${brandNameAR} مغلف بجلد كامل الحبيبات ومخيط يدويًا على يد حرفيين مهرة، يمنحك أناقة خالدة وحماية يومية بملمس فاخر وناعم.`,
       material_en:'Full-grain leather', material_ar:'جلد كامل الحبيبات',
       price:p.case2, oldPrice:p.case2+120, discount:Math.round(120/(p.case2+120)*100),
       images:pimg('keycase', b.slug, 'leather'),
@@ -263,7 +263,7 @@ function buildProducts() {
     products.push({
       id:'p_'+slugify(b.slug)+'_holder', slug:slugify(b.slug)+'-signature-metal-key-holder',
       category:'keyholder', brandSlug:b.slug,
-      name_en:`Spinto Signature Metal Key Holder — ${brandNameEN}`,
+      name_en:`Vilocci Signature Metal Key Holder — ${brandNameEN}`,
       name_ar:`حامل مفاتيح معدني مميز — ${brandNameAR}`,
       short_en:'Machined champagne-gold alloy with a secure silicone core.',
       short_ar:'سبيكة ذهبية مصقولة مع قلب سيليكون آمن.',
@@ -287,8 +287,8 @@ function buildProducts() {
       name_ar:`ميدالية ${brandNameAR} — أسود وذهبي`,
       short_en:'A refined collector emblem finished in black and champagne gold.',
       short_ar:'شارة راقية للجمع بتشطيب أسود وذهبي شامبين.',
-      description_en:`The Spinto ${brandNameEN} collector Medal is finished in deep black and champagne gold. Machined as a refined emblem, it is the perfect finishing touch for enthusiasts who appreciate detail.`,
-      description_ar:`ميدالية سبينتو لسيارة ${brandNameAR} بتشطيب أسود عميق وذهبي شامبين. مصممة كشارة راقية، وهي اللمسة النهائية المثالية لعشاق التفاصيل الدقيقة.`,
+      description_en:`The Vilocci ${brandNameEN} collector Medal is finished in deep black and champagne gold. Machined as a refined emblem, it is the perfect finishing touch for enthusiasts who appreciate detail.`,
+      description_ar:`ميدالية فيلوتشي لسيارة ${brandNameAR} بتشطيب أسود عميق وذهبي شامبين. مصممة كشارة راقية، وهي اللمسة النهائية المثالية لعشاق التفاصيل الدقيقة.`,
       material_en:'Alloy, black & gold', material_ar:'سبيكة، أسود وذهبي',
       price:p.medal, oldPrice:p.medal+60, discount:Math.round(60/(p.medal+60)*100),
       images:pimg('medal', b.slug),
@@ -305,12 +305,12 @@ function buildProducts() {
   products.push({
     id:'p_tesla_case_premium', slug:'tesla-premium-key-case',
     category:'keycase', brandSlug:'tesla',
-    name_en:'Spinto Premium Key Case — Tesla (Pre-Order)',
+    name_en:'Vilocci Premium Key Case — Tesla (Pre-Order)',
     name_ar:'جراب مفاتيح فاخر — تسلا (طلب مسبق)',
     short_en:'A limited pre-order run for the Tesla Model 3 / Y card key.',
     short_ar:'إصدار مسبق محدود لبطاقة مفتاح موديل 3 / Y من تسلا.',
-    description_en:`A limited pre-order run of the Spinto Premium Key Case for Tesla Model 3 / Y card keys. Reserve yours now; no payment is taken until we confirm.`,
-    description_ar:`إصدار مسبق محدود من جراب سبينتو الفاخر لبطاقة مفتاح تسلا موديل 3 / Y. احجز الآن، لا يتم السداد حتى نؤكد الطلب.`,
+    description_en:`A limited pre-order run of the Vilocci Premium Key Case for Tesla Model 3 / Y card keys. Reserve yours now; no payment is taken until we confirm.`,
+    description_ar:`إصدار مسبق محدود من جراب فيلوتشي الفاخر لبطاقة مفتاح تسلا موديل 3 / Y. احجز الآن، لا يتم السداد حتى نؤكد الطلب.`,
     material_en:'Saffiano leather', material_ar:'جلد سافيانو',
     price:1600, oldPrice:null, discount:0,
     images:pimg('keycase', 'tesla', 'leather'),
@@ -397,7 +397,7 @@ function buildHomeSections() {
     { id:'medals', type:'medals', title:'Car Medals', order:8, enabled:true },
     { id:'set', type:'completeset', title:'Complete Your Set', order:9, enabled:true },
     { id:'limited', type:'limited', title:'Limited Edition', order:10, enabled:true },
-    { id:'why', type:'why', title:'Why Spinto', order:11, enabled:true },
+    { id:'why', type:'why', title:'Why Vilocci', order:11, enabled:true },
   ];
 }
 
@@ -445,8 +445,8 @@ function buildLanguages() {
       choose_brand:'Choose your car brand to begin', exact_match:'Exact match for your key',
       bundle_discount_applied:'Bundle Discount Applied', you_will_save:'You will save up to {n} on this order',
       keyguide:'Key Guide', shipping:'Shipping & Returns', warranty_page:'Warranty',
-      about_velocci:'About Spinto', workshop:'Workshop Story',
-      why_velocci:'Why Spinto', complete_your_set:'Complete Your Set',
+      about_velocci:'About Vilocci', workshop:'Workshop Story',
+      why_velocci:'Why Vilocci', complete_your_set:'Complete Your Set',
       key_cases:'Key Cases', key_holders:'Key Holders', car_medals:'Car Medals',
       limited_edition:'Limited Edition', cash:'Cash on Delivery', cod_note:'Pay when you receive your order',
       full_name:'Full Name', phone:'Phone Number', city:'City', area:'Area',
@@ -470,7 +470,7 @@ function buildLanguages() {
     },
     ar: {
       home:'الرئيسية', keycases:'جرابات المفاتيح', keyholders:'حاملات المفاتيح', medals:'الميداليات',
-      brands:'الماركات', about:'حول', nav_about:'حول سبينتو', contact:'تواصل معنا',
+      brands:'الماركات', about:'حول', nav_about:'حول فيلوتشي', contact:'تواصل معنا',
       search:'بحث', account:'حسابي', cart:'السلة',
       free_delivery:'توصيل مجاني على جميع الطلبات', limited_time:'لفترة محدودة',
       days:'يوم', hrs:'ساعة', mins:'دقيقة', secs:'ثانية',
@@ -507,8 +507,8 @@ function buildLanguages() {
       choose_brand:'اختر ماركة سيارتك للبدء', exact_match:'تطابق دقيق لمفتاحك',
       compatible_products:'المنتجات المتوافقة', no_results:'لا توجد منتجات مطابقة لهذا الاختيار.', can_review:'تقييم', compatible_with:'متوافق مع {brand}', bundle_discount_applied:'تم تطبيق خصم المجموعة', you_will_save:'ستوفر حتى {n} في هذا الطلب',
       keyguide:'دليل المفتاح', shipping:'الشحن والإرجاع', warranty_page:'الضمان',
-      about_velocci:'حول سبينتو', workshop:'قصة الورشة',
-      why_velocci:'لماذا سبينتو', complete_your_set:'أكمل طقمك',
+      about_velocci:'حول فيلوتشي', workshop:'قصة الورشة',
+      why_velocci:'لماذا فيلوتشي', complete_your_set:'أكمل طقمك',
       key_cases:'جرابات المفاتيح', key_holders:'حاملات المفاتيح', car_medals:'ميداليات السيارات',
       limited_edition:'إصدار محدود', cash:'الدفع عند الاستلام', cod_note:'ادفع عند استلام طلبك',
       full_name:'الاسم الكامل', phone:'رقم الهاتف', city:'المدينة', area:'المنطقة',
@@ -541,16 +541,16 @@ function buildSettings() {
   const now = new Date();
   const promoEnd = new Date(); promoEnd.setDate(promoEnd.getDate()+3); promoEnd.setHours(23,59,59,0);
   return {
-    shopName:'SPINTO', tagline:'Premium automotive key accessories',
-    logo:{ type:'text', value:'SPINTO', accent:true },
+    shopName:'VILOCCI', tagline:'Premium automotive key accessories',
+    logo:{ type:'text', value:'VILOCCI', accent:true },
     contact:{ phone:'+20 100 000 0000', email:'hello@spinto.com', whatstext:'+20 100 000 0000' },
     whatsapp:'+20 100 000 0000', instagram:'spinto', facebook:'spinto', tiktok:'spinto',
     shippingFee:60, freeShippingThreshold:2000,
     returnPolicy:{ days:7, note_en:'7-day return policy on all items.', note_ar:'سياسة إرجاع 7 أيام على جميع المنتجات.' },
-    warranty_en:'All Spinto products are covered by a manufacture warranty.', warranty_ar:'جميع منتجات سبينتو مشمولة بضمان المصنع.',
+    warranty_en:'All Vilocci products are covered by a manufacture warranty.', warranty_ar:'جميع منتجات فيلوتشي مشمولة بضمان المصنع.',
     currency:'EGP', currencySymbol:'EGP',
-    copyright_en:'© 2026 Spinto. All rights reserved.', copyright_ar:'© 2026 سبينتو. جميع الحقوق محفوظة.',
-    footerAbout_en:'SPINTO crafts premium automotive key accessories for the world\'s finest car brands.', footerAbout_ar:'تصنع سبينتو إكسسوارات مفاتيح فاخرة لأفضل ماركات السيارات في العالم.',
+    copyright_en:'© 2026 Vilocci. All rights reserved.', copyright_ar:'© 2026 فيلوتشي. جميع الحقوق محفوظة.',
+    footerAbout_en:'VILOCCI crafts premium automotive key accessories for the world\'s finest car brands.', footerAbout_ar:'تصنع فيلوتشي إكسسوارات مفاتيح فاخرة لأفضل ماركات السيارات في العالم.',
     deliveryNote_en:'Cash on Delivery — pay when you receive your order.', deliveryNote_ar:'الدفع عند الاستلام — ادفع عند استلام طلبك.',
     instapay: {
       enabled: true,

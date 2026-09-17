@@ -1,5 +1,5 @@
 -- ============================================================================
--- SPINTO — Supabase Database Schema
+-- VILOCCI — Supabase Database Schema
 -- Run this in your Supabase SQL Editor to create all required tables.
 -- ============================================================================
 
