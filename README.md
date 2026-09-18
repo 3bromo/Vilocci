@@ -39,7 +39,12 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
 - **Best Sellers, New Arrivals, Key Cases, Key Holders, Car Medals, Complete Your Set, Limited Edition, Why Velocci** — all populated home sections, reorderable from Admin.
 - **Fitment Finder ("Find Your Key")** — Brand → Model → Year → Key Shape → compatible products only. The chosen vehicle persists while browsing.
 - **Brand pages** — show only products compatible with that brand.
-- **Product page** — gallery, price, old price, discount, **mandatory key-shape selector** (unavailable shapes greyed + "OUT OF STOCK" + X, unclickable), dynamic "Only N left in stock", quantity, **Complete Your Set** bundle widget.
+- **Product page** — gallery, price, old price, discount, **mandatory key-shape selector** (unavailable shapes greyed + "OUT OF STOCK" + X, unclickable), **mandatory color selector** for products with admin-configured colors (round swatches from the stored HEX), dynamic "Only N left in stock", quantity, **Complete Your Set** bundle widget. All product-page content (description, material, compatibility, specifications table, vehicle list, tabs, buttons) fits the mobile viewport with no horizontal overflow.
+- **Quick Add** — every product card opens a two-step modal: **SELECT YOUR KEY SHAPE → SELECT YOUR COLOR → ADD TO CART**.
+  The colors are the product's own list from Admin → Products → Colors (enabled colors only, admin order, round swatches).
+  Add to Cart never fires without both choices and instead shows the localized validation message; the shape **and** the color
+  are stored on the cart line (same product with different shape/color combinations stays separate) and travel through checkout
+  into the order. Products without configured colors keep the shape-only fallback.
 - **Bundle upsell** — picks the matching products for the SAME car brand only; never recommends unrelated brands.
 - **Cart drawer** — slide-out with images, brand, key shape, qty, remove, "Complete Your [Brand] Set & Save", real-time subtotal / bundle discount / delivery fee / total, Cash on Delivery note.
 - **Checkout** — guest checkout, **Cash on Delivery only** (no Stripe/PayPal/card). Full name, phone, city, area, address, notes. Prices in EGP.
@@ -48,11 +53,17 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
 - **Arabic / English** — complete RTL translation, one language at a time, natural translations.
 - **Support pages** — Key Guide, Shipping & Returns, Warranty, About, Workshop Story.
 - **Mobile** — dedicated premium mobile experience (hamburger menu, stacked hero, RTL), not a shrunk desktop.
+  The search panel opens as a viewport-wide sheet pinned to equal left/right insets (LTR **and** RTL, 320–820px), so it can
+  never be clipped; the promo bar is compacted (the second "Limited Time Only" line is hidden on mobile) so the hero starts higher.
 
 ### Admin panel (`/admin`)
 - **Dashboard** — revenue, orders, products, low-stock alerts, recent orders.
 - **Products** — add / edit / delete; EN + AR names & descriptions, price, old price, discount, images, category, brand, models, years, **key shapes**, inventory, out-of-stock, featured / best seller / new arrival / limited edition / pre-order.
-- **Brands** — add / edit, logo (stylized emblem), accent colour, tier, **models → years → key shapes** (fitment), enable/disable, reorder.
+- **Brands** — add / edit / delete; EN + AR name, slug, description and **logo upload** (or paste a public URL).
+  A saved logo is served to the storefront (brand strip, all-brands page, brand page, product pages); brands without one keep the
+  shipped `/img/logos/<slug>` file. On read-only hosts (Vercel) an upload that cannot be written to disk is kept with the brand record
+  as a small data URL instead of failing. Editing PATCHes through `/api/admin/update`, so models/years/fitment, tier, order and the
+  accent colour are never overwritten.
 - **Bundles** — pick the brand's set, set bundle price; discount & % auto-computed; active/inactive.
 - **Fitment** — manage brand → model → year → key-shape compatibility.
 - **Homepage** — hero slides (add/edit/reorder/enable), home sections (drag-to-reorder + enable/disable), promo bar + countdown.
@@ -101,8 +112,15 @@ npm run shot      # capture screenshots into /shots
 ```
 
 Given a running server (`npm start`), `npm test` validates routing, product page,
-shape selection, add-to-cart, cart drawer, EN/AR switching, the full her-limit flow
-and the admin product/brand/bundle/order/settings views.
+shape selection, add-to-cart, cart drawer, EN/AR switching, the full her-limit flow,
+the admin product/brand/bundle/order/settings views, `test/quickadd_mobile.js`
+(`npm run test:quickadd`) which covers the Quick Add shape → color → add flow
+(localized validation, enabled colors only, variant separation, cart → checkout →
+order), the mobile-safe layout rules (search sheet, promo/hero, product-page fit)
+and the fact that the public site exposes no admin entry while `/admin` keeps working,
+and `test/admin_brands.js` (`npm run test:brands`) which covers Admin → Brands:
+renaming a brand, uploading/changing its logo (including the read-only-disk fallback),
+the patch reaching `/api/data`, and the storefront rendering the new name + logo.
 
 ---
 

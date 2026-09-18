@@ -133,12 +133,17 @@ VEL.brandLogo = function (slug, opts) {
 };
 
 // Render a real logo as a plain <img> (natural colours) for light contexts.
+/* Brand logo <img>. By default it uses the logo file shipped for the slug
+   (/img/logos/<slug>.<ext>). When the brand record carries a `logo` URL set in
+   Admin → Brands, pass it as opts.src so the storefront shows the uploaded
+   image instead — the file-based default stays as the fallback. */
 VEL.brandLogoImg = function (slug, opts) {
   opts = opts || {};
   var h = opts.h || 64;
   var cls = opts.cls ? ' ' + opts.cls : '';
-  return '<img class="brand-logo' + cls + '" src="' + VEL.brandLogoUrl(slug) +
-    '" alt="' + VEL.esc(slug) + '" loading="lazy" style="height:' + h + 'px;width:auto;object-fit:contain;">';
+  var src = (opts.src && String(opts.src).trim()) || VEL.brandLogoUrl(slug);
+  return '<img class="brand-logo' + cls + '" src="' + VEL.esc(src) +
+    '" alt="' + VEL.esc(opts.alt || slug) + '" loading="lazy" style="height:' + h + 'px;width:auto;object-fit:contain;">';
 };
 
 /* ---- Helpers ---- */
