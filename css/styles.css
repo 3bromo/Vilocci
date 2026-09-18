@@ -1603,41 +1603,78 @@ html[dir="rtl"] .pdp-specs .spec-table th, html[dir="rtl"] .pdp-specs .spec-tabl
 .delivery-info-text strong { font-weight: 600; display: block; margin-bottom: 2px; }
 
 /* ==========================================================================
-   Gift Packaging Option — on product detail pages
+   Nano Ceramic Coating — optional extra on Key Holder / Key Case pages
+   (replaces the old Premium Gift Packaging option; same luxury visual
+   language: ivory card, gold check, gold price pill, mobile-first)
    ========================================================================== */
-.gift-packaging-option {
+.coating-option {
   margin: 12px 0 16px;
   background: var(--white); border: 1px solid var(--line); border-radius: 10px;
   padding: 16px 18px;
+  transition: border-color .25s ease, box-shadow .25s ease, background .25s ease;
 }
-.gift-toggle {
+.coating-option.on {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, rgba(200,161,90,.06), rgba(200,161,90,.02)), var(--white);
+  box-shadow: 0 2px 14px rgba(156,107,22,.10);
+}
+.coating-toggle {
   display: flex; align-items: center; gap: 12px; cursor: pointer;
   font-size: 13px; font-weight: 500; color: var(--ink);
+  -webkit-tap-highlight-color: transparent;
 }
-.gift-toggle input[type="checkbox"] { display: none; }
-.gift-check {
+.coating-toggle input[type="checkbox"] { display: none; }
+.coating-check {
   width: 22px; height: 22px; border: 2px solid var(--line-strong);
   border-radius: 5px; flex: none; position: relative;
   transition: all .2s;
 }
-.gift-toggle input:checked + .gift-check {
+.coating-toggle input:checked + .coating-check {
   background: var(--gold-grad); border-color: var(--gold);
 }
-.gift-toggle input:checked + .gift-check::after {
+.coating-toggle input:checked + .coating-check::after {
   content: "✓"; position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
   color: #fff; font-size: 13px; font-weight: 700;
 }
-.gift-label {
-  display: flex; align-items: center; gap: 8px;
+.coating-label {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1;
 }
-.gift-label svg { color: var(--gold-deep); flex: none; }
-.gift-details {
-  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);
+.coating-label svg { color: var(--gold-deep); flex: none; }
+.coating-name { font-weight: 600; letter-spacing: .01em; }
+.coating-price {
+  margin-inline-start: auto;
+  border: 1px solid var(--gold); border-radius: 999px;
+  background: rgba(200,161,90,.10); color: var(--gold-deep);
+  padding: 3px 10px; font-size: 11.5px; font-weight: 700;
+  letter-spacing: .03em; white-space: nowrap;
 }
-.gift-desc {
-  font-size: 12px; color: var(--muted); line-height: 1.6; margin: 0;
+.coating-desc {
+  font-size: 12px; color: var(--muted); line-height: 1.6;
+  margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--line);
 }
+
+/* Per-line "coated" chip — cart drawer, checkout list and success page */
+.di-coat { margin-top: 6px; }
+.coat-chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+  border: 1px solid var(--gold); border-radius: 999px;
+  background: rgba(200,161,90,.10); color: var(--gold-deep);
+  padding: 2px 9px; font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+}
+.coat-chip svg { flex: none; width: 12px; height: 12px; }
+
+/* Totals row (cart drawer + checkout + success) */
+.summary .row .coat-fee, .s-totals .row .coat-fee { color: var(--gold-deep); font-weight: 700; }
+
+/* Quick Add modal — optional coating block under the shape/color steps */
+.qa-coating { border-top: 1px dashed var(--line); padding-top: 14px; margin-top: 2px; }
+.qa-coat-head { margin-bottom: 8px; }
+.qa-coat-optional {
+  font-size: 10px; font-weight: 700; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--muted);
+}
+.qa-coating .coating-desc { margin-top: 8px; padding-top: 0; border-top: 0; }
 
 /* ==========================================================================
    Brand Sculpture Preview — on brand tiles
@@ -1739,8 +1776,8 @@ html[dir="rtl"] .pdp-specs .spec-table th, html[dir="rtl"] .pdp-specs .spec-tabl
 
 /* RTL adjustments for new components */
 html[dir="rtl"] .delivery-info-box { flex-direction: row-reverse; text-align: right; }
-html[dir="rtl"] .gift-packaging-option { text-align: right; }
-html[dir="rtl"] .gift-label { flex-direction: row-reverse; }
+html[dir="rtl"] .coating-option { text-align: right; }
+html[dir="rtl"] .coating-label { flex-direction: row-reverse; }
 html[dir="rtl"] .hero-product-card { direction: rtl; }
 html[dir="rtl"] .catnav-card:hover .catnav-arrow { transform: translateX(-3px); }
 

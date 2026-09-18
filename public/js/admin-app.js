@@ -1,7 +1,8 @@
 /* ==========================================================================
    VILOCCI — Admin Dashboard Application
    Professional e-commerce admin panel with Supabase integration.
-   Build 20260917a — Customize exposed in sidebar + dashboard quick access.
+   Build 20260918b — Nano Ceramic Coating extra visible on Orders (per-line
+   badge + order totals); replaces the old Premium Gift Packaging option.
    ========================================================================== */
 (() => {
   'use strict';
@@ -1229,7 +1230,7 @@
           <thead><tr><th>Order ID</th><th>Date</th><th>Customer</th><th>Phone</th><th>Address</th><th>Items</th><th>Total</th><th>Payment</th><th>Status</th><th style="width:120px;">Actions</th></tr></thead>
           <tbody>
             ${filtered.map(o => `<tr>
-              <td><strong>${esc(o.id)}</strong></td>
+              <td><strong>${esc(o.id)}</strong>${(o.coatingFee || 0) > 0 ? ` <span class="badge badge-coating" title="Nano Ceramic Coating requested (+${money(o.coatingFee)})">◆ Coating</span>` : ''}</td>
               <td>${fmtDateTime(o.createdAt || o.created_at)}</td>
               <td>${esc(o.customer?.fullName || '—')}</td>
               <td>${esc(o.customer?.phone || '—')}</td>
@@ -3127,7 +3128,7 @@
             Order items <span style="color:var(--text-muted);font-weight:400;">(${items.length} line${items.length === 1 ? '' : 's'} from order_items)</span>
           </h4>
           <table class="data-table" style="font-size:12px;">
-            <thead><tr><th style="width:44px;"></th><th>Product</th><th>Color</th><th>Key shape</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead>
+            <thead><tr><th style="width:44px;"></th><th>Product</th><th>Color</th><th>Key shape</th><th>Nano Ceramic Coating</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead>
             <tbody>
               ${items.length ? items.map(it => `<tr>
                 <td>${it.image ? `<img src="${esc(it.image)}" alt="" style="width:36px;height:30px;object-fit:cover;border-radius:5px;background:var(--cream);">` : ''}</td>
@@ -3139,16 +3140,20 @@
                   ? `<span style="display:inline-flex;align-items:center;gap:6px;"><span class="pcolor-dot" style="background:${esc(it.color.hex)}"></span>${esc(it.color.name_en || it.color.name_ar || it.color.hex)}</span>`
                   : '<span style="color:var(--text-muted);">—</span>'}</td>
                 <td>${esc(it.keyShape || '—')}</td>
+                <td>${it.coating
+                  ? '<span class="badge badge-coating" title="Customer requested the Nano Ceramic Coating extra on this line (+EGP 100)">◆ Requested +EGP 100</span>'
+                  : '<span style="color:var(--text-muted);">—</span>'}</td>
                 <td>${it.qty}</td>
                 <td>${money(it.price)}</td>
                 <td><strong>${money(it.lineTotal != null ? it.lineTotal : (it.price || 0) * (it.qty || 0))}</strong></td>
-              </tr>`).join('') : '<tr><td colspan="7" style="color:var(--text-muted);">No line items stored for this order.</td></tr>'}
+              </tr>`).join('') : '<tr><td colspan="8" style="color:var(--text-muted);">No line items stored for this order.</td></tr>'}
             </tbody>
           </table>
 
           <div style="margin-top:16px;text-align:right;">
             <p style="font-size:13px;color:var(--text-secondary);">Subtotal: ${money(o.subtotal)}</p>
             ${o.bundleDiscount ? `<p style="font-size:13px;color:var(--success);">Bundle Discount: −${money(o.bundleDiscount)}</p>` : ''}
+            ${o.coatingFee ? `<p style="font-size:13px;color:var(--text-secondary);">Nano Ceramic Coating: +${money(o.coatingFee)}</p>` : ''}
             <p style="font-size:13px;color:var(--text-secondary);">Delivery: ${o.deliveryFee ? money(o.deliveryFee) : 'Free'}</p>
             <p style="font-size:18px;font-weight:700;margin-top:8px;">Total: ${money(o.total)}</p>
           </div>

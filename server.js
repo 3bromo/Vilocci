@@ -337,6 +337,21 @@ app.get('/api/data', async (req, res) => {
 // checkout quotes and the code the order is charged with are the same number.
 // Every total is recomputed here from the catalog; the client is never trusted.
 
+// ---------------------------------------------------------------------------
+// NANO CERAMIC COATING — optional extra (Key Holders + Key Cases ONLY)
+// ---------------------------------------------------------------------------
+// A flat EGP 100 per cart line that opts in — never multiplied by the line
+// qty, never a percentage of the product price, EGP 0 when not selected.
+// Eligibility and pricing are decided HERE, never from the client: a coated
+// medal (or any other non-eligible product) is silently corrected to no
+// coating, the same contract product colors and discount codes already use.
+// The storefront mirror of these two constants lives in js/app.js.
+const NANO_COATING_FEE = 100;
+const COATING_CATEGORIES = new Set(['keycase', 'keyholder']);
+function coatingWanted(item, product) {
+  return item && item.coating === true && COATING_CATEGORIES.has(product.category);
+}
+
 // Resolves the cart against the real catalog: unknown products are dropped,
 // an unavailable key shape falls back to none, and a product that has colors
 // requires a valid one. `colorError` is returned instead of answered so the
@@ -344,6 +359,7 @@ app.get('/api/data', async (req, res) => {
 function buildOrderItems(catalog, cart) {
   const validItems = [];
   let subtotal = 0;
+  let coatingFee = 0;
   let colorError = null;
 
   for (const item of cart) {
@@ -367,6 +383,12 @@ function buildOrderItems(catalog, cart) {
       }
     }
 
+    // Nano Ceramic Coating — honored only for eligible categories; one flat
+    // fee per line regardless of qty. The resolved boolean (not the client's
+    // claim) is what gets stored on the order item.
+    const coating = coatingWanted(item, p);
+    if (coating) coatingFee += NANO_COATING_FEE;
+
     const linePrice = p.price * qty;
     subtotal += linePrice;
     const fit = (item.fitment && (item.fitment.brand || item.fitment.model || item.fitment.year))
@@ -380,10 +402,11 @@ function buildOrderItems(catalog, cart) {
       image: (p.images && p.images[0]) || '/img/detail_a.png',
       fitment: fit,
       color,
+      coating,
     });
   }
 
-  return { validItems, subtotal, colorError };
+  return { validItems, subtotal, coatingFee, colorError };
 }
 
 // Bundle discount — a full brand set (Key Case + Key Holder + Medal) present
@@ -434,7 +457,7 @@ app.post('/api/orders', async (req, res) => {
     }
 
     // Validate against real store + recalculate totals server-side (never trust client)
-    const { validItems, subtotal, colorError } = buildOrderItems(catalog, cart);
+    const { validItems, subtotal, coatingFee, colorError } = buildOrderItems(catalog, cart);
     if (colorError) return res.status(400).json({ error: colorError });
     if (!validItems.length) return res.status(400).json({ error: 'Your cart is empty.' });
 
@@ -462,7 +485,10 @@ app.post('/api/orders', async (req, res) => {
 
     const settings = catalog.settings || {};
     const deliveryFee = deliveryFeeFor(settings, subtotal);
-    const total = subtotal - bundleDiscount - codeDiscount + deliveryFee;
+    // The coating fee is an additional flat charge (like delivery): bundle and
+    // discount-code savings are computed from the product subtotal alone and
+    // never reduce it, and it never changes any product price.
+    const total = subtotal - bundleDiscount - codeDiscount + deliveryFee + coatingFee;
 
     const nowIso = new Date().toISOString();
     const paymentMethod = body.payment === 'InstaPay' ? 'InstaPay' : 'Cash on Delivery';
@@ -524,6 +550,7 @@ app.post('/api/orders', async (req, res) => {
         bundleDiscount: Math.round(bundleDiscount),
         discountCode: appliedCode ? appliedCode.code : null,
         discount: Math.round(codeDiscount),
+        coatingFee: Math.round(coatingFee),
         deliveryFee,
         total: Math.round(total),
         status: 'Pending',
@@ -553,6 +580,7 @@ app.post('/api/orders', async (req, res) => {
         total: Math.round(total),
         discount: Math.round(codeDiscount),
         discountCode: appliedCode ? appliedCode.code : null,
+        coatingFee: Math.round(coatingFee),
       });
     }
 
@@ -571,6 +599,7 @@ app.post('/api/orders', async (req, res) => {
       bundleDiscount: Math.round(bundleDiscount),
       discountCode: appliedCode ? appliedCode.code : null,
       discount: Math.round(codeDiscount),
+      coatingFee: Math.round(coatingFee),
       deliveryFee,
       total: Math.round(total),
       status: 'Pending',
@@ -593,6 +622,7 @@ app.post('/api/orders', async (req, res) => {
       total: Math.round(total),
       discount: Math.round(codeDiscount),
       discountCode: appliedCode ? appliedCode.code : null,
+      coatingFee: Math.round(coatingFee),
     });
   } catch (e) {
     console.error('[api/orders]', e.message);

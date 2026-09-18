@@ -76,14 +76,25 @@ async function main() {
     check('migration CLI exited 0', () => assert.strictEqual(apply.status, 0, `exit ${apply.status}`));
 
     const applied = await q('select version from supabase_migrations.schema_migrations order by version');
-    check('all migrations recorded (001 + 002 + 003 + 004)', () =>
-      assert.deepStrictEqual(applied.map((r) => r.version), ['001', '002', '003', '004']));
+    check('all migrations recorded (001 … 006)', () =>
+      assert.deepStrictEqual(applied.map((r) => r.version), ['001', '002', '003', '004', '005', '006']));
 
     const colorCols = await q(`select table_name, column_name from information_schema.columns
       where table_schema = 'public' and column_name in ('colors','color')
         and ((table_name = 'products' and column_name = 'colors') or (table_name = 'order_items' and column_name = 'color'))`);
     check('004 added products.colors + order_items.color', () =>
       assert.strictEqual(colorCols.length, 2, JSON.stringify(colorCols)));
+
+    const proofCols = await q(`select column_name from information_schema.columns
+      where table_schema = 'public' and table_name = 'orders' and column_name like 'payment_proof%'`);
+    check('005 added the four orders.payment_proof_* columns', () =>
+      assert.strictEqual(proofCols.length, 4, JSON.stringify(proofCols)));
+
+    const coatingCols = await q(`select table_name, column_name from information_schema.columns
+      where table_schema = 'public' and column_name in ('coating_fee','coating')
+        and ((table_name = 'orders' and column_name = 'coating_fee') or (table_name = 'order_items' and column_name = 'coating'))`);
+    check('006 added orders.coating_fee + order_items.coating', () =>
+      assert.strictEqual(coatingCols.length, 2, JSON.stringify(coatingCols)));
     const seededColors = await one(`select count(*)::int n from public.products where jsonb_array_length(coalesce(colors,'[]'::jsonb)) > 0`);
     check('mapped products carry their seeded color variants', () =>
       assert.strictEqual(seededColors.n, 117, `got ${seededColors.n}`));
@@ -104,7 +115,9 @@ async function main() {
       // Customize category setting (003 / post-import default)
       settings: 27,
       // 167 original copy strings + the 4 color-system dictionary keys
-      promo_bar: 1, website_content: 171,
+      // + the 9 InstaPay payment-proof dictionary keys (the old expectation of
+      // 171 predated the InstaPay dictionary and was stale on main)
+      promo_bar: 1, website_content: 180,
       orders: 23, order_items: 65, product_images: 279, product_prices: 117,
       customize_requests: 0,
     };
@@ -297,13 +310,45 @@ async function main() {
     const adminData = await (await fetch(`${base}/api/admin/data`, { headers: adminHeaders })).json();
     check('admin payload has categories + all 23 migrated orders + the new one', () => {
       assert.strictEqual(adminData.categories.length, 3);
+      // the Nano Ceramic Coating order (section 5b) is placed AFTER this point
       assert.strictEqual(adminData.orders.length, 24);
       assert.ok(adminData.orders.some((o) => o.id === newOrderId));
-      assert.strictEqual(adminData.websiteContent.length, 171);
+      assert.strictEqual(adminData.websiteContent.length, 180);
     });
 
     const unauth = await fetch(`${base}/api/admin/data`);
     check('unauthenticated /api/admin/data -> 401', () => assert.strictEqual(unauth.status, 401));
+
+    // ------------------------------------------------------------------ 5b
+    section('5b. Nano Ceramic Coating through the SQL driver (migration 006)');
+    const holderP = data.products.find((x) => x.id === 'p_mercedes-benz_holder');
+    const coatRes = await fetch(`${base}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customer: { fullName: 'Coating E2E', phone: '+201099996666', city: 'Cairo', address: '2 Test Street' },
+        cart: [{ productId: 'p_mercedes-benz_holder', qty: 1, keyShape: 'A', colorId: pickColor('p_mercedes-benz_holder'), coating: true }],
+      }),
+    });
+    const coatJson = await coatRes.json();
+    check('coated COD order succeeds on the SQL driver with the flat fee', () => {
+      assert.strictEqual(coatRes.status, 200, JSON.stringify(coatJson));
+      assert.strictEqual(coatJson.coatingFee, 100, JSON.stringify(coatJson));
+      // holder price + 60 delivery (below the 2000 free-shipping threshold) + 100 coating
+      assert.strictEqual(Number(coatJson.total), Number(holderP.price) + 60 + 100, `got ${coatJson.total}`);
+    });
+    const coatOrderRow = await one('select coating_fee, total from public.orders where id = $1', [coatJson.orderId]);
+    check('orders.coating_fee persisted in SQL', () =>
+      assert.strictEqual(Number(coatOrderRow.coating_fee), 100, String(coatOrderRow.coating_fee)));
+    const coatItemRow = await one('select coating from public.order_items where order_id = $1', [coatJson.orderId]);
+    check('order_items.coating persisted in SQL', () =>
+      assert.strictEqual(coatItemRow.coating, true, String(coatItemRow.coating)));
+    const plainRow = await one('select coating_fee from public.orders where id = $1', [newOrderId]);
+    check('the earlier un-coated order never wrote the fee column', () =>
+      assert.ok(plainRow.coating_fee === null || Number(plainRow.coating_fee) === 0, String(plainRow.coating_fee)));
+    const plainItem = await one('select coating from public.order_items where order_id = $1 limit 1', [newOrderId]);
+    check('un-coated lines keep the column default (false)', () =>
+      assert.ok(plainItem.coating === false || plainItem.coating === null, String(plainItem.coating)));
 
     // ------------------------------------------------------------------ 6
     section('6. Admin edit -> Supabase -> storefront');
@@ -569,7 +614,8 @@ async function main() {
     check('dry run lists every table with existing row counts', () => {
       assert.strictEqual(dryJson.mode, 'dry-run');
       assert.strictEqual(dryJson.tables.find((t) => t.table === 'products').existingRows, 117);
-      assert.strictEqual(dryJson.tables.find((t) => t.table === 'orders').existingRows, 24);
+      // 23 migrated + the e2e order + the Nano Ceramic Coating order (5b)
+      assert.strictEqual(dryJson.tables.find((t) => t.table === 'orders').existingRows, 25);
       assert.strictEqual(dryJson.totals.deletes, 0);
     });
     check('dry run verifies 117/117 products against data/velocci-db.json', () => {

@@ -39,18 +39,22 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
 - **Best Sellers, New Arrivals, Key Cases, Key Holders, Car Medals, Complete Your Set, Limited Edition, Why Velocci** — all populated home sections, reorderable from Admin.
 - **Fitment Finder ("Find Your Key")** — Brand → Model → Year → Key Shape → compatible products only. The chosen vehicle persists while browsing.
 - **Brand pages** — show only products compatible with that brand.
-- **Product page** — gallery, price, old price, discount, **mandatory key-shape selector** (unavailable shapes greyed + "OUT OF STOCK" + X, unclickable), **mandatory color selector** for products with admin-configured colors (round swatches from the stored HEX), dynamic "Only N left in stock", quantity, **Complete Your Set** bundle widget. All product-page content (description, material, compatibility, specifications table, vehicle list, tabs, buttons) fits the mobile viewport with no horizontal overflow.
+- **Product page** — gallery, price, old price, discount, **mandatory key-shape selector** (unavailable shapes greyed + "OUT OF STOCK" + X, unclickable), **mandatory color selector** for products with admin-configured colors (round swatches from the stored HEX), the optional **Nano Ceramic Coating** extra on Key Holder / Key Case pages (+ EGP 100, always shown with its price), dynamic "Only N left in stock", quantity, **Complete Your Set** bundle widget. All product-page content (description, material, compatibility, specifications table, vehicle list, tabs, buttons) fits the mobile viewport with no horizontal overflow.
 - **Quick Add** — every product card opens a two-step modal: **SELECT YOUR KEY SHAPE → SELECT YOUR COLOR → ADD TO CART**.
   The colors are the product's own list from Admin → Products → Colors (enabled colors only, admin order, round swatches).
   Add to Cart never fires without both choices and instead shows the localized validation message; the shape **and** the color
   are stored on the cart line (same product with different shape/color combinations stays separate) and travel through checkout
-  into the order. Products without configured colors keep the shape-only fallback.
+  into the order. Products without configured colors keep the shape-only fallback. For Key Holders and Key Cases the modal
+  also offers the **optional** Nano Ceramic Coating checkbox (+ EGP 100) under the two mandatory steps.
 - **Bundle upsell** — picks the matching products for the SAME car brand only; never recommends unrelated brands.
-- **Cart drawer** — slide-out with images, brand, key shape, qty, remove, "Complete Your [Brand] Set & Save", real-time subtotal / bundle discount / delivery fee / total, Cash on Delivery note.
+- **Cart drawer** — slide-out with images, brand, key shape, qty, remove, "Complete Your [Brand] Set & Save", real-time subtotal / bundle discount / coating fee / delivery fee / total, Cash on Delivery note. Coated lines carry a gold "Nano Ceramic Coating · + EGP 100" chip.
 - **Checkout** — guest checkout, **Cash on Delivery only** (no Stripe/PayPal/card). Full name, phone, city, area, address, notes. Prices in EGP.
 - **Discount codes** — the customer types a code in the checkout summary; it is checked by `POST /api/validate-discount`
   against the codes in **Admin → Discounts**, the saving is shown immediately (cart drawer, checkout summary and the
   confirmation page all stay in step) and the total is updated. See "Discount codes" below.
+- **Nano Ceramic Coating** — optional extra that replaced the old "Premium Gift Packaging" option (which is gone from the
+  entire site). Key Holders and Key Cases only; a flat **+ EGP 100 per cart line** that opts in — never × quantity, never
+  a percentage, EGP 0 when not selected. See "Nano Ceramic Coating" below.
 - **Order confirmation** page with order ID.
 - **Pre‑orders** — marked products can be reserved with no payment; stored separately.
 - **Arabic / English** — complete RTL translation, one language at a time, natural translations.
@@ -72,7 +76,7 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
   expiration date, active/inactive, and a live `uses / max` counter. Codes are the ones the checkout accepts.
 - **Fitment** — manage brand → model → year → key-shape compatibility.
 - **Homepage** — hero slides (add/edit/reorder/enable), home sections (drag-to-reorder + enable/disable), promo bar + countdown.
-- **Orders** — all fields (order ID, customer, items, brand, key shape, qty, subtotal, discount, delivery, total, date) with status updates: New / Confirmed / Preparing / Shipped / Delivered / Cancelled.
+- **Orders** — all fields (order ID, customer, items, brand, key shape, color, **Nano Ceramic Coating** per-line badge + fee, qty, subtotal, discount, delivery, total, date) with status updates: New / Confirmed / Preparing / Shipped / Delivered / Cancelled.
 - **Pre-orders** — separate list with status Pending / Confirmed / Cancelled.
 - **Messages** — contact / pre-order enquiries.
 - **Settings** — WhatsApp, Instagram, Facebook, TikTok, contact email, shipping fee, free-shipping threshold, return policy, warranty, copyright, currency.
@@ -80,7 +84,7 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
 ### Data & architecture
 - **Single shared JSON datastore** (`data/velocci-db.json`, atomic writes) — the same source powers the storefront and admin. No second database.
 - On-the-fly **SVG product artwork** (`/img/asset.svg`) so every product has brand-distinguished, premium imagery and there is never an empty grid. Admin can also supply their own image URLs.
-- **Server-side order validation** — totals, inventory, shapes, bundle discounts **and discount codes** are recomputed on the server; the client is never trusted.
+- **Server-side order validation** — totals, inventory, shapes, bundle discounts, discount codes **and the Nano Ceramic Coating fee/eligibility** are recomputed on the server; the client is never trusted.
 
 ### Discount codes
 
@@ -117,6 +121,36 @@ incremented only after the order is safely written.
 
 Tests: `npm run test:discount` (62 assertions: the rules, the endpoint against the real server, the order total,
 the usage counter, and the checkout UI in jsdom driving the real endpoint).
+
+### Nano Ceramic Coating
+
+The optional extra that **replaced the old "Premium Gift Packaging"** checkbox (the old option — which was purely
+cosmetic, never priced and never stored — is gone from the storefront, the styles and the language dictionary).
+
+```
+product page / Quick Add  ->  customer ticks "Nano Ceramic Coating  + EGP 100"
+                          ->  the opt-in is stored ON the cart line (like shape + color)
+                          ->  cart drawer / checkout show a "Nano Ceramic Coating  + EGP 100" totals row
+                          ->  POST /api/orders { …, cart:[{ …, coating:true }] }
+                          ->  server RE-checks the category and RE-prices: +100 per coated line
+                          ->  orders.coating_fee + order_items.coating persist for the Admin
+                          ->  Admin → Orders shows a ◆ Coating badge and the fee in the totals
+```
+
+Rules (one implementation, mirrored in `js/app.js` for display and enforced in `server.js`):
+
+| | |
+| --- | --- |
+| Eligible products | **Key Holders and Key Cases only** — medals and anything else never show the option, and a coated medal claimed by a hand-edited client is silently stripped server-side |
+| Price | flat **EGP 100 per coated cart line** — never × quantity, never a percentage of the product price |
+| Not selected | EGP 0 — no row, no fee, no stored flag |
+| Stacking | the fee is an additional charge like delivery: bundle savings and discount codes are computed from the merchandise subtotal and never reduce it, and product prices are untouched |
+| Persistence | `order_items.coating` (per-line snapshot) + `orders.coating_fee` (order total) via migration `006_nano_ceramic_coating.sql`; both columns are only written when a coating was actually chosen, so un-coated COD/InstaPay orders keep working even before the migration is applied (the InstaPay-proof pattern) |
+
+Tests: `npm run test:coating` (82 assertions: the persistence mapping, the real server — eligibility, flat fee,
+qty independence, bundle/discount/InstaPay stacking, admin APIs — and the storefront in jsdom: PDP + Quick Add
+eligibility, cart drawer, checkout, success page, Arabic RTL, stored order).
+
 - Express + express-session + cookie-parser. Session-protected admin API.
 
 ---
@@ -133,6 +167,7 @@ the usage counter, and the checkout UI in jsdom driving the real endpoint).
 | Key Shape selector (A/B/C/D, OOS) | product page, `app.js` → `pdpHTML()` |
 | Complete Your Set | product bundle widget + cart upsell |
 | Cart drawer + real-time calc | `app.js` → `renderCartDrawer()` |
+| Nano Ceramic Coating (+EGP 100, Key Holder/Case only) | `app.js` (PDP + Quick Add + totals) · `server.js` (eligibility + re-pricing) · `lib/mapping.js` + migration `006` |
 | COD-only checkout, guest | `app.js` → `checkoutHTML()` + `/api/orders` |
 | EN/AR RTL | `data/seed.js` → `buildLanguages()` + `app.js` |
 | Orders + status workflow | admin Orders + `/api/admin/order-status` |
@@ -161,7 +196,11 @@ order), the mobile-safe layout rules (search sheet, promo/hero, product-page fit
 and the fact that the public site exposes no admin entry while `/admin` keeps working,
 and `test/admin_brands.js` (`npm run test:brands`) which covers Admin → Brands:
 renaming a brand, uploading/changing its logo (including the read-only-disk fallback),
-the patch reaching `/api/data`, and the storefront rendering the new name + logo.
+the patch reaching `/api/data`, and the storefront rendering the new name + logo,
+and `test/nano_coating.js` (`npm run test:coating`) which covers the Nano Ceramic
+Coating extra end to end: category eligibility (Key Holder / Key Case only), the flat
++EGP 100 per coated line (never × qty), bundle/discount/InstaPay stacking, cart →
+checkout → order → admin persistence, and the removal of the old Premium Gift option.
 
 ---
 
