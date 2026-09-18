@@ -694,3 +694,106 @@ customer-facing instance) unless noted:
    polluting live data. Covered by §12.4 (full order flow incl. enforcement on
    the SQL driver at this exact commit) and by §12.3.4 (client snapshot path in
    the served bundle).
+
+---
+
+## 13. Addendum 2026-09-18 — Nano Ceramic Coating extra: migration + PRODUCTION verification
+
+**Scope.** The priced optional extra that completely replaces the old "Premium
+Gift Packaging" checkbox (PR #30, merged to `main` as `e6e6979`): offered ONLY
+for Key Holders and Key Cases on the product page and in Quick Add, a flat
+**EGP 100 per coated cart line** (never × qty, never a percentage, EGP 0 when
+not selected), re-priced server-side, persisted as `orders.coating_fee` +
+`order_items.coating`, and shown in Admin → Orders. The old gift option, its
+handlers, its CSS and its dead EN/AR dictionary strings are gone.
+
+### 13.1 Production database migration (operator step — additive, safe in either order)
+
+- Migration `supabase/migrations/006_nano_ceramic_coating.sql`:
+
+  ```sql
+  alter table public.orders add column if not exists coating_fee numeric default 0;
+  alter table public.order_items add column if not exists coating boolean default false;
+  ```
+
+- Unlike the colors migration (§12.1), the deploy does NOT require the columns
+  to exist first: following the InstaPay-proof pattern (005), the new columns
+  are written **only when a coating is actually chosen**. Un-coated COD and
+  InstaPay orders work identically before and after the migration; only coated
+  orders need the columns and fail safely until they exist.
+- Run it in Supabase → SQL Editor on the production project
+  (`zbqnkebsmhhemknpazme`). Idempotent and additive — no existing order or
+  order item is touched. `npm run migrate -- --print-sql` includes it as
+  version 006.
+- **Status at the time of writing: NOT yet applied** — the verification sandbox
+  holds no Supabase credentials (same posture as §7.3). Operator action needed
+  before announcing the feature to customers.
+
+### 13.2 Deployment
+
+- PR #30 merged to `main` as `e6e6979` (2026-09-18 11:56:38Z).
+- All **6** linked Vercel projects built Production `success` on `e6e6979`
+  between 11:56:57Z and 11:58:22Z (`vilocci-pvpw`, `velocciiiii`,
+  `vilocci-i54t`, `01a07cb5-…-4`, `vilocciii3bro`, `vilocci-b31u`).
+
+### 13.3 Verified on PRODUCTION after the deploy
+
+Observed live on `https://vilocciii3bro.vercel.app` (the Supabase-backed,
+customer-facing instance):
+
+1. **Homepage renders fully, no regressions** — the complete SPA boots from the
+   new bundle: 117 products (59 Key Cases / 29 Key Holders / 29 Car Medals),
+   hero, brands, bundles, Complete Your Set and the Customize banner.
+2. **The served `/js/app.js` is the new build** — it contains the
+   `productCoating` state, the coating-keyed `addToCart` line identity, the
+   `COATING_FEE`/`COATCOPY` constants and the PDP `coatingHTML` gated by
+   `coatingEligible(p)` (renders for `keycase`/`keyholder` only), and the old
+   `giftPackagingHTML` / `#gift-packaging` markup is **gone** from the served
+   bytes.
+3. **Cache-busters live** — the served `index.html` references
+   `?v=20260918b` for `styles.css`, `engine.js` and `app.js`, so returning
+   customers pick the new build up immediately.
+4. **`admin-app.js` + `admin.css` ship in the same atomic deployment** (Vercel
+   deploys one commit's output), carrying the Orders-list ◆ Coating badge, the
+   per-line "Requested +EGP 100" column and the fee row in order totals.
+
+### 13.4 Verified locally at the exact merged commit
+
+- `npm test` — **590 passed, 0 failed** (13 suites, including the new
+  `test/nano_coating.js`: **82 assertions** covering category eligibility
+  (Key Holder ✓, Key Case ✓, medal refused and silently stripped server-side),
+  the flat per-line fee (qty 3 → still +100, two coated lines → +200,
+  unselected → +0), bundle / discount-code / InstaPay stacking untouched,
+  product prices unchanged, cart → checkout → order → admin persistence, the
+  jsdom storefront (PDP + Quick Add + cart drawer + checkout + success page),
+  Arabic RTL, and the complete removal of the old Premium Gift option).
+- `npm run test:db` (embedded real PostgreSQL, SQL driver) — **83 passed,
+  0 failed**: migrations 001–006 apply idempotently; a coated order persists
+  `orders.coating_fee = 100` and `order_items.coating = true` through the SQL
+  driver; un-coated orders never write the new columns; the stale
+  `website_content` expectation (171) was corrected to 180 — it predated the
+  InstaPay dictionary keys and was already failing on `main`.
+
+### 13.5 NOT verified live — and exactly why
+
+1. **A real coated order POST on production.** It would write a genuine order
+   row into the production database — and, until migration 006 is applied,
+   fail safely against the un-migrated schema. Deliberately not done (the
+   §12.5.2 posture); covered by §13.4 (full flow incl. SQL-driver enforcement
+   at this exact commit) and §13.3.2 (the repricing path in the served bytes).
+2. **Admin panel click-through on production.** Requires the production admin
+   login (§12.5.1 posture); the served admin bundle is from the same atomic
+   deployment and its rendering is asserted by the local suites.
+3. **`GET /api/admin/diagnose`.** The verification sandbox's outbound fetch
+   proxy rejected that specific request repeatedly (`SignatureDoesNotMatch` at
+   the proxy layer — not an app response). Storefront health is instead proven
+   by §13.3.1: the SPA rendered the full catalog through `/api/data`.
+
+### 13.6 Observation (reported, not changed)
+
+- The production Supabase catalog still serves some product names as
+  "Spinto …" (e.g. *Spinto Carbon Key Case — Mercedes-Benz* on the live
+  homepage) while the committed JSON dataset says "Vilocci …" since the PR #26
+  branding revert. Pre-existing production-data state (the JSON → Supabase
+  content mapping was never re-run after the revert), unrelated to this
+  feature; no product data was modified here.
