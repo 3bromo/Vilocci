@@ -26,6 +26,11 @@
     productQty: 1,
     productOption: 0,       // complete-your-set combo index
     lastOrder: null,        // most recently placed order, for the thank-you page
+    // The discount code validated by POST /api/validate-discount against
+    // Admin → Discounts, or null. Only the code's CONFIGURATION is stored —
+    // the amount is recomputed from the cart on every cartTotals(), so adding
+    // or removing an item can never leave a stale saving on screen.
+    discount: null,
     // Customize request flow — kept here (not in the DOM) so nothing the
     // customer typed is lost when they navigate back and forth.
     customize: {
@@ -194,8 +199,177 @@
     const shipFee = state.data.settings.shippingFee || 0;
     const threshold = state.data.settings.freeShippingThreshold || 0;
     const deliveryFee = subtotal >= threshold ? 0 : shipFee;
-    const total = subtotal - bundleDiscount + deliveryFee;
-    return { items, subtotal, bundleDiscount, bundleSubtotal, deliveryFee, total };
+
+    // Discount code (Admin → Discounts). Mirrors lib/discounts.js for display;
+    // the server re-checks the code and recomputes this when the order is
+    // placed, so the number on screen can never be the one that gets charged
+    // if they disagree.
+    let discount = 0;
+    const code = state.discount;
+    if (code && code.code) {
+      if (subtotal < (code.minOrder || 0)) {
+        state.discount = null; // the cart dropped under the code's minimum
+      } else {
+        const raw = code.type === 'fixed' ? (code.value || 0) : subtotal * ((code.value || 0) / 100);
+        const headroom = Math.max(0, subtotal - bundleDiscount);
+        discount = Math.round(Math.max(0, Math.min(raw, headroom)));
+      }
+    }
+
+    const total = subtotal - bundleDiscount - discount + deliveryFee;
+    return {
+      items, subtotal, bundleDiscount, bundleSubtotal, deliveryFee, discount, total,
+      discountCode: state.discount ? state.discount.code : null,
+    };
+  }
+
+  // ------------------------------------------------------------------ discounts
+  // Copy is inline EN/AR (the same pattern the InstaPay block uses) rather
+  // than dictionary keys: the dictionary lives in the database, and turning
+  // this feature on must never depend on a data migration.
+  const DISCOPY = {
+    label: { en: 'Discount code', ar: 'كود الخصم' },
+    placeholder: { en: 'Enter code', ar: 'أدخل الكود' },
+    apply: { en: 'Apply', ar: 'تطبيق' },
+    remove: { en: 'Remove', ar: 'إزالة' },
+    checking: { en: 'Checking…', ar: 'جارٍ التحقق…' },
+    applied: { en: 'Discount applied', ar: 'تم تطبيق الخصم' },
+  };
+  const DISCOUNT_REASONS = {
+    invalid: { en: 'Enter a discount code.', ar: 'أدخل كود الخصم.' },
+    not_found: { en: 'That code is not valid.', ar: 'هذا الكود غير صالح.' },
+    inactive: { en: 'That code is no longer active.', ar: 'هذا الكود غير مفعل الآن.' },
+    expired: { en: 'That code has expired.', ar: 'انتهت صلاحية هذا الكود.' },
+    exhausted: { en: 'That code has reached its usage limit.', ar: 'وصل هذا الكود إلى الحد الأقصى للاستخدام.' },
+    min_order: { en: 'That code needs a larger order.', ar: 'هذا الكود يتطلب طلباً أكبر.' },
+    error: { en: 'Could not check that code. Try again.', ar: 'تعذر التحقق من الكود. حاول مرة أخرى.' },
+  };
+  const dcopy = (key) => { const v = DISCOPY[key] || DISCOPY.label; return A() ? v.ar : v.en; };
+  const discountReasonText = (reason) => {
+    const v = DISCOUNT_REASONS[reason] || DISCOUNT_REASONS.not_found;
+    return A() ? v.ar : v.en;
+  };
+  // One shared row so the cart drawer and the checkout summary always explain
+  // the same total in the same words.
+  const discountRowHTML = (totals) => (totals.discount > 0
+    ? `<div class="row"><span>${VEL.esc(dcopy('label'))} <span class="discount-code-tag">${VEL.esc(totals.discountCode || '')}</span></span><span class="disc">− ${VEL.money(totals.discount)}</span></div>`
+    : '');
+
+  // The single discount-code entry point. There is exactly one of these: the
+  // cart drawer shows the resulting saving through discountRowHTML() and the
+  // same cartTotals(), so the two never disagree.
+  function discountBoxHTML(totals) {
+    if (state.discount && state.discount.code) {
+      return `<div class="discount-box is-applied">
+        <div class="discount-applied">
+          <div class="discount-applied-main">
+            <span class="discount-ok">✓ ${VEL.esc(dcopy('applied'))}</span>
+            <span class="discount-code-tag lg">${VEL.esc(state.discount.code)}</span>
+          </div>
+          <div class="discount-applied-side">
+            <span class="disc">− ${VEL.money(totals.discount || 0)}</span>
+            <button type="button" class="discount-remove" id="discount-remove" aria-label="${VEL.esc(dcopy('remove'))}">✕</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    return `<div class="discount-box">
+      <label class="discount-label" for="discount-code-input">${VEL.esc(dcopy('label'))}</label>
+      <div class="discount-row">
+        <input type="text" id="discount-code-input" class="discount-input" placeholder="${VEL.esc(dcopy('placeholder'))}" maxlength="40" autocomplete="off" spellcheck="false">
+        <button type="button" class="discount-apply" id="discount-apply">${VEL.esc(dcopy('apply'))}</button>
+      </div>
+      <div class="discount-msg" id="discount-msg" role="status" hidden></div>
+    </div>`;
+  }
+
+  // Everything inside #checkout-totals. Re-rendered on its own when a code is
+  // applied or removed, so the customer's typed name / phone / address in the
+  // checkout form are never cleared out from under them.
+  function checkoutTotalsHTML(totals) {
+    const saved = (totals.bundleDiscount || 0) + (totals.discount || 0);
+    return `${discountBoxHTML(totals)}
+      <div class="summary">
+        <div class="row"><span>${pt('subtotal')}</span><span>${VEL.money(totals.subtotal)}</span></div>
+        <div class="row"><span>${pt('bundle_discount')}</span><span class="mut">${totals.bundleDiscount ? '− ' + VEL.money(totals.bundleDiscount) : VEL.money(0)}</span></div>
+        ${discountRowHTML(totals)}
+        <div class="row"><span>${pt('delivery_fee')}</span><span class="mut">${totals.deliveryFee ? VEL.money(totals.deliveryFee) : pt('free')}</span></div>
+        <div class="row total"><span>${pt('total')}</span><span>${VEL.money(totals.total)}</span></div>
+      </div>
+      ${saved > 0 ? `<div class="free" style="color:#5b8a54;font-size:12px;font-weight:700">✓ ${pt('you_saved', { n: VEL.money(saved) })}</div>` : ''}`;
+  }
+
+  function renderCheckoutTotals() {
+    const host = $('#checkout-totals');
+    if (!host) return;
+    host.innerHTML = checkoutTotalsHTML(cartTotals());
+    bindDiscount();
+    renderCartBadge();
+  }
+
+  // Validates the typed code against Admin → Discounts. The server answers
+  // with the code's configuration (never an amount we then trust blindly):
+  // cartTotals() re-derives the saving from the current cart every render, so
+  // adding or removing an item after applying a code stays correct.
+  function applyDiscountCode(rawValue, report) {
+    const say = report || (() => {});
+    const code = String(rawValue || '').trim().toUpperCase();
+    if (!code) { say(discountReasonText('invalid'), 'bad'); return; }
+
+    const btn = $('#discount-apply');
+    if (btn) { btn.disabled = true; btn.textContent = dcopy('checking'); }
+
+    fetch('/api/validate-discount', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, cart: state.cart }),
+    })
+      .then(r => r.json().catch(() => ({})))
+      .then((j) => {
+        if (j && j.ok) {
+          state.discount = {
+            code: j.code || code,
+            type: j.type,
+            value: Number(j.value) || 0,
+            minOrder: Number(j.minOrder) || 0,
+          };
+          notify(A() ? 'تم تطبيق كود الخصم' : 'Discount code applied');
+          renderCheckoutTotals();
+          return;
+        }
+        say(discountReasonText(j && j.reason), 'bad');
+        if (btn) { btn.disabled = false; btn.textContent = dcopy('apply'); }
+      })
+      .catch(() => {
+        say(discountReasonText('error'), 'bad');
+        if (btn) { btn.disabled = false; btn.textContent = dcopy('apply'); }
+      });
+  }
+
+  function bindDiscount() {
+    const input = $('#discount-code-input');
+    const applyBtn = $('#discount-apply');
+    const removeBtn = $('#discount-remove');
+    if (!input && !removeBtn) return;
+
+    const say = (text, kind) => {
+      const el = $('#discount-msg');
+      if (!el) return;
+      el.textContent = text;
+      el.className = 'discount-msg' + (kind ? ' ' + kind : '');
+      el.hidden = !text;
+    };
+
+    if (applyBtn) applyBtn.addEventListener('click', () => applyDiscountCode(input && input.value, say));
+    // Enter in the field applies the code; it must not submit the order.
+    if (input) input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); applyDiscountCode(input.value, say); }
+    });
+    if (removeBtn) removeBtn.addEventListener('click', () => {
+      state.discount = null;
+      notify(A() ? 'تم إزالة كود الخصم' : 'Discount code removed');
+      renderCheckoutTotals();
+    });
   }
 
   function product(id) { return (state.data && state.data.products.find(p => p.id === id)) || null; }
@@ -1372,6 +1546,7 @@
         <div class="drawer-savebox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 12 12 20 4 12 12 4z"/><path d="M9 12h6"/></svg><div class="txt">${pt('you_saved', { n: VEL.money(totals.bundleDiscount) })}</div></div>` : ''}
         <div class="row"><span>${pt('subtotal')}</span><span>${VEL.money(totals.subtotal)}</span></div>
         <div class="row"><span>${pt('bundle_discount')}</span><span class="disc">${bundleActive ? '− ' + VEL.money(totals.bundleDiscount) : VEL.money(0)}</span></div>
+        ${discountRowHTML(totals)}
         <div class="row"><span>${pt('delivery_fee')}</span><span class="mut">${totals.deliveryFee ? VEL.money(totals.deliveryFee) : (freeRemaining <= 0 ? pt('free') : VEL.money(totals.deliveryFee))}</span></div>
         ${sub < free ? `<div class="row"><span class="free">${pt('free_shipping', { n: freeRemaining.toLocaleString('en-US') })}</span></div>` : ''}
         <div class="row total"><span>${pt('total')}</span><span>${VEL.money(totals.total)}</span></div>
@@ -1464,13 +1639,7 @@
             ${totals.items.map(it => `<div class="drawer-item" style="padding:10px 0"><img src="${img(it.prod)}" alt=""><div class="di-info"><div class="di-name" style="font-size:12.5px">${VEL.esc(prodName(it.prod))}</div>${cartItemMeta(it, {style:'font-size:11px'})}</div><div class="di-side"><div style="font-size:11px;color:var(--muted)">× ${it.qty}</div><div class="di-price" style="font-size:13px">${VEL.money(it.prod.price * it.qty)}</div></div></div>`).join('')}
             ${totals.bundleDiscount ? `<div class="bundle-tag" style="margin-top:14px">${pt('bundle_applied')}</div>
             <div class="bundle-price-box"><div class="bp-label">${pt('bundle_price')}</div><div class="bp-val"><span class="old">${VEL.money(totals.bundleSubtotal)}</span><span class="bp-arrow">→</span><span class="bp-new">${VEL.money(totals.bundleSubtotal - totals.bundleDiscount)}</span></div></div>` : ''}
-            <div class="summary">
-              <div class="row"><span>${pt('subtotal')}</span><span>${VEL.money(totals.subtotal)}</span></div>
-              <div class="row"><span>${pt('bundle_discount')}</span><span class="mut">${totals.bundleDiscount ? '− ' + VEL.money(totals.bundleDiscount) : VEL.money(0)}</span></div>
-              <div class="row"><span>${pt('delivery_fee')}</span><span class="mut">${totals.deliveryFee ? VEL.money(totals.deliveryFee) : pt('free')}</span></div>
-              <div class="row total"><span>${pt('total')}</span><span>${VEL.money(totals.total)}</span></div>
-            </div>
-            ${totals.bundleDiscount ? `<div class="free" style="color:#5b8a54;font-size:12px;font-weight:700">✓ ${pt('you_saved', { n: VEL.money(totals.bundleDiscount) })}</div>` : ''}
+            <div id="checkout-totals">${checkoutTotalsHTML(totals)}</div>
           </div>
         </div>
       </div>
@@ -1753,6 +1922,7 @@
         <div class="s-totals">
           <div class="row"><span>${pt('subtotal')}</span><span>${VEL.money(o.subtotal)}</span></div>
           ${o.bundleDiscount ? `<div class="row"><span>${pt('bundle_discount')}</span><span class="disc">− ${VEL.money(o.bundleDiscount)}</span></div>` : ''}
+          ${o.discount ? `<div class="row"><span>${VEL.esc(dcopy('label'))} <span class="discount-code-tag">${VEL.esc(o.discountCode || '')}</span></span><span class="disc">− ${VEL.money(o.discount)}</span></div>` : ''}
           <div class="row"><span>${pt('delivery_fee')}</span><span>${o.deliveryFee ? VEL.money(o.deliveryFee) : pt('free')}</span></div>
           <div class="row total"><span>${pt('total')}</span><span>${VEL.money(o.total)}</span></div>
         </div>
@@ -2568,6 +2738,7 @@
     const form = $('#checkout-form');
     if (form) {
       form.addEventListener('submit', submitCheckout);
+      bindDiscount();
       const radioInsta = form.querySelector('input[name="paymentMethod"][value="InstaPay"]');
       function selectInstapay() { if (radioInsta) radioInsta.checked = true; }
       const titleLink = $('#instapay-title-link');
@@ -2841,18 +3012,36 @@
     const cart = state.cart.map(i => ({ productId: i.productId, keyShape: i.keyShape, qty: i.qty, fitment: i.fitment || null, colorId: i.colorId || null }));
     const btn = form.querySelector('button[type=submit]');
     btn.disabled = true; btn.textContent = '…';
-    submitOrder({ customer, cart, payment }).then(({ ok, j }) => {
+    // The code is sent for the server to re-validate and re-price; it never
+    // carries an amount from the browser.
+    const payload = { customer, cart, payment };
+    if (state.discount && state.discount.code) payload.discountCode = state.discount.code;
+    submitOrder(payload).then(({ ok, j }) => {
       if (ok) {
         const totals = cartTotals();
         state.lastOrder = {
           id: j.orderId, createdAt: new Date().toISOString(), customer,
           payment,
           items: totals.items.map(it => ({ productId: it.productId, keyShape: it.keyShape, qty: it.qty, fitment: it.fitment || null, color: it.color || null, name_en: it.prod.name_en, name_ar: it.prod.name_ar, price: it.prod.price, lineTotal: it.prod.price * it.qty, image: img(it.prod), brandSlug: it.prod.brandSlug, category: it.prod.category })),
-          subtotal: totals.subtotal, bundleDiscount: totals.bundleDiscount, deliveryFee: totals.deliveryFee, total: totals.total,
+          subtotal: totals.subtotal, bundleDiscount: totals.bundleDiscount,
+          discount: totals.discount, discountCode: totals.discountCode,
+          deliveryFee: totals.deliveryFee, total: totals.total,
         };
-        state.cart = []; saveCart(); location.hash = '#/success/' + j.orderId;
+        state.cart = []; state.discount = null; saveCart(); location.hash = '#/success/' + j.orderId;
       }
-      else { alert(j.error || 'Something went wrong'); btn.disabled = false; btn.textContent = pt('place_order'); }
+      else {
+        // A code that was valid a moment ago can expire or run out before the
+        // order lands. Say so in the customer's language and drop it, rather
+        // than failing the order with a generic English alert.
+        if (j && j.reason && DISCOUNT_REASONS[j.reason]) {
+          state.discount = null;
+          renderCheckoutTotals();
+          alert(discountReasonText(j.reason));
+        } else {
+          alert((j && j.error) || 'Something went wrong');
+        }
+        btn.disabled = false; btn.textContent = pt('place_order');
+      }
     }).catch(() => { btn.disabled = false; });
   }
 

@@ -18,6 +18,7 @@ const storage = require('./lib/storage');
 const { seed } = require('./data/seed');
 const { asset } = require('./lib/assets');
 const mapping = require('./lib/mapping');
+const discounts = require('./lib/discounts');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -326,6 +327,86 @@ app.get('/api/data', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// CART PRICING
+// ---------------------------------------------------------------------------
+// Shared by POST /api/orders and POST /api/validate-discount so the code the
+// checkout quotes and the code the order is charged with are the same number.
+// Every total is recomputed here from the catalog; the client is never trusted.
+
+// Resolves the cart against the real catalog: unknown products are dropped,
+// an unavailable key shape falls back to none, and a product that has colors
+// requires a valid one. `colorError` is returned instead of answered so the
+// caller can decide the status code.
+function buildOrderItems(catalog, cart) {
+  const validItems = [];
+  let subtotal = 0;
+  let colorError = null;
+
+  for (const item of cart) {
+    const p = catalog.products.find(x => x.id === item.productId);
+    if (!p) continue;
+    const qty = Math.max(1, parseInt(item.qty) || 1);
+    let shape = item.keyShape || '';
+    const shapeAvailable = (p.keyShapes || []).find(sh => sh.shape === shape && sh.available);
+    if (!shapeAvailable) shape = '';
+
+    // Color variant — resolved against the product's OWN admin-managed color
+    // list (never trusted from the client). Products that have enabled
+    // colors REQUIRE a valid selection; products without colors carry none.
+    const selectableColors = mapping.activeColors(p);
+    let color = null;
+    if (selectableColors.length) {
+      color = mapping.resolveProductColor(p, item.colorId !== undefined ? item.colorId : item.color);
+      if (!color && !colorError) {
+        colorError = `Please choose a color for "${p.name_en || p.id}".`;
+        continue;
+      }
+    }
+
+    const linePrice = p.price * qty;
+    subtotal += linePrice;
+    const fit = (item.fitment && (item.fitment.brand || item.fitment.model || item.fitment.year))
+      ? { brand: item.fitment.brand || '', model: item.fitment.model || '', year: (item.fitment.year != null ? String(item.fitment.year) : '') }
+      : null;
+    validItems.push({
+      productId: p.id, name_en: p.name_en, name_ar: p.name_ar,
+      slug: p.slug, category: p.category, brandSlug: p.brandSlug,
+      keyShape: shape, qty,
+      price: p.price, lineTotal: linePrice,
+      image: (p.images && p.images[0]) || '/img/detail_a.png',
+      fitment: fit,
+      color,
+    });
+  }
+
+  return { validItems, subtotal, colorError };
+}
+
+// Bundle discount — a full brand set (Key Case + Key Holder + Medal) present
+// in the cart unlocks the bundle price. Otherwise no discount.
+function bundleDiscountFor(catalog, validItems) {
+  const bundleApplied = {};
+  for (const item of validItems) {
+    if (bundleApplied[item.brandSlug]) continue;
+    const b = catalog.bundles.find(x => x.brandSlug === item.brandSlug && x.active !== false);
+    if (!b) continue;
+    const owned = validItems.filter(v => v.brandSlug === item.brandSlug);
+    const hasCase = owned.some(v => v.category === 'keycase');
+    const hasHolder = owned.some(v => v.category === 'keyholder');
+    const hasMedal = owned.some(v => v.category === 'medal');
+    if (hasCase && hasHolder && hasMedal) {
+      bundleApplied[item.brandSlug] = { bundleId: b.id, discount: Math.max(0, b.normalTotal - b.bundlePrice) };
+    }
+  }
+  return Object.values(bundleApplied).reduce((s, x) => s + x.discount, 0);
+}
+
+function deliveryFeeFor(settings, subtotal) {
+  const freeShipThreshold = settings.freeShippingThreshold || 0;
+  return (settings.shippingFee || 0) && subtotal >= freeShipThreshold ? 0 : (settings.shippingFee || 0);
+}
+
+// ---------------------------------------------------------------------------
 // ORDERS (guest checkout, COD only)
 // ---------------------------------------------------------------------------
 app.post('/api/orders', async (req, res) => {
@@ -349,68 +430,35 @@ app.post('/api/orders', async (req, res) => {
     }
 
     // Validate against real store + recalculate totals server-side (never trust client)
-    const validItems = [];
-    let subtotal = 0;
-
-    for (const item of cart) {
-      const p = catalog.products.find(x => x.id === item.productId);
-      if (!p) continue;
-      const qty = Math.max(1, parseInt(item.qty) || 1);
-      let shape = item.keyShape || '';
-      const shapeAvailable = (p.keyShapes || []).find(sh => sh.shape === shape && sh.available);
-      if (!shapeAvailable) shape = '';
-
-      // Color variant — resolved against the product's OWN admin-managed color
-      // list (never trusted from the client). Products that have enabled
-      // colors REQUIRE a valid selection; products without colors carry none.
-      const selectableColors = mapping.activeColors(p);
-      let color = null;
-      if (selectableColors.length) {
-        color = mapping.resolveProductColor(p, item.colorId !== undefined ? item.colorId : item.color);
-        if (!color) {
-          return res.status(400).json({ error: `Please choose a color for "${p.name_en || p.id}".` });
-        }
-      }
-
-      const linePrice = p.price * qty;
-      subtotal += linePrice;
-      const fit = (item.fitment && (item.fitment.brand || item.fitment.model || item.fitment.year))
-        ? { brand: item.fitment.brand || '', model: item.fitment.model || '', year: (item.fitment.year != null ? String(item.fitment.year) : '') }
-        : null;
-      validItems.push({
-        productId: p.id, name_en: p.name_en, name_ar: p.name_ar,
-        slug: p.slug, category: p.category, brandSlug: p.brandSlug,
-        keyShape: shape, qty,
-        price: p.price, lineTotal: linePrice,
-        image: (p.images && p.images[0]) || '/img/detail_a.png',
-        fitment: fit,
-        color,
-      });
-    }
-
+    const { validItems, subtotal, colorError } = buildOrderItems(catalog, cart);
+    if (colorError) return res.status(400).json({ error: colorError });
     if (!validItems.length) return res.status(400).json({ error: 'Your cart is empty.' });
 
-    // Bundle discount — a full brand set (Key Case + Key Holder + Medal) present
-    // in the cart unlocks the bundle price. Otherwise no discount.
-    const bundleApplied = {};
-    for (const item of validItems) {
-      if (bundleApplied[item.brandSlug]) continue;
-      const b = catalog.bundles.find(x => x.brandSlug === item.brandSlug && x.active !== false);
-      if (!b) continue;
-      const owned = validItems.filter(v => v.brandSlug === item.brandSlug);
-      const hasCase = owned.some(v => v.category === 'keycase');
-      const hasHolder = owned.some(v => v.category === 'keyholder');
-      const hasMedal = owned.some(v => v.category === 'medal');
-      if (hasCase && hasHolder && hasMedal) {
-        bundleApplied[item.brandSlug] = { bundleId: b.id, discount: Math.max(0, b.normalTotal - b.bundlePrice) };
+    const bundleDiscount = bundleDiscountFor(catalog, validItems);
+
+    // Discount code — re-validated here for the same reason every other total
+    // is: the browser may claim any code and any amount it likes. The codes
+    // come from Admin -> Discounts and are read server-side, so an unknown,
+    // inactive, expired, exhausted or under-threshold code is simply refused.
+    let codeDiscount = 0;
+    let appliedCode = null;
+    const requestedCode = discounts.normalizeCode(body.discountCode);
+    if (requestedCode) {
+      const codes = await db.getDiscountCodes();
+      const evaluated = discounts.evaluateDiscountCode(codes, requestedCode, { subtotal, bundleDiscount });
+      if (!evaluated.ok) {
+        return res.status(400).json({
+          error: 'The discount code could not be applied to this order.',
+          reason: evaluated.reason,
+        });
       }
+      codeDiscount = evaluated.discount;
+      appliedCode = evaluated;
     }
-    const bundleDiscount = Object.values(bundleApplied).reduce((s, x) => s + x.discount, 0);
 
     const settings = catalog.settings || {};
-    const freeShipThreshold = settings.freeShippingThreshold || 0;
-    const deliveryFee = (settings.shippingFee || 0) && subtotal >= freeShipThreshold ? 0 : (settings.shippingFee || 0);
-    const total = subtotal - bundleDiscount + deliveryFee;
+    const deliveryFee = deliveryFeeFor(settings, subtotal);
+    const total = subtotal - bundleDiscount - codeDiscount + deliveryFee;
 
     const nowIso = new Date().toISOString();
     const paymentMethod = body.payment === 'InstaPay' ? 'InstaPay' : 'Cash on Delivery';
@@ -426,6 +474,12 @@ app.post('/api/orders', async (req, res) => {
       items: validItems,
       subtotal: Math.round(subtotal),
       bundleDiscount: Math.round(bundleDiscount),
+      // Recorded on the order object. The orders table has no column for it
+      // (adding one would mean a production migration), so only `total` —
+      // which already has the discount baked in — is durable. The code's own
+      // used_count is incremented below, which is durable.
+      discountCode: appliedCode ? appliedCode.code : null,
+      discount: Math.round(codeDiscount),
       deliveryFee,
       total: Math.round(total),
       status: 'Pending',
@@ -437,10 +491,86 @@ app.post('/api/orders', async (req, res) => {
 
     // Durable write: orders + order_items in Supabase.
     await db.createOrder(order);
-    res.json({ ok: true, orderId: order.id, total: Math.round(total) });
+
+    // Count the redemption only once the order itself is safe. If the counter
+    // cannot be written the customer still keeps the price they were shown.
+    if (appliedCode) await db.redeemDiscountCode(appliedCode.code);
+
+    res.json({
+      ok: true,
+      orderId: order.id,
+      total: Math.round(total),
+      discount: Math.round(codeDiscount),
+      discountCode: appliedCode ? appliedCode.code : null,
+    });
   } catch (e) {
     console.error('[api/orders]', e.message);
     res.status(500).json({ error: 'Could not save the order.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DISCOUNT CODES
+// ---------------------------------------------------------------------------
+// POST /api/validate-discount
+//   body: { code, cart? }
+//   200:  { ok:true,  code, type, value, discount, subtotal, bundleDiscount }
+//         { ok:false, reason }   — reason is a token, never customer copy
+//
+// The codes live in the `discount_codes` table managed by Admin -> Discounts.
+// They are deliberately NOT served by /api/data: a code is only ever checked
+// here, server-side. Sending `cart` lets the server price it itself; without
+// one the caller's `subtotal` is used (and the order endpoint re-checks it
+// anyway, so a dishonest hint cannot buy anything).
+app.post('/api/validate-discount', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const code = discounts.normalizeCode(body.code);
+
+    if (!code) return res.status(400).json({ ok: false, reason: 'invalid' });
+    if (code.length > discounts.MAX_CODE_LENGTH) return res.status(400).json({ ok: false, reason: 'invalid' });
+
+    const catalog = await db.getCatalog();
+
+    let subtotal = 0;
+    let bundleDiscount = 0;
+    if (Array.isArray(body.cart) && body.cart.length) {
+      const priced = buildOrderItems(catalog, body.cart);
+      subtotal = priced.subtotal;
+      bundleDiscount = bundleDiscountFor(catalog, priced.validItems);
+    } else {
+      subtotal = Math.max(0, Number(body.subtotal) || 0);
+      bundleDiscount = Math.max(0, Number(body.bundleDiscount) || 0);
+    }
+
+    const codes = await db.getDiscountCodes();
+    const evaluated = discounts.evaluateDiscountCode(codes, code, { subtotal, bundleDiscount });
+
+    if (!evaluated.ok) {
+      // A normal outcome, not a server error: the customer simply cannot use
+      // this code. Returning 200 keeps the checkout flow on one happy path.
+      return res.json({
+        ok: false,
+        reason: evaluated.reason,
+        code: evaluated.code || code,
+        minOrder: evaluated.minOrder || 0,
+      });
+    }
+
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      code: evaluated.code,
+      type: evaluated.type,
+      value: evaluated.value,
+      minOrder: evaluated.minOrder,
+      discount: evaluated.discount,
+      subtotal: Math.round(subtotal),
+      bundleDiscount: Math.round(bundleDiscount),
+    });
+  } catch (e) {
+    console.error('[api/validate-discount]', e.message);
+    res.status(500).json({ ok: false, reason: 'error' });
   }
 });
 
