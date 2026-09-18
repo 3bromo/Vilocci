@@ -73,6 +73,10 @@ const PUBLIC = process.env.NODE_ENV === 'production' && fs.existsSync(path.join(
 // budget. body-parser marks the request as parsed, so the global 4 MB parser
 // below leaves it alone and every other route keeps the smaller limit.
 app.use('/api/customize/requests', express.json({ limit: '12mb' }));
+// Payment screenshots are submitted as validated data URLs. Give this single
+// checkout route the same mobile-friendly budget as Customize without
+// increasing the request size accepted by every other API endpoint.
+app.use('/api/orders', express.json({ limit: '12mb' }));
 app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -462,6 +466,97 @@ app.post('/api/orders', async (req, res) => {
 
     const nowIso = new Date().toISOString();
     const paymentMethod = body.payment === 'InstaPay' ? 'InstaPay' : 'Cash on Delivery';
+    let paymentProof = null;
+
+    // InstaPay is a manual transfer, so its proof is part of the order's
+    // server-side contract. Validate the actual image bytes before any order
+    // write. A configured storage failure is fatal; only an intentionally
+    // unconfigured local fallback stores the validated data URL inline.
+    if (paymentMethod === 'InstaPay') {
+      if (typeof body.paymentProof !== 'string' || !body.paymentProof.trim()) {
+        return res.status(400).json({
+          error: 'Payment screenshot is required for InstaPay orders.',
+          code: 'PAYMENT_PROOF_REQUIRED',
+        });
+      }
+      let parsedProof;
+      try {
+        parsedProof = storage.parseImageDataUrl(body.paymentProof, 'payment screenshot');
+      } catch (proofError) {
+        return res.status(400).json({
+          error: proofError.message,
+          code: proofError.code || 'INVALID_PAYMENT_PROOF',
+        });
+      }
+
+      const orderId = 'ORD-' + Date.now().toString().slice(-8);
+      const upload = await storage.uploadPaymentProof(body.paymentProof, { orderId });
+      if (upload.ok) {
+        paymentProof = { path: upload.path, mime: upload.mime, size: upload.size, storage: 'supabase' };
+      } else if (upload.reason === 'not-configured') {
+        // The existing storage module's documented local fallback keeps the
+        // order testable without making a production order depend on a local
+        // filesystem. The proof was already validated above.
+        paymentProof = {
+          data: body.paymentProof,
+          mime: parsedProof.mime,
+          size: parsedProof.size,
+          storage: 'inline',
+        };
+      } else {
+        return res.status(502).json({
+          error: 'We could not securely save your payment screenshot. Please try again.',
+          code: 'PAYMENT_PROOF_UPLOAD_FAILED',
+        });
+      }
+
+      const order = {
+        id: orderId,
+        createdAt: nowIso,
+        customer: {
+          fullName: customer.fullName, phone: customer.phone,
+          email: customer.email || '',
+          city: customer.city, area: customer.area || '',
+          address: customer.address, notes: customer.notes || '',
+        },
+        items: validItems,
+        subtotal: Math.round(subtotal),
+        bundleDiscount: Math.round(bundleDiscount),
+        discountCode: appliedCode ? appliedCode.code : null,
+        discount: Math.round(codeDiscount),
+        deliveryFee,
+        total: Math.round(total),
+        status: 'Pending',
+        statusHistory: [{ status: 'Pending', at: nowIso }],
+        payment: paymentMethod,
+        paymentProof,
+        currency: settings.currency || 'EGP',
+        source: 'storefront',
+      };
+
+      try {
+        // Durable write: orders + order_items in Supabase (or the existing
+        // JSON fallback). It always carries the proof reference/data together
+        // with this specific order id.
+        await db.createOrder(order);
+      } catch (writeError) {
+        if (paymentProof.path) await storage.removeCarPhoto(paymentProof.path);
+        throw writeError;
+      }
+
+      // Count the redemption only once the order itself is safe.
+      if (appliedCode) await db.redeemDiscountCode(appliedCode.code);
+
+      return res.json({
+        ok: true,
+        orderId: order.id,
+        total: Math.round(total),
+        discount: Math.round(codeDiscount),
+        discountCode: appliedCode ? appliedCode.code : null,
+      });
+    }
+
+    // COD keeps the original order path and does not ask for payment proof.
     const order = {
       id: 'ORD-' + Date.now().toString().slice(-8),
       createdAt: nowIso,
@@ -474,10 +569,6 @@ app.post('/api/orders', async (req, res) => {
       items: validItems,
       subtotal: Math.round(subtotal),
       bundleDiscount: Math.round(bundleDiscount),
-      // Recorded on the order object. The orders table has no column for it
-      // (adding one would mean a production migration), so only `total` —
-      // which already has the discount baked in — is durable. The code's own
-      // used_count is incremented below, which is durable.
       discountCode: appliedCode ? appliedCode.code : null,
       discount: Math.round(codeDiscount),
       deliveryFee,
@@ -670,6 +761,26 @@ app.get('/api/admin/order/:id', requireAdmin, async (req, res) => {
     res.json(order);
   } catch (e) {
     res.status(500).json({ error: 'Failed to load order.' });
+  }
+});
+
+// Payment proofs live in a private storage bucket. Admin order details request
+// a short-lived signed URL (or receive the validated local inline fallback).
+app.get('/api/admin/order/:id/payment-proof', requireAdmin, async (req, res) => {
+  try {
+    const order = await db.getOrder(req.params.id);
+    if (!order || order.payment !== 'InstaPay') return res.status(404).json({ error: 'InstaPay payment proof not found.' });
+    const proof = order.paymentProof;
+    if (!proof || !proof.available) return res.status(404).json({ error: 'InstaPay payment proof not found.' });
+    if (proof.data) return res.json({ ok: true, kind: 'inline', url: proof.data, mime: proof.mime });
+    if (!proof.path) return res.status(404).json({ error: 'InstaPay payment proof not found.' });
+    const url = await storage.signedUrl(proof.path);
+    if (!url) return res.status(503).json({ error: 'Payment proof storage is not configured.' });
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ ok: true, kind: 'signed', url, mime: proof.mime, expiresIn: storage.info().signedUrlTtlSeconds });
+  } catch (e) {
+    console.error('[api/admin/order/payment-proof]', e.message);
+    res.status(500).json({ error: 'Could not open the payment proof.' });
   }
 });
 

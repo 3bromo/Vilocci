@@ -39,6 +39,7 @@ const MIGRATIONS = [
   { version: '002', title: 'CMS core (order_items, product_images, product_prices, customer_phone/address, CMS columns)', file: 'supabase/migrations/002_cms_core.sql' },
   { version: '003', title: 'Customize (customize_requests, customize category settings, private storage bucket)', file: 'supabase/migrations/003_customize.sql' },
   { version: '004', title: 'Product colors (products.colors variants, order_items.color snapshot)', file: 'supabase/migrations/004_product_colors.sql' },
+  { version: '005', title: 'Required InstaPay payment proof (private order screenshot reference)', file: 'supabase/migrations/005_instapay_payment_proof.sql' },
 ];
 
 const argv = process.argv.slice(2);

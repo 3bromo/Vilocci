@@ -961,6 +961,13 @@ html[dir="rtl"] .link-all:hover svg { transform: translateX(-3px) scaleX(-1); }
 .instapay-cta { display: block !important; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
 .instapay-cta .btn { white-space: normal; width: 100%; text-align: center; min-height: 40px; }
 .instapay-hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.instapay-proof { margin-top: 14px; padding: 13px; border: 1px solid rgba(184,134,46,.34); border-radius: 8px; background: rgba(255,255,255,.56); }
+.instapay-proof-label { display: block; color: var(--ink); font-size: 12px; font-weight: 700; }
+.instapay-proof-copy { margin: 4px 0 10px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.instapay-proof input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.instapay-proof-picker { display: inline-flex !important; width: auto !important; align-items: center; justify-content: center; min-height: 40px !important; cursor: pointer; }
+.instapay-proof-name { min-height: 17px; margin-top: 8px; color: var(--gold-deep); font-size: 11px; overflow-wrap: anywhere; }
+.instapay-proof-error { min-height: 17px; margin-top: 4px; color: #a33b32; font-size: 11px; line-height: 1.4; }
 
 @media (max-width: 820px) {
   .form-card { padding: 20px 16px; overflow: visible; }

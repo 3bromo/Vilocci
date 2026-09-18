@@ -1601,6 +1601,14 @@
           <div class="instapay-cta" id="instapay-cta-box">
             <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-gold btn-sm" id="instapay-link-btn">${payBtnText}</a>
             <div class="instapay-hint">${hint}</div>
+            <div class="instapay-proof" id="instapay-proof-box">
+              <label class="instapay-proof-label" for="instapay-proof-input">${pt('instapay_proof_title')} <span class="req">*</span></label>
+              <div class="instapay-proof-copy">${pt('instapay_proof_hint')}</div>
+              <input id="instapay-proof-input" name="paymentProof" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif" capture="environment" aria-describedby="instapay-proof-error instapay-proof-name">
+              <button type="button" class="btn btn-line btn-sm instapay-proof-picker" id="instapay-proof-picker">${pt('instapay_proof_choose')}</button>
+              <div class="instapay-proof-name" id="instapay-proof-name" aria-live="polite"></div>
+              <div class="instapay-proof-error" id="instapay-proof-error" role="alert"></div>
+            </div>
           </div>
         </div>
       </label>
@@ -2745,6 +2753,7 @@
       const ctaLink = $('#instapay-link-btn');
       if (titleLink) titleLink.addEventListener('click', selectInstapay);
       if (ctaLink) ctaLink.addEventListener('click', selectInstapay);
+      bindInstapayProof(form);
     }
 
     // clear fitment
@@ -2990,7 +2999,75 @@
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
   }
 
-  function submitCheckout(e) {
+  function setInstapayProofError(message) {
+    const error = $('#instapay-proof-error');
+    if (error) error.textContent = message || '';
+    const input = $('#instapay-proof-input');
+    if (input) input.setCustomValidity(message || '');
+  }
+
+  function syncInstapayProofUI(form) {
+    const radio = form && form.querySelector('input[name="paymentMethod"][value="InstaPay"]');
+    const input = $('#instapay-proof-input');
+    const box = $('#instapay-proof-box');
+    const active = !!(radio && radio.checked);
+    if (box) box.classList.toggle('is-active', active);
+    if (input) input.required = active;
+    if (!active) setInstapayProofError('');
+    return active;
+  }
+
+  function bindInstapayProof(form) {
+    const input = $('#instapay-proof-input');
+    const radios = $$('input[name="paymentMethod"]', form);
+    radios.forEach((radio) => radio.addEventListener('change', () => {
+      syncInstapayProofUI(form);
+      // Keep the transfer-link action untouched; the proof picker remains a
+      // deliberate second tap on mobile rather than opening unexpectedly.
+    }));
+    const picker = $('#instapay-proof-picker');
+    if (picker) picker.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const radio = form.querySelector('input[name="paymentMethod"][value="InstaPay"]');
+      if (radio && !radio.checked) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      if (input) input.click();
+    });
+    if (input) input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      const name = $('#instapay-proof-name');
+      if (name) name.textContent = file ? pt('instapay_proof_selected', { name: file.name }) : '';
+      if (!file) { setInstapayProofError(pt('instapay_proof_missing')); return; }
+      if (!/^image\/(jpeg|jpg|png|webp|heic|heif|avif)$/i.test(file.type) || file.size <= 0) {
+        input.value = '';
+        if (name) name.textContent = '';
+        setInstapayProofError(pt('instapay_proof_invalid'));
+        return;
+      }
+      if (file.size > 6 * 1024 * 1024) {
+        input.value = '';
+        if (name) name.textContent = '';
+        setInstapayProofError(pt('instapay_proof_too_large'));
+        return;
+      }
+      setInstapayProofError('');
+    });
+    syncInstapayProofUI(form);
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error(pt('instapay_proof_read_error')));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function submitCheckout(e) {
     e.preventDefault();
     const form = e.target;
     const f = new FormData(form);
@@ -3009,12 +3086,39 @@
       }
     }
 
+    const instaPaySelected = payment === 'InstaPay';
+    const proofInput = $('#instapay-proof-input');
+    let paymentProof = null;
+    if (instaPaySelected) {
+      if (!proofInput || !proofInput.files || !proofInput.files[0]) {
+        setInstapayProofError(pt('instapay_proof_missing'));
+        proofInput && proofInput.focus({ preventScroll: false });
+        return;
+      }
+      const proofFile = proofInput.files[0];
+      if (!/^image\/(jpeg|jpg|png|webp|heic|heif|avif)$/i.test(proofFile.type) || proofFile.size <= 0) {
+        setInstapayProofError(pt('instapay_proof_invalid'));
+        return;
+      }
+      if (proofFile.size > 6 * 1024 * 1024) {
+        setInstapayProofError(pt('instapay_proof_too_large'));
+        return;
+      }
+      try {
+        paymentProof = await readFileAsDataUrl(proofFile);
+      } catch (readError) {
+        setInstapayProofError(readError.message || pt('instapay_proof_read_error'));
+        return;
+      }
+    }
+
     const cart = state.cart.map(i => ({ productId: i.productId, keyShape: i.keyShape, qty: i.qty, fitment: i.fitment || null, colorId: i.colorId || null }));
     const btn = form.querySelector('button[type=submit]');
     btn.disabled = true; btn.textContent = '…';
     // The code is sent for the server to re-validate and re-price; it never
     // carries an amount from the browser.
     const payload = { customer, cart, payment };
+    if (paymentProof) payload.paymentProof = paymentProof;
     if (state.discount && state.discount.code) payload.discountCode = state.discount.code;
     submitOrder(payload).then(({ ok, j }) => {
       if (ok) {
@@ -3042,7 +3146,10 @@
         }
         btn.disabled = false; btn.textContent = pt('place_order');
       }
-    }).catch(() => { btn.disabled = false; });
+    }).catch((error) => {
+      btn.disabled = false;
+      alert(error && error.message ? error.message : pt('instapay_proof_upload_error'));
+    });
   }
 
   // ============================================================== GLOBAL BINDINGS
