@@ -797,3 +797,68 @@ customer-facing instance):
   branding revert. Pre-existing production-data state (the JSON → Supabase
   content mapping was never re-run after the revert), unrelated to this
   feature; no product data was modified here.
+
+---
+
+## 14. Addendum 2026-09-18 — Key Shape management in Admin Products editor (build 20260918c)
+
+### 14.1 Scope & Changes
+
+Enables full Key Shape management for products in the Admin panel (`js/admin-app.js` and `css/admin.css`), matching the existing Color and Image management architecture:
+
+1. **Products Table (`js/admin-app.js`)**:
+   - Added a dedicated "Key shapes" column showing shape badges (A, B, C, D) with distinct in-stock and out-of-stock visual indicators plus an availability count summary (e.g. `2/4`).
+2. **Products Editor Modal (`js/admin-app.js` + `css/admin.css`)**:
+   - Added interactive "Key shapes" section situated cleanly between Colors and Stock & Visibility.
+   - Per-shape rows with silhouette emblem badge, shape label, `shapeok_${shape}` stock toggle switch, dynamic In stock / Out of stock status indicator, move up/down order controls, and delete button.
+   - Quick addition of standard key shapes (A, B, C, D) or custom shape identifiers via the `+ Add shape` selector.
+   - Automatic shape initialization for new products (defaults to standard shapes A, B, C, D instead of empty `[]`).
+   - Cleanly persists `keyShapes` via `sbUpsert` during product saves (previously omitted, causing newly created products to save with `[]`).
+   - Retains all compatibility aliases (`data-edit` and `#ed-save`) for automated test harnesses and backward compatibility.
+3. **Data Mapping & Persistence (`lib/mapping.js` + `lib/db.js`)**:
+   - Added `normalizeKeyShapes()` and `availableKeyShapes()` helper functions.
+   - `productToRow()` and `rowToProduct()` now normalize and serialize `key_shapes` consistently across database drivers.
+   - `lib/db.js` normalizes `keyShapes` in `jsonExtra` during JSON datastore writes alongside product colors.
+4. **Test Suite & Build**:
+   - Added `test/shapes.js` with 38 comprehensive assertions covering persistence mapping, admin API CRUD (toggle, add, reorder, delete), product isolation, JSON datastore durability, storefront PDP and Quick Add reflection of shape availability, server-side order validation against disabled shapes, and jsdom admin UI flow.
+   - All 14 suites integrated into `npm test`.
+   - Asset cache-busters bumped to `20260918c` and synchronized into `public/` and `dist/`.
+
+### 14.2 Deployment
+
+- PR #32 merged to `main` as `fdfae2c` (2026-09-18 13:56:11Z).
+- All **6** linked Vercel projects completed Production builds with `success` on `fdfae2c` between 13:56:27Z and 13:57:27Z:
+  - `vilocci-i54t` (success at 13:56:27Z)
+  - `vilocci-pvpw` (success at 13:56:40Z)
+  - `velocciiiii` (success at 13:56:53Z)
+  - `01a07cb5-b190-7e92-ac8e-aefc65395914-4` (success at 13:57:05Z)
+  - `vilocci-b31u` (success at 13:57:16Z)
+  - `vilocciii3bro` (success at 13:57:27Z)
+
+### 14.3 Verified on PRODUCTION after the deploy
+
+Observed live on `https://vilocciii3bro.vercel.app` (the Supabase-backed, customer-facing instance):
+
+1. **Homepage renders fully, no regressions** — full SPA boots cleanly: catalog with all 117 products (Key Cases, Key Holders, Car Medals), Hero products, New Arrivals, Packages & Sets ("Complete Your Set"), and the Bespoke Atelier Customize banner.
+2. **Served `/js/admin-app.js` is the new build** — verified live response starts with `Build 20260918c — Shape management in Products editor (per-shape stock toggle, add/remove, reorder) + Key shapes column in Products table.`
+3. **Served Admin Dashboard** — `/admin.html` served with the updated `20260918c` script references.
+4. **Cache-busters active** — returning visitors immediately receive build `20260918c`.
+
+### 14.4 Verified locally at the exact merged commit
+
+- `npm test` — **628 passed, 0 failed** across all 14 test suites:
+  - `test/smoke.js` (41 passed)
+  - `test/admin.js` (7 passed)
+  - `test/admin_cms.js` (36 passed)
+  - `test/admin_packages.js` (48 passed)
+  - `test/db_fallback.js` (36 passed)
+  - `test/customize.js` (55 passed)
+  - `test/customize_nav.js` (71 passed)
+  - `test/colors.js` (29 passed)
+  - `test/checkout_discount.js` (75 passed)
+  - `test/instapay.js` (52 passed)
+  - `test/nano_coating.js` (82 passed)
+  - `test/shapes.js` (38 passed)
+  - plus other sub-suites.
+- `npm run test:db` (embedded real PostgreSQL, SQL driver) — **83 passed, 0 failed**.
+
