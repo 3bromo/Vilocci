@@ -59,7 +59,11 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
 ### Admin panel (`/admin`)
 - **Dashboard** — revenue, orders, products, low-stock alerts, recent orders.
 - **Products** — add / edit / delete; EN + AR names & descriptions, price, old price, discount, images, category, brand, models, years, **key shapes**, inventory, out-of-stock, featured / best seller / new arrival / limited edition / pre-order.
-- **Brands** — add / edit, logo (stylized emblem), accent colour, tier, **models → years → key shapes** (fitment), enable/disable, reorder.
+- **Brands** — add / edit / delete; EN + AR name, slug, description and **logo upload** (or paste a public URL).
+  A saved logo is served to the storefront (brand strip, all-brands page, brand page, product pages); brands without one keep the
+  shipped `/img/logos/<slug>` file. On read-only hosts (Vercel) an upload that cannot be written to disk is kept with the brand record
+  as a small data URL instead of failing. Editing PATCHes through `/api/admin/update`, so models/years/fitment, tier, order and the
+  accent colour are never overwritten.
 - **Bundles** — pick the brand's set, set bundle price; discount & % auto-computed; active/inactive.
 - **Fitment** — manage brand → model → year → key-shape compatibility.
 - **Homepage** — hero slides (add/edit/reorder/enable), home sections (drag-to-reorder + enable/disable), promo bar + countdown.
@@ -109,11 +113,14 @@ npm run shot      # capture screenshots into /shots
 
 Given a running server (`npm start`), `npm test` validates routing, product page,
 shape selection, add-to-cart, cart drawer, EN/AR switching, the full her-limit flow,
-the admin product/brand/bundle/order/settings views, and `test/quickadd_mobile.js`
+the admin product/brand/bundle/order/settings views, `test/quickadd_mobile.js`
 (`npm run test:quickadd`) which covers the Quick Add shape → color → add flow
 (localized validation, enabled colors only, variant separation, cart → checkout →
 order), the mobile-safe layout rules (search sheet, promo/hero, product-page fit)
-and the fact that the public site exposes no admin entry while `/admin` keeps working.
+and the fact that the public site exposes no admin entry while `/admin` keeps working,
+and `test/admin_brands.js` (`npm run test:brands`) which covers Admin → Brands:
+renaming a brand, uploading/changing its logo (including the read-only-disk fallback),
+the patch reaching `/api/data`, and the storefront rendering the new name + logo.
 
 ---
 

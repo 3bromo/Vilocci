@@ -2,9 +2,10 @@
    VELOCCI — Storefront application (single-file client SPA)
    Loads the shared store once, renders the whole site, and keeps the cart in
    localStorage. Reads live data from /api/data so admin changes reflect.
-   Build 20260917c — mobile UX pass (search sheet, promo bar, homepage hero
-   spacing, product-page containment) and the two-step Quick Add flow:
-   key shape, then the product's own admin-managed colors, then add to cart.
+   Build 20260918a — mobile UX pass (search sheet, promo bar, homepage hero
+   spacing, product-page containment), the two-step Quick Add flow (key shape,
+   then the product's own admin-managed colors, then add to cart), and brand
+   logos/names that come from the editable brand records (Admin → Brands).
    No public admin entry anywhere in the customer-facing nav.
    ========================================================================== */
 (function () {
@@ -59,6 +60,13 @@
   const L = () => state.lang;
   const A = () => state.lang === 'ar';
   const brandName = (b) => (b && (b['name_' + L()] || b.name_en)) || '';
+
+  // Brand logos: the record's own uploaded logo (Admin → Brands) wins; brands
+  // that have never had one keep the shipped /img/logos/<slug> file.
+  const brandLogo = (b, h) => VEL.brandLogoImg(
+    (b && b.slug) || '',
+    { h, src: (b && b.logo) || '', alt: brandName(b) || ((b && b.slug) || '') }
+  );
 
   // Pick a category-balanced subset so curated sections never look monotone.
   function pickBalanced(list, n) {
@@ -312,7 +320,7 @@
     const medal = state.data.products.find(p => p.brandSlug === b.slug && p.category === 'medal');
     const sculpturePreview = medal ? `<div class="brand-sculpture-preview"><img src="${img(medal)}" alt="" loading="lazy"></div>` : '';
     return `<a class="brand-tile" href="#/brand/${b.slug}">
-      <span class="logo-circle">${VEL.brandLogoImg(b.slug, { h: 44 })}</span>
+      <span class="logo-circle">${brandLogo(b, 44)}</span>
       <span class="name">${VEL.esc(brandName(b))}</span>
       <span class="cat">${count} ${productsLabel(count)}</span>
       ${sculpturePreview}
@@ -552,7 +560,7 @@
     const save = Math.max(0, b.normalTotal - b.bundlePrice);
     return `<div class="set-banner" data-section="set">
       <div class="set-brand">
-        <span class="set-logo">${VEL.brandLogoImg(br.slug, { h: 42 })}</span>
+        <span class="set-logo">${brandLogo(br, 42)}</span>
         <span class="kicker">${pt('complete_your_set')}</span>
         <h3>${VEL.esc(fld(b, 'title'))}</h3>
         <p>${VEL.esc(fld(b, 'sub'))}</p>
@@ -655,7 +663,7 @@
         return `<div class="cv-model"><span class="cv-name">${VEL.esc(mName)}</span>${yrTxt}</div>`;
       });
       return `<div class="cv-brand">
-        <div class="cv-brand-head"><span class="cv-logo">${VEL.brandLogoImg(g.br.slug, { h: 22 })}</span><span class="cv-brand-name">${VEL.esc(brandName(g.br))}</span></div>
+        <div class="cv-brand-head"><span class="cv-logo">${brandLogo(g.br, 22)}</span><span class="cv-brand-name">${VEL.esc(brandName(g.br))}</span></div>
         <div class="cv-models">${mArr.join('')}</div>
       </div>`;
     });
@@ -785,7 +793,7 @@
       <div class="pdp">
         ${gallery}
         <div class="pdp-info">
-          <div class="brand-line"><span style="display:inline-flex;align-items:center;height:20px;width:auto;max-width:56px">${VEL.brandLogoImg(br.slug, { h: 18 })}</span> ${VEL.esc(brandName(br))}</div>
+          <div class="brand-line"><span style="display:inline-flex;align-items:center;height:20px;width:auto;max-width:56px">${brandLogo(br, 18)}</span> ${VEL.esc(brandName(br))}</div>
           <h1>${VEL.esc(prodName(p))}</h1>
           ${pdpFitLine(p, br)}
           <div class="rating-row"><span class="rating">★★★★★</span> <b style="color:var(--ink);font-weight:600">${(4.6 + (p.price % 5) / 10).toFixed(1)}</b> <span>(${40 + (p.price % 110)} ${pt('can_review')})</span></div>
@@ -1022,7 +1030,7 @@
       <div class="container">
         <div class="brand-landing">
           <div class="brand-hero">
-            <div class="brand-hero-logo">${VEL.brandLogoImg(br.slug, { h: 64 })}</div>
+            <div class="brand-hero-logo">${brandLogo(br, 64)}</div>
             <div class="brand-hero-info">
               <span class="kicker">${lang === 'ar' ? 'مجموعة' : 'Collection'}</span>
               <h1 class="brand-hero-title">${bName}</h1>
@@ -1135,7 +1143,7 @@
       body = `<div class="fit-subhead"><span class="kicker">${pt('step')} 1</span><h3>${pt('select_car_brand')}</h3></div>
         <div class="fit-brand-grid">
           ${brands.map(b => `<button class="fit-brand-card ${f.brand === b.slug ? 'sel' : ''}" data-fitbrand="${b.slug}" type="button">
-            <span class="logo-circle">${VEL.brandLogoImg(b.slug, { h: 44 })}</span>
+            <span class="logo-circle">${brandLogo(b, 44)}</span>
             <span class="name">${VEL.esc(brandName(b))}</span>
           </button>`).join('')}
         </div>`;
@@ -1603,7 +1611,7 @@
           const trio = [items.keyCase, items.medal, items.keyHolder].filter(Boolean);
           const save = Math.max(0, b.normalTotal - b.bundlePrice);
           return `<div class="package-card">
-            <div class="pc-brand">${br ? VEL.brandLogoImg(br.slug, { h: 36 }) : ''}</div>
+            <div class="pc-brand">${br ? brandLogo(br, 36) : ''}</div>
             <h3 class="pc-title">${VEL.esc(fld(b, 'title'))}</h3>
             <p class="pc-sub">${VEL.esc(fld(b, 'sub'))}</p>
             <div class="pc-items">

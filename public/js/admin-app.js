@@ -2887,47 +2887,126 @@
     }));
   }
 
-  function bindBrands() {
-    const addBtn = $('#btn-add-brand');
-    if (addBtn) addBtn.addEventListener('click', () => {
-      showModal(`
+  // Shared Add/Edit brand dialog. The table's ✏️ button existed in the markup
+  // but had no handler, so a brand could never be renamed or re-logo'd after it
+  // was created. Editing reuses the same form and PATCHes through
+  // /api/admin/update, so every column the form does not touch (order, models,
+  // emblem, tier, active) is preserved.
+  function openBrandEditor(brand) {
+    const isEdit = !!brand;
+    const b = brand || {};
+    const hadLogo = !!(b.logo && String(b.logo).trim());
+    showModal(`
         <div class="modal">
-          <div class="modal-header"><h3>Add Brand</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div>
+          <div class="modal-header"><h3>${isEdit ? 'Edit Brand' : 'Add Brand'}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div>
           <div class="modal-body">
             <form id="brand-form">
-              <div class="form-group"><label>Brand Name (EN) *</label><input name="name_en" required></div>
-              <div class="form-group"><label>Slug *</label><input name="slug" required></div>
-              <div class="form-group"><label>Logo URL</label><input name="logo" placeholder="/img/brands/..."></div>
-              <div class="form-group"><label>Description</label><textarea name="description_en" rows="3"></textarea></div>
+              <div class="form-group"><label>Brand Name (EN) *</label><input name="name_en" value="${esc(b.name_en || '')}" required></div>
+              <div class="form-group"><label>Brand Name (AR)</label><input name="name_ar" value="${esc(b.name_ar || '')}"></div>
+              <div class="form-group"><label>Slug *</label><input name="slug" value="${esc(b.slug || '')}" ${isEdit ? 'readonly title="The slug is the brand URL — existing products and links keep working while it stays the same."' : ''} required></div>
+              <div class="form-group">
+                <label>Brand Logo</label>
+                <div class="image-upload-zone" id="brand-upload-zone" style="padding:16px;">
+                  <div class="upload-icon">📤</div>
+                  <p><strong>Click to upload</strong> or drag and drop a logo</p>
+                  <p style="font-size:11px;color:var(--text-muted);margin-top:4px;">PNG, JPG, WEBP or SVG up to 5MB. On hosts with a read-only disk the logo is stored with the brand itself.</p>
+                  <input type="file" id="brand-file-input" accept="image/*" style="display:none;">
+                </div>
+                <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+                  <img id="brand-logo-preview" src="${esc(b.logo || '')}" alt="" style="width:44px;height:44px;object-fit:contain;border-radius:6px;background:var(--cream);${hadLogo ? '' : 'display:none;'}">
+                  <input name="logo" id="brand-logo-input" value="${esc(b.logo || '')}" placeholder="/img/logos/bmw.svg or https://…/logo.png" style="flex:1;min-width:200px;">
+                  <button type="button" class="btn btn-ghost btn-sm" id="brand-logo-clear">Clear</button>
+                </div>
+              </div>
+              <div class="form-group"><label>Description</label><textarea name="description_en" rows="3">${esc(b.description_en || '')}</textarea></div>
             </form>
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
-            <button class="btn btn-primary" id="btn-save-brand">Create Brand</button>
+            <button class="btn btn-primary" id="btn-save-brand">${isEdit ? 'Save Changes' : 'Create Brand'}</button>
           </div>
         </div>`);
-      $('#btn-save-brand').addEventListener('click', async () => {
-        const form = $('#brand-form');
-        const data = {
-          id: uid('brand'),
-          name_en: form.querySelector('[name=name_en]').value.trim(),
-          slug: form.querySelector('[name=slug]').value.trim(),
-          logo: form.querySelector('[name=logo]').value.trim(),
-          description_en: form.querySelector('[name=description_en]').value.trim(),
-          active: true,
-          product_count: 0,
-          order: (state.data.brands || []).length,
+
+    const form = $('#brand-form');
+    const logoInput = $('#brand-logo-input');
+    const preview = $('#brand-logo-preview');
+    const setLogo = (url) => {
+      logoInput.value = url || '';
+      if (url) { preview.src = url; preview.style.display = ''; }
+      else { preview.removeAttribute('src'); preview.style.display = 'none'; }
+    };
+
+    const zone = $('#brand-upload-zone');
+    const fileInput = $('#brand-file-input');
+    if (zone && fileInput) {
+      zone.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', (e) => {
+        const file = (e.target.files || [])[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) { toast(`${file.name} is too large (max 5MB)`, 'error'); return; }
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const { ok, j } = await api('POST', '/api/admin/upload', { dataUrl: reader.result });
+            if (ok && j && j.url) { setLogo(j.url); toast('Logo uploaded', 'success'); return; }
+            // Read-only disk (serverless): keep the logo with the brand record
+            // itself so the storefront can still serve it. Small, validated
+            // images only — a stored data URL travels with the brand row.
+            if (file.size <= 250 * 1024 && /^image\//.test(file.type)) {
+              setLogo(reader.result);
+              toast('Server disk is read-only — the logo is saved with the brand', 'success');
+            } else {
+              toast((j && j.error) || 'Upload failed — paste a public image URL instead', 'error');
+            }
+          } catch (err) { toast('Upload failed: ' + err.message, 'error'); }
         };
-        if (!data.name_en || !data.slug) { toast('Fill required fields', 'error'); return; }
-        try {
+        reader.readAsDataURL(file);
+      });
+    }
+    const clearBtn = $('#brand-logo-clear');
+    if (clearBtn) clearBtn.addEventListener('click', () => setLogo(''));
+
+    $('#btn-save-brand').addEventListener('click', async () => {
+      const val = (name) => (form.querySelector(`[name=${name}]`) || {}).value || '';
+      const nameEn = val('name_en').trim();
+      const slug = val('slug').trim();
+      const logo = val('logo').trim();
+      if (!nameEn || !slug) { toast('Fill required fields', 'error'); return; }
+      const fields = {
+        name_en: nameEn,
+        name_ar: val('name_ar').trim(),
+        slug,
+        logo,
+        description_en: val('description_en').trim(),
+      };
+      try {
+        if (isEdit) {
+          await sbUpdate('brands', b.id, fields);
+          const row = (state.data.brands || []).find(x => x.id === b.id);
+          if (row) Object.assign(row, fields); else (state.data.brands = state.data.brands || []).push(Object.assign({}, b, fields));
+          toast('Brand updated', 'success');
+        } else {
+          const data = Object.assign({ id: uid('brand'), active: true, product_count: 0, order: (state.data.brands || []).length }, fields);
           await sbInsert('brands', data);
+          if (!state.data.brands) state.data.brands = [];
           state.data.brands.push(data);
           toast('Brand created', 'success');
-          closeAllModals();
-          render();
-        } catch (e) { toast('Failed: ' + e.message, 'error'); }
-      });
+        }
+        closeAllModals();
+        render();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
     });
+  }
+
+  function bindBrands() {
+    const addBtn = $('#btn-add-brand');
+    if (addBtn) addBtn.addEventListener('click', () => openBrandEditor(null));
+
+    $$('[data-edit-brand]').forEach(el => el.addEventListener('click', () => {
+      const brand = (state.data.brands || []).find(x => x.id === el.dataset.editBrand);
+      if (brand) openBrandEditor(brand);
+      else toast('Brand not found', 'error');
+    }));
 
     $$('[data-delete-brand]').forEach(el => el.addEventListener('click', () => {
       const id = el.dataset.deleteBrand;
