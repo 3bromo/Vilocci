@@ -119,7 +119,13 @@ create table if not exists public.orders (
   status text default 'New',
   status_history jsonb default '[]'::jsonb,
   payment text default 'Cash on Delivery',
-  notes text
+  notes text,
+  -- InstaPay proof reference. The path is private storage; inline data is
+  -- only for the local JSON fallback when Storage is not configured.
+  payment_proof_path text,
+  payment_proof_mime text,
+  payment_proof_size integer,
+  payment_proof_data text
 );
 
 -- ============================================================================

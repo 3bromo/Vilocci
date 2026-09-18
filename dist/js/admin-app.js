@@ -1226,7 +1226,7 @@
       <div class="card-body" style="padding:0;overflow-x:auto;">
         ${filtered.length ? `
         <table class="data-table">
-          <thead><tr><th>Order ID</th><th>Date</th><th>Customer</th><th>Phone</th><th>Address</th><th>Items</th><th>Total</th><th>Status</th><th style="width:120px;">Actions</th></tr></thead>
+          <thead><tr><th>Order ID</th><th>Date</th><th>Customer</th><th>Phone</th><th>Address</th><th>Items</th><th>Total</th><th>Payment</th><th>Status</th><th style="width:120px;">Actions</th></tr></thead>
           <tbody>
             ${filtered.map(o => `<tr>
               <td><strong>${esc(o.id)}</strong></td>
@@ -1236,6 +1236,9 @@
               <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:12px;">${esc(o.customer?.address || '—')}${o.customer?.city ? ', ' + esc(o.customer.city) : ''}</td>
               <td>${(o.items || []).length}</td>
               <td><strong>${money(o.total)}</strong></td>
+              <td>${o.payment === 'InstaPay'
+                ? `<span class="badge badge-gold" title="InstaPay payment">⚡ InstaPay${o.paymentProof?.available ? ' · proof' : ''}</span>`
+                : `<span style="color:var(--text-muted);">Cash on Delivery</span>`}</td>
               <td>${statusBadge(o.status)}</td>
               <td>
                 <button class="btn btn-ghost btn-sm" data-view-order="${esc(o.id)}" title="Open">👁</button>
@@ -3071,6 +3074,28 @@
     if (!o) { toast('Order not found', 'error'); return; }
 
     const items = o.items || [];
+    let paymentProofHTML = '';
+    if (o.payment === 'InstaPay') {
+      if (o.paymentProof && o.paymentProof.available) {
+        const proofResponse = await api('GET', `/api/admin/order/${encodeURIComponent(id)}/payment-proof`);
+        if (proofResponse.ok && proofResponse.j && proofResponse.j.url) {
+          const proofUrl = esc(proofResponse.j.url);
+          paymentProofHTML = `
+            <div class="detail-section instapay-proof-admin" style="margin-top:18px;">
+              <h4>⚡ InstaPay payment proof</h4>
+              <p style="font-size:12px;color:var(--text-secondary);margin:4px 0 10px;">Customer-uploaded transfer screenshot</p>
+              <a href="${proofUrl}" target="_blank" rel="noopener noreferrer" title="Open InstaPay payment proof">
+                <img src="${proofUrl}" alt="Customer InstaPay payment proof" style="display:block;max-width:100%;max-height:420px;object-fit:contain;border:1px solid var(--border);border-radius:8px;background:var(--bg);">
+              </a>
+              <p style="font-size:11px;color:var(--text-muted);margin:8px 0 0;">Click the image to open the full-size proof.</p>
+            </div>`;
+        } else {
+          paymentProofHTML = `<div class="detail-section" style="margin-top:18px;"><h4>⚡ InstaPay payment proof</h4><p style="color:var(--danger);font-size:12px;">The proof is saved but could not be opened right now.</p></div>`;
+        }
+      } else {
+        paymentProofHTML = `<div class="detail-section" style="margin-top:18px;"><h4>⚡ InstaPay payment proof</h4><p style="color:var(--danger);font-size:12px;">No payment proof is attached to this InstaPay order.</p></div>`;
+      }
+    }
     showModal(`
       <div class="modal" style="max-width:760px;">
         <div class="modal-header">
@@ -3091,11 +3116,12 @@
             <div class="detail-section">
               <h4>Order Info</h4>
               <p>📅 ${fmtDateTime(o.createdAt || o.created_at)}</p>
-              <p>💳 ${esc(o.payment || 'Cash on Delivery')}</p>
+              <p>💳 <strong>${esc(o.payment || 'Cash on Delivery')}</strong>${o.payment === 'InstaPay' ? ' <span class="badge badge-gold">payment proof required</span>' : ''}</p>
               <p>🌐 ${esc(o.source || 'storefront')}</p>
               <p>Status: ${statusBadge(o.status)}</p>
             </div>
           </div>
+          ${paymentProofHTML}
 
           <h4 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:20px 0 10px;">
             Order items <span style="color:var(--text-muted);font-weight:400;">(${items.length} line${items.length === 1 ? '' : 's'} from order_items)</span>

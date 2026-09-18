@@ -465,6 +465,7 @@ img { max-width: 100%; height: auto; display: block; }
 .badge-delivered { background: var(--success-light); color: var(--success); }
 .badge-cancelled { background: var(--danger-light); color: var(--danger); }
 .badge-pending { background: var(--warning-light); color: var(--warning); }
+.badge-gold { background: rgba(200,161,90,.16); color: #8d6829; border: 1px solid rgba(200,161,90,.34); }
 .badge-active { background: var(--success-light); color: var(--success); }
 .badge-inactive { background: #f3f4f6; color: var(--text-muted); }
 

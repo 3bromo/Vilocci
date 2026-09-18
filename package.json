@@ -13,7 +13,7 @@
     "migrate:apply": "node scripts/migrate.js --apply",
     "migrate:sql": "node scripts/migrate.js --print-sql",
     "postinstall": "node data/seed.js",
-    "test": "node test/smoke.js && node test/admin.js && node test/admin_cms.js && node test/admin_packages.js && node test/db_fallback.js && node test/customize.js && node test/customize_nav.js && node test/colors.js && node test/quickadd_mobile.js && node test/admin_brands.js && node test/discount.js",
+    "test": "node test/smoke.js && node test/admin.js && node test/admin_cms.js && node test/admin_packages.js && node test/db_fallback.js && node test/customize.js && node test/customize_nav.js && node test/colors.js && node test/quickadd_mobile.js && node test/admin_brands.js && node test/discount.js && node test/instapay_proof_api.js",
     "test:e2e": "node test/e2e.js",
     "test:phase3": "node test/phase3_flow.js",
     "test:phase4": "node test/phase4_flow.js",
@@ -27,7 +27,8 @@
     "test:colors": "node test/colors.js",
     "test:quickadd": "node test/quickadd_mobile.js",
     "test:brands": "node test/admin_brands.js",
-    "test:discount": "node test/discount.js"
+    "test:discount": "node test/discount.js",
+    "test:instapay": "node test/instapay_proof_api.js"
   },
   "engines": {
     "node": ">=18"

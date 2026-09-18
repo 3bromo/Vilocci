@@ -57,6 +57,14 @@ async function runViewport(browser, name, viewport) {
   check(name + ': Pay with InstaPay title is a link', (await title.getAttribute('href')) === expectedUrl);
   check(name + ': title is visible', await title.isVisible());
 
+  const proofInput = page.locator('#instapay-proof-input');
+  check(name + ': payment proof picker exists inside InstaPay', await proofInput.count() === 1);
+  check(name + ': payment proof label is visible', await page.locator('#instapay-proof-picker').isVisible());
+  await page.locator('#pay-instapay-radio').check();
+  check(name + ': proof becomes required when InstaPay is selected', await proofInput.getAttribute('required') !== null);
+  await page.locator('input[value="Cash on Delivery"]').check();
+  check(name + ': COD does not require proof', await proofInput.getAttribute('required') === null);
+
   await page.screenshot({ path: path.join(OUT, 'checkout-instapay-' + name + '.png'), fullPage: true });
   await ctx.close();
 }
