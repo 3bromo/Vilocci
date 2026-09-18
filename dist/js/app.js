@@ -2,11 +2,15 @@
    VELOCCI — Storefront application (single-file client SPA)
    Loads the shared store once, renders the whole site, and keeps the cart in
    localStorage. Reads live data from /api/data so admin changes reflect.
-   Build 20260918c — Shape management in Products editor (per-shape stock
-   toggle, add/remove, reorder) + Key shapes column in Products table. Keeps
-   the Nano Ceramic Coating optional extra (Key Holder / Key Case only, flat
-   +EGP 100 per coated cart line), mobile UX pass, the two-step Quick Add
-   flow, and editable brand logos/names.
+   Build 20260918d — Shape management: every key-shape selector (product
+   page, Quick Add, Fitment Finder, Key Guide) and every shape label reads
+   the key-shape catalogue served by /api/data (Admin → Shapes) — localized
+   EN/AR names, catalogue order, and a shape hidden in the admin panel
+   disappears from the storefront everywhere. Builds on the 20260918c base
+   (per-shape stock toggle, add/remove, reorder in the Products editor +
+   Key shapes column), the Nano Ceramic Coating optional extra (Key Holder /
+   Key Case only, flat +EGP 100 per coated cart line), the mobile UX pass,
+   the two-step Quick Add flow, and editable brand logos/names.
    No public admin entry anywhere in the customer-facing nav.
    ========================================================================== */
 (function () {
@@ -96,6 +100,51 @@
   }
   const prodName = (p) => (p && (p['name_' + L()] || p.name_en)) || '';
 
+  // ------------------------------------------------------------------------
+  // KEY SHAPES — Shape management: the catalogue Admin → Shapes manages.
+  // Every selector (product page, Quick Add, Fitment Finder) and every shape
+  // label read this list. An empty or missing catalogue (legacy data,
+  // migration pending) keeps the classic behaviour — product availability
+  // flags alone decide. A code NOT in the catalogue is a product-local
+  // custom shape (the Products editor can add those) and stays sellable;
+  // only catalogue-listed shapes are subject to the catalogue's hide flag.
+  // ------------------------------------------------------------------------
+  const catalogShapes = () => (state.data && Array.isArray(state.data.shapes)) ? state.data.shapes : [];
+  const shapeDef = (code) => catalogShapes().find(s => String(s.code || '').toUpperCase() === String(code || '').toUpperCase());
+  const shapeVisible = (code) => {
+    const cats = catalogShapes();
+    if (!cats.length) return true;               // no catalogue → no restriction
+    const def = shapeDef(code);
+    if (!def) return true;                       // product-local custom shape
+    return def.active !== false;                 // catalogue shape: not hidden
+  };
+  const shapeSortIndex = (code) => { const def = shapeDef(code); return def ? (Number(def.order) || 0) : 9999; };
+  // Localized display name — the catalogue's EN/AR name, or the classic
+  // "Shape A" label when the catalogue has no name for the code.
+  function shapeLabel(code) {
+    const def = shapeDef(code);
+    const nm = def && (L() === 'ar' ? def.name_ar : def.name_en);
+    return (nm && String(nm).trim()) ? nm : (pt('shape') + ' ' + code);
+  }
+  // The codes the Fitment Finder offers (catalogue order, hidden shapes
+  // removed) — falls back to the classic A–D when there is no catalogue.
+  function fitShapeCodes() {
+    const cats = catalogShapes();
+    if (!cats.length) return ['A', 'B', 'C', 'D'];
+    return cats.filter(s => s.active !== false)
+      .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+      .map(s => String(s.code || '').toUpperCase())
+      .filter(Boolean);
+  }
+  // The shape options a product offers, catalogue-aware: hidden shapes drop
+  // out entirely, the rest keep the product's availability flag, sorted in
+  // catalogue order (legacy order is preserved when there is no catalogue).
+  function productShapes(p) {
+    const list = (p.keyShapes || []).filter(sh => shapeVisible(sh.shape));
+    if (catalogShapes().length) list.sort((a, b) => shapeSortIndex(a.shape) - shapeSortIndex(b.shape));
+    return list;
+  }
+
   // Field pick — choose localised text or fallback to EN
   function fld(obj, base) {
     if (!obj) return '';
@@ -134,7 +183,7 @@
     opts = opts || {};
     const style = opts.style ? ` style="${opts.style}"` : '';
     const v = vehicleLabel(it.fitment);
-    const shapePart = it.keyShape ? pt('shape') + ' ' + it.keyShape : '';
+    const shapePart = it.keyShape ? shapeLabel(it.keyShape) : '';
     const colorPart = it.color && it.color.hex ? `${colorDot(it.color, 10)} ${VEL.esc(colorLabel(it.color))}` : '';
     const suffix = [shapePart ? VESt(shapePart) : '', colorPart].filter(Boolean).join(' · ');
     if (v) return `<div class="di-vehicle"${style}>${VEL.esc(v)}${suffix ? ' · ' + suffix : ''}</div>`;
@@ -909,7 +958,11 @@
     if (!p) return notFound();
     const br = brandOfAsset(p);
     const lang = L();
-    const shapes = p.keyShapes || [];
+    // Shape management: the catalogue (Admin → Shapes) is the master list —
+    // a shape hidden there is not offered here at all. The product's own
+    // availability flags still decide which of the remaining shapes are
+    // in stock for THIS product.
+    const shapes = productShapes(p);
     // auto-select the fitted shape when arriving from the Fitment Finder
     if (!state.productShape[p.id] && state.fitment && state.fitment.brand === p.brandSlug) {
       const fs = state.fitment.shape;
@@ -917,6 +970,9 @@
       const yOk = !state.fitment.year || !(p.years && p.years.length) || p.years.some(y => String(y) === String(state.fitment.year));
       if (fs && mOk && yOk && shapes.some(s => s.shape === fs && s.available)) state.productShape[p.id] = fs;
     }
+    // A selection that was hidden in the catalogue since the page rendered
+    // can never stay picked.
+    if (state.productShape[p.id] && !shapes.some(s => s.shape === state.productShape[p.id])) delete state.productShape[p.id];
     const activeShape = shapes.find(sh => sh.shape === (state.productShape[p.id] || ''));
     // Color variants — exactly the enabled colors the admin configured for THIS
     // product (order preserved). Products without colors show no selector.
@@ -944,16 +1000,18 @@
 
     // selected shape options html
     const shapeHTML = `<div class="shape-selector">
-      <div class="label">${pt('select_key_shape')} <span style="color:var(--gold-deep)">${activeShape ? '— ' + pt('shape') + ' ' + activeShape.shape : ''}</span></div>
+      <div class="label">${pt('select_key_shape')} <span style="color:var(--gold-deep)">${activeShape ? '— ' + VEL.esc(shapeLabel(activeShape.shape)) : ''}</span></div>
       <div class="shape-options">
         ${shapes.map(sh => {
           const cls = sh.available ? 'selectable' : 'unavailable';
           const sel = activeShape && activeShape.shape === sh.shape ? 'selected' : '';
           const colr = sh.available ? '#2b2b2b' : '#B9B9B9';
-          return `<button class="shape-opt ${cls} ${sel}" data-shapecopy="0" data-shape="${sh.shape}" ${sh.available ? '' : 'disabled'}>
+          const shDef = shapeDef(sh.shape);
+          const shTitle = shDef && String((L() === 'ar' ? shDef.description_ar : shDef.description_en) || '').trim();
+          return `<button class="shape-opt ${cls} ${sel}" data-shapecopy="0" data-shape="${sh.shape}" ${sh.available ? '' : 'disabled'}${shTitle ? ` title="${VEL.esc(shTitle)}"` : ''}>
             ${sh.available ? '' : `<svg class="xstar" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" stroke="#999" stroke-width="2" stroke-linecap="round"/></svg>`}
             ${VEL.keyShapeSVG(sh.shape, { color: colr, w: 60, h: 92 })}
-            <div class="lbl">${pt('shape')} ${sh.shape}</div>
+            <div class="lbl">${VEL.esc(shapeLabel(sh.shape))}</div>
             ${sh.available ? '' : `<div class="oos">${pt('out_of_stock')}</div>`}
           </button>`;
         }).join('')}
@@ -1329,7 +1387,7 @@
     const m = (br && br.models || []).find(x => x.en === f.model);
     if (m) bits.push(modelName(m));
     if (f.year) bits.push(f.year);
-    if (f.shape) bits.push(pt('shape') + ' ' + f.shape);
+    if (f.shape) bits.push(shapeLabel(f.shape));
     return bits.join(' · ');
   }
 
@@ -1356,9 +1414,15 @@
       if (p.brandSlug !== f.brand) return;
       if (f.model && p.models && p.models.length && !p.models.includes(f.model)) return;
       if (f.year && p.years && p.years.length && !p.years.some(y => String(y) === String(f.year))) return;
-      (p.keyShapes || []).forEach(s => { if (s.available) inStockShapes.add(s.shape); });
+      (p.keyShapes || []).forEach(s => { if (s.available && shapeVisible(s.shape)) inStockShapes.add(s.shape); });
     });
-    const supShapes = modelShapes.filter(sh => inStockShapes.has(sh));
+    const supShapes = modelShapes.filter(sh => shapeVisible(sh) && inStockShapes.has(sh));
+    // Shape management: a previously picked shape that the admin has since
+    // hidden is no longer a valid selection — drop it so step 4 reopens.
+    if (f.shape && !shapeVisible(f.shape)) {
+      f.shape = '';
+      saveFit();
+    }
     const step = state.fitStep || 1;
     const done1 = !!f.brand, done2 = !!f.model, done3 = !!f.year, done4 = !!f.shape;
     const complete = done1 && done2 && done3 && done4;
@@ -1398,13 +1462,13 @@
     } else {
       body = `<div class="fit-subhead"><span class="kicker">${pt('step')} 4</span><h3>${pt('select_key_shape')}</h3></div>
         <div class="shape-options">
-          ${['A','B','C','D'].map(sh => {
+          ${fitShapeCodes().map(sh => {
             const av = supShapes.includes(sh);
             const sel = f.shape === sh;
             return `<button class="shape-opt ${av ? 'selectable' : 'unavailable'} ${sel ? 'selected' : ''}" data-fit-shape="${sh}" ${av ? '' : 'disabled'} type="button">
               ${av ? '' : `<svg class="xstar" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" stroke="#999" stroke-width="2" stroke-linecap="round"/></svg>`}
               ${VEL.keyShapeSVG(sh, { color: av ? '#2b2b2b' : '#B9B9B9', w: 60, h: 92 })}
-              <div class="lbl">${pt('shape')} ${sh}</div>
+              <div class="lbl">${VEL.esc(shapeLabel(sh))}</div>
               ${av ? '' : `<div class="oos">${pt('not_available')}</div>`}
             </button>`;
           }).join('')}
@@ -1537,15 +1601,28 @@
       </div></div></div>`;
   }
 
+  // The classic per-shape descriptions, used only while the catalogue (Admin
+  // → Shapes) carries no description of its own for a code.
+  const KEY_GUIDE_FALLBACK = {
+    A: 'slim rectangular fob with a single rubber button.',
+    B: 'rounder fob with a metal ring and two buttons.',
+    C: 'wide oval fob with a large screen area.',
+    D: 'key card / slim card-style key.',
+  };
   function keyGuideHTML() {
+    // Shape management: the guide lists the SAME active shapes the selectors
+    // offer, in catalogue order, with the catalogue's own descriptions.
+    const guideShapes = fitShapeCodes();
     return `<p>To find the right case for your key, identify the shape of your keyfob:</p>
       <div class="shape-options" style="margin:20px 0">
-        ${['A','B','C','D'].map(sh => `<div class="shape-opt selectable"><svg viewBox="0 0 60 92" width="60" height="92">${VEL.keyShapeSVG(sh, { color: '#2b2b2b', w:60, h:92 }).split('<svg')[0]}</svg><div class="lbl">${pt('shape')} ${sh}</div></div>`).join('')}
+        ${guideShapes.map(sh => `<div class="shape-opt selectable"><svg viewBox="0 0 60 92" width="60" height="92">${VEL.keyShapeSVG(sh, { color: '#2b2b2b', w:60, h:92 }).split('<svg')[0]}</svg><div class="lbl">${VEL.esc(shapeLabel(sh))}</div></div>`).join('')}
       </div>
-      <ul><li><b>${pt('shape')} A</b> — slim rectangular fob with a single rubber button.</li>
-      <li><b>${pt('shape')} B</b> — rounder fob with a metal ring and two buttons.</li>
-      <li><b>${pt('shape')} C</b> — wide oval fob with a large screen area.</li>
-      <li><b>${pt('shape')} D</b> — key card / slim card-style key.</li></ul>
+      <ul>${guideShapes.map(sh => {
+        const def = shapeDef(sh);
+        const own = def && String((L() === 'ar' ? def.description_ar : def.description_en) || '').trim();
+        const desc = own || KEY_GUIDE_FALLBACK[sh] || '';
+        return desc ? `<li><b>${VEL.esc(shapeLabel(sh))}</b> — ${VEL.esc(desc)}</li>` : `<li><b>${VEL.esc(shapeLabel(sh))}</b></li>`;
+      }).join('')}</ul>
       <p>Still unsure? Use the <a href="#/fitment" style="color:var(--gold-deep);font-weight:700">Fitment Finder</a> to match your exact model.</p>`;
   }
 
@@ -1967,7 +2044,7 @@
     const itemsHTML = o.items.map(it => {
       const v = vehicleLabel(it.fitment);
       const nm = L() === 'ar' ? (it.name_ar || it.name_en) : (it.name_en || it.name_ar);
-      const shape = it.keyShape ? VESt(pt('shape') + ' ' + it.keyShape) : '';
+      const shape = it.keyShape ? VESt(shapeLabel(it.keyShape)) : '';
       const colorPart = it.color && it.color.hex ? `${colorDot(it.color, 10)} ${VESt(colorLabel(it.color))}` : '';
       const meta = [shape, colorPart].filter(Boolean).join(' · ');
       return `<div class="s-item"><img src="${it.image}" alt=""><div class="s-info"><div class="s-name">${VESt(nm)}</div>${v ? `<div class="s-vehicle">${VESt(v)}${meta ? ' · ' + meta : ''}</div>` : (meta ? `<div class="s-vehicle">${meta}</div>` : '')}${it.coating ? `<div class="di-coat">${coatingChipHTML()}</div>` : ''}<div class="s-qty">${pt('quantity')}: ${it.qty}</div></div><div class="s-price">${VEL.money(it.lineTotal)}</div></div>`;
@@ -2930,7 +3007,9 @@
   // existing localized validation message (pt('select_key_shape') /
   // pt('color_required')), which is the same behaviour the product page uses.
   function openProductQuickAdd(p) {
-    const avail = (p.keyShapes || []).filter(s => s.available);
+    // Catalogue-aware: hidden shapes never reach Quick Add (same rule as the
+    // product page and the server-side order check).
+    const avail = productShapes(p).filter(s => s.available);
     if (!avail.length) { notify(pt('out_of_stock')); return; }
     // only one quick-add modal may exist at a time (duplicate element ids would
     // otherwise break lookups if a customer re-opens it quickly)
@@ -2946,7 +3025,7 @@
 
     const shapeBlock = `<section class="qa-block" data-qablock="shape">
       <div class="label qa-label">${pt('select_key_shape')} <span class="sel qa-shape-sel" id="qa-shape-sel"></span></div>
-      <div class="shape-options qa-shapes">${avail.map(sh => `<button type="button" class="shape-opt selectable" data-qa="${sh.shape}">${VEL.keyShapeSVG(sh.shape, { color: '#2b2b2b', w: 52, h: 80 })}<div class="lbl">${pt('shape')} ${sh.shape}</div></button>`).join('')}</div>
+      <div class="shape-options qa-shapes">${avail.map(sh => `<button type="button" class="shape-opt selectable" data-qa="${sh.shape}">${VEL.keyShapeSVG(sh.shape, { color: '#2b2b2b', w: 52, h: 80 })}<div class="lbl">${VEL.esc(shapeLabel(sh.shape))}</div></button>`).join('')}</div>
     </section>`;
 
     // The color step is revealed only after a shape has been chosen — the
@@ -3018,7 +3097,7 @@
       modal.querySelectorAll('[data-qa]').forEach(x => x.classList.remove('selected'));
       b.classList.add('selected');
       chosen = b.getAttribute('data-qa');
-      $m('.qa-shape-sel').textContent = '— ' + pt('shape') + ' ' + chosen;
+      $m('.qa-shape-sel').textContent = '— ' + shapeLabel(chosen);
       $m('[data-qastep="1"]').classList.add('is-done');
       // reveal step 2 (colors of THIS product) now that a shape is chosen
       if (colorStep) {

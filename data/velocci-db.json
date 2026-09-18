@@ -2748,6 +2748,48 @@
       "discount": 312
     }
   ],
+  "shapes": [
+    {
+      "id": "shape_a",
+      "code": "A",
+      "name_en": "Shape A",
+      "name_ar": "الشكل A",
+      "description_en": "Standard folded key blade profile.",
+      "description_ar": "شكل المفتاح القياسي المطوي.",
+      "active": true,
+      "order": 1
+    },
+    {
+      "id": "shape_b",
+      "code": "B",
+      "name_en": "Shape B",
+      "name_ar": "الشكل B",
+      "description_en": "Slim smart-key profile.",
+      "description_ar": "شكل المفتاح الذكي النحيف.",
+      "active": true,
+      "order": 2
+    },
+    {
+      "id": "shape_c",
+      "code": "C",
+      "name_en": "Shape C",
+      "name_ar": "الشكل C",
+      "description_en": "Wide smart-key profile.",
+      "description_ar": "شكل المفتاح الذكي العريض.",
+      "active": true,
+      "order": 3
+    },
+    {
+      "id": "shape_d",
+      "code": "D",
+      "name_en": "Shape D",
+      "name_ar": "الشكل D",
+      "description_en": "Extended smart-key profile.",
+      "description_ar": "شكل المفتاح الذكي الممتد.",
+      "active": true,
+      "order": 4
+    }
+  ],
   "products": [
     {
       "id": "p_mercedes-benz_case_carbon",

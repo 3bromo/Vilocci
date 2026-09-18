@@ -361,6 +361,12 @@ function buildOrderItems(catalog, cart) {
   let subtotal = 0;
   let coatingFee = 0;
   let colorError = null;
+  // Shape management: the key-shape catalogue (Admin → Shapes) gates codes
+  // it manages — a catalogue shape hidden or deleted there can never be
+  // ordered, exactly like the storefront selectors that read the same list.
+  // Codes NOT in the catalogue are product-local custom shapes (added in the
+  // Products editor) and pass through; an empty/missing catalogue (legacy
+  // datasets, migration 007 pending) means "no restriction".
 
   for (const item of cart) {
     const p = catalog.products.find(x => x.id === item.productId);
@@ -369,6 +375,7 @@ function buildOrderItems(catalog, cart) {
     let shape = item.keyShape || '';
     const shapeAvailable = (p.keyShapes || []).find(sh => sh.shape === shape && sh.available);
     if (!shapeAvailable) shape = '';
+    else if (!mapping.shapeAllowed(catalog.shapes, shape)) shape = '';
 
     // Color variant — resolved against the product's OWN admin-managed color
     // list (never trusted from the client). Products that have enabled
@@ -714,11 +721,17 @@ app.post('/api/preorders', async (req, res) => {
     }
     const p = catalog.products.find(x => x.id === productId);
     if (!p) return res.status(404).json({ error: 'Product not found.' });
+    // Same shape rule checkout applies: a catalogue shape hidden in
+    // Admin → Shapes is stored as "none"; product-local custom shapes
+    // (not in the catalogue) pass through.
+    let resolvedShape = keyShape || '';
+    if (!(p.keyShapes || []).find(sh => sh.shape === resolvedShape && sh.available)) resolvedShape = '';
+    else if (!mapping.shapeAllowed(catalog.shapes, resolvedShape)) resolvedShape = '';
     const rec = {
       id: 'PRE-' + Date.now().toString().slice(-8),
       createdAt: new Date().toISOString(),
       productId, name_en: p.name_en, name_ar: p.name_ar, brandSlug: p.brandSlug,
-      keyShape: keyShape || '',
+      keyShape: resolvedShape,
       customer: { fullName: customer.fullName, phone: customer.phone, city: customer.city || '', address: customer.address || '' },
       status: 'Pending',
     };

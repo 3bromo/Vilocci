@@ -41,6 +41,7 @@ const MIGRATIONS = [
   { version: '004', title: 'Product colors (products.colors variants, order_items.color snapshot)', file: 'supabase/migrations/004_product_colors.sql' },
   { version: '005', title: 'Required InstaPay payment proof (private order screenshot reference)', file: 'supabase/migrations/005_instapay_payment_proof.sql' },
   { version: '006', title: 'Nano Ceramic Coating extra (orders.coating_fee, order_items.coating)', file: 'supabase/migrations/006_nano_ceramic_coating.sql' },
+  { version: '007', title: 'Shape management (key_shapes master catalogue: names, order, active)', file: 'supabase/migrations/007_key_shapes.sql' },
 ];
 
 const argv = process.argv.slice(2);
@@ -89,6 +90,22 @@ function buildContentPlan(db) {
   });
   plan.push({ label: 'product_images', table: 'product_images', conflict: 'product_id,url', rows: imageRows });
   plan.push({ label: 'product_prices', table: 'product_prices', conflict: 'product_id,label', rows: priceRows });
+
+  // Key shapes — the master catalogue behind Admin → Shapes. The JSON store
+  // gained the collection with Shape management; older datasets without it are
+  // DERIVED from the products' own key-shape flags (same ids A–D and default
+  // names the storefront has always shown), so re-running never invents new
+  // shapes the store never had.
+  const shapeRows = (Array.isArray(db.shapes) && db.shapes.length)
+    ? db.shapes.map(mapping.shapeToRow)
+    : mapping.deriveShapes(db);
+  plan.push({
+    label: 'key_shapes',
+    table: 'key_shapes',
+    conflict: 'id',
+    rows: shapeRows,
+    note: 'the key-shape master catalogue (derived from the live products when the dataset has none)',
+  });
 
   plan.push({ label: 'brands', table: 'brands', conflict: 'id', rows: (db.brands || []).map(mapping.brandToRow) });
   plan.push({ label: 'bundles', table: 'bundles', conflict: 'id', rows: (db.bundles || []).map(mapping.bundleToRow) });
@@ -279,10 +296,11 @@ async function dryRun() {
     if (t.note) line(C.dim(`        note: ${t.note}`));
     const fields = t.table === 'products' ? ['id', 'name_en', 'price']
       : t.table === 'categories' ? ['id', 'name_en', 'product_count', 'image']
-        : t.table === 'orders' ? ['id', 'customer_name', 'customer_phone', 'total']
-          : t.table === 'order_items' ? ['id', 'order_id', 'product_id', 'qty', 'line_total']
-            : t.table === 'product_images' ? ['id', 'product_id', 'url']
-              : t.table === 'settings' ? ['key'] : ['id'];
+        : t.table === 'key_shapes' ? ['id', 'code', 'name_en', 'active', 'order']
+          : t.table === 'orders' ? ['id', 'customer_name', 'customer_phone', 'total']
+            : t.table === 'order_items' ? ['id', 'order_id', 'product_id', 'qty', 'line_total']
+              : t.table === 'product_images' ? ['id', 'product_id', 'url']
+                : t.table === 'settings' ? ['key'] : ['id'];
     sampleOf(t.rows, fields).forEach((s) => line(C.dim(`        · ${s.slice(0, 150)}`)));
     report.tables.push({ table: t.table, rows: t.rows.length, existingRows: ex === undefined ? null : ex, conflict: t.conflict });
   });
