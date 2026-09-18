@@ -2,14 +2,11 @@
    VELOCCI — Storefront application (single-file client SPA)
    Loads the shared store once, renders the whole site, and keeps the cart in
    localStorage. Reads live data from /api/data so admin changes reflect.
-   Build 20260918b — Nano Ceramic Coating optional extra (Key Holder / Key
-   Case only, flat +EGP 100 per coated cart line) on the product page and in
-   Quick Add, replacing the old Premium Gift Packaging option; server-repriced
-   at checkout, stored with the order and shown in Admin → Orders. Keeps the
-   20260918a base: mobile UX pass (search sheet, promo bar, homepage hero
-   spacing, product-page containment), the two-step Quick Add flow (key shape,
-   then the product's own admin-managed colors, then add to cart), and brand
-   logos/names that come from the editable brand records (Admin → Brands).
+   Build 20260918c — Shape management in Products editor (per-shape stock
+   toggle, add/remove, reorder) + Key shapes column in Products table. Keeps
+   the Nano Ceramic Coating optional extra (Key Holder / Key Case only, flat
+   +EGP 100 per coated cart line), mobile UX pass, the two-step Quick Add
+   flow, and editable brand logos/names.
    No public admin entry anywhere in the customer-facing nav.
    ========================================================================== */
 (function () {

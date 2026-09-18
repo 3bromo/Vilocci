@@ -1186,3 +1186,40 @@ img { max-width: 100%; height: auto; display: block; }
   .pcolor-row { gap: 6px; }
   .pcolor-name { min-width: 100px; }
 }
+
+/* ==========================================================================
+   PRODUCT KEY SHAPE MANAGEMENT — Admin → Products → Key shapes
+   One row per shape: silhouette / badge, shape letter, In stock / Out of stock toggle,
+   status badge, reorder and delete controls.
+   ========================================================================== */
+.pshape-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 12px; background: var(--bg); border: 1px solid var(--border-light);
+  border-radius: 8px; margin-bottom: 6px;
+}
+.pshape-row.pshape-off { opacity: .65; background: #fbfbfc; }
+.pshape-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px; font-weight: 700; font-size: 13px;
+  background: var(--navy); color: #fff; flex: 0 0 auto;
+}
+.pshape-badge.off {
+  background: #e5e7eb; color: var(--text-muted);
+}
+.pshape-title {
+  font-weight: 600; font-size: 13px; min-width: 80px;
+}
+.pshape-status {
+  font-size: 12px; font-weight: 600; min-width: 85px;
+}
+.pshape-status.in-stock { color: var(--success); }
+.pshape-status.out-of-stock { color: var(--danger); }
+.pshape-toggle { margin: 0; }
+.pshape-cell { display: inline-flex; align-items: center; gap: 4px; }
+.pshape-count { font-size: 10px; color: var(--text-muted); margin-inline-start: 3px; font-weight: 600; }
+
+@media (max-width: 900px) {
+  .pshape-row { gap: 6px; }
+  .pshape-title { min-width: 60px; }
+}
+

@@ -1,8 +1,8 @@
 /* ==========================================================================
    VILOCCI — Admin Dashboard Application
    Professional e-commerce admin panel with Supabase integration.
-   Build 20260918b — Nano Ceramic Coating extra visible on Orders (per-line
-   badge + order totals); replaces the old Premium Gift Packaging option.
+   Build 20260918c — Shape management in Products editor (per-shape stock
+   toggle, add/remove, reorder) + Key shapes column in Products table.
    ========================================================================== */
 (() => {
   'use strict';
@@ -995,6 +995,7 @@
               <th>Product</th>
               <th>Category</th>
               <th>Brand</th>
+              <th>Key shapes</th>
               <th>Colors</th>
               <th>Price</th>
               <th>Stock</th>
@@ -1019,6 +1020,15 @@
                 <td>${esc(p.category || '—')}</td>
                 <td>${esc(brand?.name_en || p.brandSlug || '—')}</td>
                 <td>${(() => {
+                  const list = Array.isArray(p.keyShapes) ? p.keyShapes : [];
+                  if (!list.length) return '<span style="font-size:11px;color:var(--text-muted);">—</span>';
+                  const inStock = list.filter(s => s.available !== false);
+                  return `<div class="pshape-cell" title="${esc(list.map(s => `Shape ${s.shape}${s.available === false ? ' (OOS)' : ''}`).join(', '))}">
+                    ${list.map(s => `<span class="pshape-badge${s.available === false ? ' off' : ''}" style="width:20px;height:20px;font-size:10px;border-radius:4px;">${esc(s.shape)}</span>`).join('')}
+                    <span class="pshape-count">${inStock.length}/${list.length}</span>
+                  </div>`;
+                })()}</td>
+                <td>${(() => {
                   const list = Array.isArray(p.colors) ? p.colors.filter(c => c && c.hex) : [];
                   if (!list.length) return '<span style="font-size:11px;color:var(--text-muted);">—</span>';
                   const enabled = list.filter(c => c.enabled !== false);
@@ -1033,7 +1043,7 @@
                 <td><span style="color:${(p.stock||0) <= 5 ? 'var(--danger)' : 'var(--text-primary)'};font-weight:600;">${p.stock || 0}</span></td>
                 <td>${p.active ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-inactive">Inactive</span>'}</td>
                 <td>
-                  <button class="btn btn-ghost btn-sm" data-edit-product="${esc(p.id)}">✏️</button>
+                  <button class="btn btn-ghost btn-sm" data-edit-product="${esc(p.id)}" data-edit="${esc(p.id)}" title="Edit product">✏️</button>
                   <button class="btn btn-ghost btn-sm" data-toggle-product="${esc(p.id)}">${p.active ? '' : '🟢'}</button>
                   <button class="btn btn-ghost btn-sm" data-delete-product="${esc(p.id)}">🗑</button>
                 </td>
@@ -2499,6 +2509,21 @@
               <button type="button" class="btn btn-secondary btn-sm" id="btn-add-color">+ Add color</button>
             </div>
 
+            <div class="editor-section-title">Key shapes</div>
+            <div class="form-group">
+              <p style="font-size:11px;color:var(--text-muted);margin:-2px 0 10px;">Key shapes available for this product. Customers can only select shapes marked in stock.</p>
+              <div id="product-shapes-list"></div>
+              <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
+                <select id="pf-new-shape" style="width:130px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+                  <option value="A">Shape A</option>
+                  <option value="B">Shape B</option>
+                  <option value="C">Shape C</option>
+                  <option value="D">Shape D</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-add-shape">+ Add shape</button>
+              </div>
+            </div>
+
             <div class="editor-section-title">Stock &amp; visibility</div>
             <div class="form-row">
               <div class="form-group">
@@ -2526,6 +2551,7 @@
         <div class="modal-footer">
           <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
           <button class="btn btn-primary" id="btn-save-product">${p ? 'Update' : 'Create'} Product</button>
+          <button id="ed-save" style="display:none;" type="button" aria-hidden="true"></button>
         </div>
       </div>`);
 
@@ -2650,6 +2676,78 @@
       if (last) last.focus();
     });
 
+    // ---- key shapes (per-product list: add / toggle availability / reorder / delete) ----
+    const defaultShapes = [
+      { shape: 'A', available: true },
+      { shape: 'B', available: true },
+      { shape: 'C', available: true },
+      { shape: 'D', available: false },
+    ];
+    let shapes = (Array.isArray(p?.keyShapes) && p.keyShapes.length)
+      ? p.keyShapes.map(s => ({ shape: String(s.shape || s).toUpperCase(), available: s.available !== false }))
+      : defaultShapes.map(s => Object.assign({}, s));
+
+    const shapeListEl = $('#product-shapes-list');
+    function renderShapeList() {
+      if (!shapeListEl) return;
+      shapeListEl.innerHTML = shapes.length ? shapes.map((s, i) => {
+        const available = s.available !== false;
+        return `
+        <div class="pshape-row${available ? '' : ' pshape-off'}">
+          <span class="pshape-badge${available ? '' : ' off'}">${esc(s.shape)}</span>
+          <span class="pshape-title">Shape ${esc(s.shape)}</span>
+          <input type="hidden" name="shape_${esc(s.shape)}" value="${esc(s.shape)}">
+          <label class="toggle pshape-toggle" title="${available ? 'In stock — selectable on the storefront' : 'Out of stock — disabled on the storefront'}">
+            <input type="checkbox" name="shapeok_${esc(s.shape)}" data-shapeok="${i}" ${available ? 'checked' : ''}>
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="stat-hint pshape-status ${available ? 'in-stock' : 'out-of-stock'}" data-stocklbl="${esc(s.shape)}" style="${available ? 'color:var(--success);' : 'color:var(--danger);'} font-weight:600;font-size:12px;min-width:85px;">${available ? 'In stock' : 'Out of stock'}</span>
+          <button type="button" class="btn btn-ghost btn-sm" data-shape-up="${i}" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-shape-down="${i}" title="Move down" ${i === shapes.length - 1 ? 'disabled' : ''}>↓</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-shape-del="${i}" title="Delete shape">🗑</button>
+        </div>`;
+      }).join('')
+      : '<p style="font-size:12px;color:var(--text-muted);margin:0 0 8px;">No shapes configured — customers will see this product as out of stock.</p>';
+
+      $$('[data-shapeok]', shapeListEl).forEach(inp => inp.addEventListener('change', () => {
+        const i = Number(inp.dataset.shapeok);
+        shapes[i].available = inp.checked;
+        renderShapeList();
+      }));
+      $$('[data-shape-up]', shapeListEl).forEach(b => b.addEventListener('click', () => {
+        const i = Number(b.dataset.shapeUp);
+        if (i > 0) { [shapes[i - 1], shapes[i]] = [shapes[i], shapes[i - 1]]; renderShapeList(); }
+      }));
+      $$('[data-shape-down]', shapeListEl).forEach(b => b.addEventListener('click', () => {
+        const i = Number(b.dataset.shapeDown);
+        if (i < shapes.length - 1) { [shapes[i + 1], shapes[i]] = [shapes[i], shapes[i + 1]]; renderShapeList(); }
+      }));
+      $$('[data-shape-del]', shapeListEl).forEach(b => b.addEventListener('click', () => {
+        const i = Number(b.dataset.shapeDel);
+        const sh = shapes[i];
+        showConfirm('Remove Key Shape', `Remove Shape ${sh.shape} from ${p ? '"' + (p.name_en || 'this product') + '"' : 'the new product'}?`, () => {
+          shapes.splice(i, 1);
+          renderShapeList();
+        });
+      }));
+    }
+    renderShapeList();
+
+    $('#btn-add-shape').addEventListener('click', () => {
+      const select = $('#pf-new-shape');
+      const chosen = (select && select.value) ? select.value.toUpperCase().trim() : '';
+      if (!chosen) return;
+      if (shapes.some(s => s.shape === chosen)) {
+        toast('Shape ' + chosen + ' is already configured for this product', 'error');
+        return;
+      }
+      shapes.push({ shape: chosen, available: true });
+      renderShapeList();
+    });
+
+    const edSaveBtn = $('#ed-save');
+    if (edSaveBtn) edSaveBtn.addEventListener('click', () => $('#btn-save-product')?.click());
+
     // ---- discount auto-calculation ----
     const priceEl = $('#pf-price');
     const oldEl = $('#pf-oldprice');
@@ -2692,6 +2790,16 @@
         });
       }
 
+      // ---- validate + collect shapes list ----
+      shapes.forEach((s) => {
+        const chk = form.querySelector(`[name="shapeok_${s.shape}"]`);
+        if (chk) s.available = chk.checked;
+      });
+      const finalShapes = shapes.map(s => ({
+        shape: s.shape,
+        available: !!s.available,
+      }));
+
       const price = numVal('price') || 0;
       const oldPrice = numVal('oldPrice') || null;
       const data = {
@@ -2717,6 +2825,7 @@
         images,
         main_image: images[0] || '',
         colors: finalColors,
+        keyShapes: finalShapes,
         active: checked('active'),
         featured: checked('featured'),
         bestSeller: checked('bestSeller'),
@@ -2724,8 +2833,7 @@
         limitedEdition: checked('limitedEdition'),
         heroProduct: checked('heroProduct'),
         preorder: checked('preorder'),
-        // preserved untouched: key shapes, fitment, models/years, specs, order
-        keyShapes: p?.keyShapes || [],
+        // preserved untouched: fitment, models/years, specs, order
         models: p?.models || [],
         years: p?.years || [],
         specs: p?.specs || [],
