@@ -562,6 +562,22 @@ function buildSettings() {
 }
 
 // ---------------------------------------------------------------------------
+// KEY SHAPES — Shape management: the master catalogue behind Admin → Shapes.
+// The same four letters (A–D) every product's keyShapes flag and the Fitment
+// Finder have always used, with the exact display names the storefront has
+// always shown ('Shape A' / 'الشكل A'), so seeding changes nothing customers
+// see until an admin edits the catalogue.
+// ---------------------------------------------------------------------------
+function buildShapes() {
+  return [
+    { id: 'shape_a', code: 'A', name_en: 'Shape A', name_ar: 'الشكل A', description_en: 'Standard folded key blade profile.', description_ar: 'شكل المفتاح القياسي المطوي.', active: true, order: 1 },
+    { id: 'shape_b', code: 'B', name_en: 'Shape B', name_ar: 'الشكل B', description_en: 'Slim smart-key profile.', description_ar: 'شكل المفتاح الذكي النحيف.', active: true, order: 2 },
+    { id: 'shape_c', code: 'C', name_en: 'Shape C', name_ar: 'الشكل C', description_en: 'Wide smart-key profile.', description_ar: 'شكل المفتاح الذكي العريض.', active: true, order: 3 },
+    { id: 'shape_d', code: 'D', name_en: 'Shape D', name_ar: 'الشكل D', description_en: 'Extended smart-key profile.', description_ar: 'شكل المفتاح الذكي الممتد.', active: true, order: 4 },
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // PROMO BAR
 // ---------------------------------------------------------------------------
 function buildPromoBar() {
@@ -586,6 +602,15 @@ function seed(force) {
   if (addedColors || addedDict) {
     store.save();
     console.log(`[seed] color system backfill: ${addedColors} products, ${addedDict} dictionary keys.`);
+  }
+
+  // Idempotent upgrade for stores that predate Shape management: give every
+  // store its key-shape catalogue (A–D) exactly once. A catalogue the admin
+  // has since edited is never touched.
+  if (!Array.isArray(existing.shapes) || !existing.shapes.length) {
+    existing.shapes = buildShapes();
+    store.save();
+    console.log(`[seed] shape management backfill: ${existing.shapes.length} key shapes (A–D).`);
   }
 
   if (existing.products.length && existing.settings.shopName && !force) {
@@ -619,6 +644,7 @@ function seed(force) {
     brands: brandDefs.map((b,i)=>({ id:'b_'+b.slug, slug:b.slug, name_en:b.en, name_ar:b.ar, mark:b.mark,
       emblem:b.em, tier:b.tier, models:b.models, order:i, active:true })),
     bundles: buildBundles(),
+    shapes: buildShapes(),
     products,
     orders:[], preorders:[], messages:[],
     promoBar: buildPromoBar(),

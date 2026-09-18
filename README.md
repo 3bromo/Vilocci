@@ -71,6 +71,13 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
   shipped `/img/logos/<slug>` file. On read-only hosts (Vercel) an upload that cannot be written to disk is kept with the brand record
   as a small data URL instead of failing. Editing PATCHes through `/api/admin/update`, so models/years/fitment, tier, order and the
   accent colour are never overwritten.
+- **Shapes** — Shape management: the global **key-shape catalogue** (A–D by default). Add / rename (EN + AR) /
+  describe / reorder / hide / delete shapes. The catalogue is the master list behind **every** shape selector on the
+  storefront — the product-page picker, Quick Add, the Fitment Finder and the Key Guide — and a hidden shape
+  disappears from all of them **and** can no longer be ordered (the server falls back to no shape). Products keep
+  their own per-shape availability flags (the product editor exposes the catalogue as checkboxes), so a shape must be
+  catalogue-active *and* product-available before a customer can pick it. Until migration `007` is applied the
+  catalogue is derived from the products' own flags, so nothing breaks mid-deploy.
 - **Bundles** — pick the brand's set, set bundle price; discount & % auto-computed; active/inactive.
 - **Discounts** — create promo codes: code, **percentage or fixed amount**, minimum order, maximum uses (or unlimited),
   expiration date, active/inactive, and a live `uses / max` counter. Codes are the ones the checkout accepts.
@@ -165,6 +172,7 @@ eligibility, cart drawer, checkout, success page, Arabic RTL, stored order).
 | Hero management | Admin → Homepage → Hero slides |
 | Fitment Finder | storefront `#/fitment` + admin Fitment |
 | Key Shape selector (A/B/C/D, OOS) | product page, `app.js` → `pdpHTML()` |
+| Shape management (key-shape catalogue) | Admin → Shapes · `lib/mapping.js` + migration `007` · `app.js` (every selector) · `server.js` (order rule) |
 | Complete Your Set | product bundle widget + cart upsell |
 | Cart drawer + real-time calc | `app.js` → `renderCartDrawer()` |
 | Nano Ceramic Coating (+EGP 100, Key Holder/Case only) | `app.js` (PDP + Quick Add + totals) · `server.js` (eligibility + re-pricing) · `lib/mapping.js` + migration `006` |

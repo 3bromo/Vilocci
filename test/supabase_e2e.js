@@ -76,8 +76,8 @@ async function main() {
     check('migration CLI exited 0', () => assert.strictEqual(apply.status, 0, `exit ${apply.status}`));
 
     const applied = await q('select version from supabase_migrations.schema_migrations order by version');
-    check('all migrations recorded (001 … 006)', () =>
-      assert.deepStrictEqual(applied.map((r) => r.version), ['001', '002', '003', '004', '005', '006']));
+    check('all migrations recorded (001 … 007)', () =>
+      assert.deepStrictEqual(applied.map((r) => r.version), ['001', '002', '003', '004', '005', '006', '007']));
 
     const colorCols = await q(`select table_name, column_name from information_schema.columns
       where table_schema = 'public' and column_name in ('colors','color')
@@ -95,6 +95,18 @@ async function main() {
         and ((table_name = 'orders' and column_name = 'coating_fee') or (table_name = 'order_items' and column_name = 'coating'))`);
     check('006 added orders.coating_fee + order_items.coating', () =>
       assert.strictEqual(coatingCols.length, 2, JSON.stringify(coatingCols)));
+
+    const shapeCols = await q(`select column_name from information_schema.columns
+      where table_schema = 'public' and table_name = 'key_shapes'
+        and column_name in ('id','code','name_en','name_ar','active','order')`);
+    check('007 created the key_shapes catalogue table (id, code, names, active, order)', () =>
+      assert.strictEqual(shapeCols.length, 6, JSON.stringify(shapeCols)));
+    const shapeIdx = await one(`select count(*)::int n from pg_indexes where schemaname='public' and tablename='key_shapes' and indexname='key_shapes_code_uq'`);
+    check('007 added the unique code index', () => assert.strictEqual(shapeIdx.n, 1));
+    const seededShapes = await q(`select code from public.key_shapes order by "order"`);
+    check('007 seeded the four default shapes A–D', () =>
+      assert.deepStrictEqual(seededShapes.map((r) => r.code), ['A', 'B', 'C', 'D']));
+
     const seededColors = await one(`select count(*)::int n from public.products where jsonb_array_length(coalesce(colors,'[]'::jsonb)) > 0`);
     check('mapped products carry their seeded color variants', () =>
       assert.strictEqual(seededColors.n, 117, `got ${seededColors.n}`));
@@ -102,14 +114,14 @@ async function main() {
     // ------------------------------------------------------------------ 2
     section('2. Existing storefront content is in the database (mapped, not sample data)');
     const counts = {};
-    for (const t of ['products', 'categories', 'brands', 'bundles', 'hero_slides', 'home_sections',
+    for (const t of ['products', 'categories', 'key_shapes', 'brands', 'bundles', 'hero_slides', 'home_sections',
       'settings', 'promo_bar', 'website_content', 'orders', 'order_items', 'product_images', 'product_prices',
       'customize_requests']) {
       counts[t] = (await one(`select count(*)::int n from public.${t}`)).n;
     }
     console.log('  ' + JSON.stringify(counts));
     const expected = {
-      products: 117, categories: 3, brands: 29, bundles: 29, hero_slides: 3,
+      products: 117, categories: 3, key_shapes: 4, brands: 29, bundles: 29, hero_slides: 3,
       home_sections: 14,
       // 25 storefront settings + the language dictionary + the seeded
       // Customize category setting (003 / post-import default)
@@ -349,6 +361,80 @@ async function main() {
     const plainItem = await one('select coating from public.order_items where order_id = $1 limit 1', [newOrderId]);
     check('un-coated lines keep the column default (false)', () =>
       assert.ok(plainItem.coating === false || plainItem.coating === null, String(plainItem.coating)));
+
+    // ------------------------------------------------------------------ 5c
+    section('5c. Shape management through the SQL driver (migration 007)');
+    const shapeData = await (await fetch(`${base}/api/data`)).json();
+    check('the public payload serves the key-shape catalogue (A–D, in order)', () =>
+      assert.deepStrictEqual(shapeData.shapes.map((s) => s.code), ['A', 'B', 'C', 'D']));
+    const shapeBProduct = shapeData.products.find((x) => (x.keyShapes || []).some((s) => s.shape === 'B' && s.available));
+    const shapeCustomer = { fullName: 'Shapes E2E', phone: '+201099997777', city: 'Cairo', address: '3 Test Street' };
+
+    const hideB = await (await fetch(`${base}/api/admin/update`, {
+      method: 'POST', headers: adminHeaders,
+      body: JSON.stringify({ collection: 'shapes', id: 'shape_b', updates: { active: false } }),
+    })).json();
+    check('admin can hide a shape', () => assert.ok(hideB.ok, JSON.stringify(hideB)));
+    const bRow = await one(`select active from public.key_shapes where id = 'shape_b'`);
+    check('the hide persisted to key_shapes.active in SQL', () => assert.strictEqual(bRow.active, false));
+    const dataHidden = await (await fetch(`${base}/api/data`)).json();
+    // Hidden shapes stay in the payload FLAGGED (active:false) — that is how
+    // the storefront blocks them while still allowing product-local custom
+    // codes the catalogue doesn't manage.
+    check('the storefront payload flags the hidden shape inactive', () => {
+      assert.deepStrictEqual(dataHidden.shapes.map((s) => s.code), ['A', 'B', 'C', 'D']);
+      assert.strictEqual(dataHidden.shapes.find((s) => s.code === 'B').active, false);
+    });
+
+    const hiddenRes = await fetch(`${base}/api/orders`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer: shapeCustomer, cart: [{ productId: shapeBProduct.id, qty: 1, keyShape: 'B', colorId: pickColor(shapeBProduct.id) }] }),
+    });
+    const hiddenJson = await hiddenRes.json();
+    const hiddenItem = await one(`select key_shape from public.order_items where order_id = $1`, [hiddenJson.orderId]);
+    check('an order for the hidden shape falls back to no shape (server rule)', () => {
+      assert.strictEqual(hiddenRes.status, 200, JSON.stringify(hiddenJson));
+      assert.strictEqual(hiddenItem.key_shape, '', JSON.stringify(hiddenItem));
+    });
+
+    await (await fetch(`${base}/api/admin/update`, {
+      method: 'POST', headers: adminHeaders,
+      body: JSON.stringify({ collection: 'shapes', id: 'shape_b', updates: { active: true } }),
+    })).json();
+    const restoredRes = await fetch(`${base}/api/orders`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer: shapeCustomer, cart: [{ productId: shapeBProduct.id, qty: 1, keyShape: 'B', colorId: pickColor(shapeBProduct.id) }] }),
+    });
+    const restoredJson = await restoredRes.json();
+    const restoredItem = await one(`select key_shape from public.order_items where order_id = $1`, [restoredJson.orderId]);
+    check('once visible again, the shape travels into the order', () =>
+      assert.strictEqual(restoredItem.key_shape, 'B', JSON.stringify(restoredItem)));
+
+    const createE = await (await fetch(`${base}/api/admin/save`, {
+      method: 'POST', headers: adminHeaders,
+      body: JSON.stringify({ collection: 'shapes', record: { id: 'shape_e', code: 'e', name_en: 'Shape E', name_ar: 'الشكل E', active: true, order: 5 } }),
+    })).json();
+    check('admin can add a shape and the code is normalized to upper case', () => {
+      assert.ok(createE.ok, JSON.stringify(createE));
+      assert.strictEqual(createE.record.code, 'E');
+    });
+    const eRow = await one(`select code, name_en, "order" from public.key_shapes where id = 'shape_e'`);
+    check('the new shape row landed in SQL', () => {
+      assert.strictEqual(eRow.code, 'E');
+      assert.strictEqual(eRow.name_en, 'Shape E');
+      assert.strictEqual(Number(eRow.order), 5);
+    });
+    const dataE = await (await fetch(`${base}/api/data`)).json();
+    check('the new shape is served to the storefront', () =>
+      assert.ok(dataE.shapes.some((s) => s.code === 'E'), JSON.stringify(dataE.shapes.map((s) => s.code))));
+
+    await (await fetch(`${base}/api/admin/delete`, {
+      method: 'POST', headers: adminHeaders,
+      body: JSON.stringify({ collection: 'shapes', id: 'shape_e' }),
+    })).json();
+    const eGone = await one(`select count(*)::int n from public.key_shapes where id = 'shape_e'`);
+    check('deleted shapes leave no row behind (catalogue back to A–D)', () =>
+      assert.strictEqual(eGone.n, 0, String(eGone.n)));
 
     // ------------------------------------------------------------------ 6
     section('6. Admin edit -> Supabase -> storefront');
@@ -615,7 +701,9 @@ async function main() {
       assert.strictEqual(dryJson.mode, 'dry-run');
       assert.strictEqual(dryJson.tables.find((t) => t.table === 'products').existingRows, 117);
       // 23 migrated + the e2e order + the Nano Ceramic Coating order (5b)
-      assert.strictEqual(dryJson.tables.find((t) => t.table === 'orders').existingRows, 25);
+      // + the two Shape management orders (5c: hidden-shape fallback + restored)
+      assert.strictEqual(dryJson.tables.find((t) => t.table === 'orders').existingRows, 27);
+      assert.strictEqual(dryJson.tables.find((t) => t.table === 'key_shapes').existingRows, 4);
       assert.strictEqual(dryJson.totals.deletes, 0);
     });
     check('dry run verifies 117/117 products against data/velocci-db.json', () => {

@@ -1,8 +1,12 @@
 /* ==========================================================================
    VILOCCI — Admin Dashboard Application
    Professional e-commerce admin panel with Supabase integration.
-   Build 20260918c — Shape management in Products editor (per-shape stock
-   toggle, add/remove, reorder) + Key shapes column in Products table.
+   Build 20260918d — Shape management: Admin → Shapes, the global key-shape
+   catalogue (add / rename EN+AR / describe / reorder / hide / delete). A
+   hidden shape disappears from the PDP selector, Quick Add, the Fitment
+   Finder and new orders. Builds on the 20260918c base (per-shape stock
+   toggle, add/remove, reorder in the Products editor + Key shapes column),
+   which stays fully intact.
    ========================================================================== */
 (() => {
   'use strict';
@@ -185,7 +189,7 @@
   // order_items). Writing straight to PostgREST from here would send camelCase
   // keys that do not match any column and would skip those children.
   const TABLE_TO_COLLECTION = {
-    products: 'products', categories: 'categories', brands: 'brands', bundles: 'bundles',
+    products: 'products', categories: 'categories', shapes: 'shapes', brands: 'brands', bundles: 'bundles',
     hero_slides: 'heroSlides', heroSlides: 'heroSlides',
     home_sections: 'homeSections', homeSections: 'homeSections',
     website_images: 'websiteImages', websiteImages: 'websiteImages',
@@ -640,6 +644,7 @@
       { id: 'products', icon: '📦', label: 'Products' },
       { id: 'categories', icon: '️', label: 'Categories' },
       { id: 'brands', icon: '🚗', label: 'Brands' },
+      { id: 'shapes', icon: '🗝️', label: 'Shapes' },
       { id: 'orders', icon: '', label: 'Orders', badge: getNewOrderCount() },
       { id: 'customers', icon: '👥', label: 'Customers' },
       { id: 'inventory', icon: '📊', label: 'Inventory' },
@@ -667,15 +672,15 @@
         <div class="nav-label">Main</div>
         ${items.slice(0, 1).map(i => sidebarLink(i, v)).join('')}
         <div class="nav-label">Catalog</div>
-        ${items.slice(1, 4).map(i => sidebarLink(i, v)).join('')}
+        ${items.slice(1, 5).map(i => sidebarLink(i, v)).join('')}
         <div class="nav-label">Sales</div>
-        ${items.slice(4, 8).map(i => sidebarLink(i, v)).join('')}
+        ${items.slice(5, 9).map(i => sidebarLink(i, v)).join('')}
         <div class="nav-label">Content</div>
-        ${items.slice(8, 12).map(i => sidebarLink(i, v)).join('')}
+        ${items.slice(9, 13).map(i => sidebarLink(i, v)).join('')}
         <div class="nav-label">Customize</div>
-        ${items.slice(12, 14).map(i => sidebarLink(i, v)).join('')}
+        ${items.slice(13, 15).map(i => sidebarLink(i, v)).join('')}
         <div class="nav-label">System</div>
-        ${items.slice(14).map(i => sidebarLink(i, v)).join('')}
+        ${items.slice(15).map(i => sidebarLink(i, v)).join('')}
       </nav>
       <div class="sidebar-footer">
         <a href="/" target="_blank">
@@ -776,6 +781,7 @@
       case 'products': return renderProducts();
       case 'categories': return renderCategories();
       case 'brands': return renderBrands();
+      case 'shapes': return renderShapes();
       case 'orders': return renderOrders();
       case 'customers': return renderCustomers();
       case 'inventory': return renderInventory();
@@ -1142,6 +1148,207 @@
         </table>` : '<div class="empty-state"><div class="empty-icon">🚗</div><h4>No brands</h4><p>Add your first brand.</p></div>'}
       </div>
     </div>`;
+  }
+
+  // ========================================================================
+  // SHAPES — Shape management: the global key-shape catalogue
+  // ========================================================================
+  // Every key in the store fits one of the physical key shapes listed here
+  // (A–D by default). This catalogue is the master list behind every shape
+  // selector on the storefront: the product-page shape picker, Quick Add and
+  // the Fitment Finder all read it, and the server refuses new orders for a
+  // shape that is hidden here. Products still carry their OWN per-shape
+  // availability (the Products editor), so a shape must be catalogue-active
+  // AND product-available before a customer can pick it.
+  const shapesList = () => ((state.data && state.data.shapes) || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+  const shapeProductCount = (code) => (state.data?.products || []).filter(p => (p.keyShapes || []).some(s => s.shape === code)).length;
+
+  function renderShapes() {
+    const shapes = shapesList();
+    const search = (state.shapeSearch || '').toLowerCase();
+    const filtered = search
+      ? shapes.filter(s => [s.code, s.name_en, s.name_ar].some(v => String(v || '').toLowerCase().includes(search)))
+      : shapes;
+
+    return `
+    <div class="toolbar">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="Search shapes..." value="${esc(state.shapeSearch || '')}" id="shape-search">
+      </div>
+      <button class="btn btn-primary" id="btn-add-shape-cat">+ Add Shape</button>
+    </div>
+    <div class="card">
+      <div class="card-body" style="padding:0;overflow-x:auto;">
+        ${filtered.length ? `
+        <table class="data-table">
+          <thead><tr><th style="width:70px;">Code</th><th>Name</th><th>Description</th><th>Products</th><th>Order</th><th>Status</th><th style="width:140px;">Actions</th></tr></thead>
+          <tbody>
+            ${filtered.map(s => `<tr>
+              <td><div style="font-weight:700;font-size:15px;">${esc(s.code)}</div></td>
+              <td>
+                <div style="font-weight:600;font-size:13px;">${esc(s.name_en || ('Shape ' + s.code))}</div>
+                ${s.name_ar ? `<div style="font-size:11px;color:var(--text-muted);" dir="rtl">${esc(s.name_ar)}</div>` : ''}
+              </td>
+              <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:12px;">${esc(s.description_en || '—')}</td>
+              <td>${shapeProductCount(s.code) || '—'}</td>
+              <td>
+                <input type="number" step="1" value="${s.order || 0}" data-shape-order="${esc(s.id)}" style="width:70px;" title="Lower numbers appear first">
+              </td>
+              <td>${s.active !== false ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-inactive">Hidden</span>'}</td>
+              <td>
+                <button class="btn btn-ghost btn-sm" data-edit-shape="${esc(s.id)}" title="Edit">✏️</button>
+                <button class="btn btn-ghost btn-sm" data-toggle-shape="${esc(s.id)}" title="${s.active !== false ? 'Hide from the storefront' : 'Show on the storefront'}">${s.active !== false ? '🙈' : '👁'}</button>
+                <button class="btn btn-ghost btn-sm" data-delete-shape="${esc(s.id)}" title="Delete">🗑</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div style="padding:12px 16px;font-size:12px;color:var(--text-muted);border-top:1px solid var(--border);">
+          Hiding a shape removes it from the product-page selector, Quick Add, the Fitment Finder and new orders — everywhere at once. Products keep their own availability flags for every shape.
+        </div>` : '<div class="empty-state"><div class="empty-icon">🗝️</div><h4>No key shapes</h4><p>Add the key shapes your accessories fit.</p></div>'}
+      </div>
+    </div>`;
+  }
+
+  function bindShapes() {
+    const search = $('#shape-search');
+    if (search) search.addEventListener('input', (e) => { state.shapeSearch = e.target.value; render(); });
+
+    const addBtn = $('#btn-add-shape-cat');
+    if (addBtn) addBtn.addEventListener('click', () => showShapeEditor(null));
+
+    $$('[data-edit-shape]').forEach(el => el.addEventListener('click', () => showShapeEditor(el.dataset.editShape)));
+
+    $$('[data-toggle-shape]').forEach(el => el.addEventListener('click', async () => {
+      const id = el.dataset.toggleShape;
+      const s = shapesList().find(x => x.id === id);
+      if (!s) return;
+      try {
+        await sbUpdate('shapes', id, { active: s.active === false });
+        s.active = s.active === false;
+        toast(s.active ? `Shape ${s.code} is visible again` : `Shape ${s.code} hidden from the storefront`, 'success');
+        render();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    }));
+
+    $$('[data-shape-order]').forEach(el => el.addEventListener('change', async () => {
+      const id = el.dataset.shapeOrder;
+      try {
+        await sbUpdate('shapes', id, { order: parseFloat(el.value) || 0 });
+        toast('Order saved', 'success');
+        await loadData();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    }));
+
+    $$('[data-delete-shape]').forEach(el => el.addEventListener('click', () => {
+      const id = el.dataset.deleteShape;
+      const s = shapesList().find(x => x.id === id);
+      const used = shapeProductCount(s?.code);
+      showConfirm(
+        'Delete Shape',
+        `Delete shape ${s?.code || id}? It disappears from every storefront selector and new orders. ${used ? `${used} product(s) still carry availability flags for it — those flags are kept but have no effect while the shape is gone.` : ''} This cannot be undone.`,
+        async () => {
+          try {
+            await sbDelete('shapes', id);
+            state.data.shapes = (state.data.shapes || []).filter(x => x.id !== id);
+            toast('Shape deleted', 'success');
+            render();
+          } catch (e) { toast('Failed: ' + e.message, 'error'); }
+        });
+    }));
+  }
+
+  // Shared Add/Edit shape dialog. The code is the business key products'
+  // keyShapes flags reference, so it is locked once created (same rule as a
+  // brand slug) — renaming it would orphan every product that carries it.
+  function showShapeEditor(id) {
+    const s = id ? shapesList().find(x => x.id === id) : null;
+    const isEdit = !!s;
+    showModal(`
+      <div class="modal" style="max-width:640px;">
+        <div class="modal-header"><h3>${isEdit ? 'Edit Shape' : 'Add Shape'}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div>
+        <div class="modal-body">
+          <form id="shape-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Code *</label>
+                <input name="code" value="${esc(s?.code || '')}" maxlength="8" style="text-transform:uppercase;" placeholder="A" ${isEdit ? 'readonly title="The code is what products reference — it cannot change after creation."' : ''} required>
+              </div>
+              <div class="form-group">
+                <label>Order</label>
+                <input name="order" type="number" step="1" value="${s?.order != null ? s.order : shapesList().length + 1}">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Name (EN) *</label>
+                <input name="name_en" value="${esc(s?.name_en || '')}" placeholder="Shape A" required>
+              </div>
+              <div class="form-group">
+                <label>Name (AR)</label>
+                <input name="name_ar" value="${esc(s?.name_ar || '')}" dir="rtl" placeholder="الشكل A">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Description (EN)</label>
+                <textarea name="description_en" rows="2">${esc(s?.description_en || '')}</textarea>
+              </div>
+              <div class="form-group">
+                <label>Description (AR)</label>
+                <textarea name="description_ar" rows="2" dir="rtl">${esc(s?.description_ar || '')}</textarea>
+              </div>
+            </div>
+            <div class="form-group">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="active" ${(!s || s.active !== false) ? 'checked' : ''}> Visible on the storefront (uncheck to hide from every selector and new orders)</label>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-shape">${isEdit ? 'Save Changes' : 'Create Shape'}</button>
+        </div>
+      </div>`);
+
+    $('#btn-save-shape').addEventListener('click', async () => {
+      const form = $('#shape-form');
+      const val = (name) => ((form.querySelector(`[name=${name}]`) || {}).value || '').trim();
+      const code = val('code').toUpperCase();
+      const nameEn = val('name_en');
+      if (!code) { toast('The shape needs a code', 'error'); return; }
+      if (!nameEn) { toast('Fill the English name', 'error'); return; }
+      const others = shapesList().filter(x => !isEdit || x.id !== s.id);
+      if (others.some(x => String(x.code).toUpperCase() === code)) {
+        toast(`A shape with code ${code} already exists`, 'error');
+        return;
+      }
+      const fields = {
+        code,
+        name_en: nameEn,
+        name_ar: val('name_ar'),
+        description_en: val('description_en'),
+        description_ar: val('description_ar'),
+        order: parseFloat(val('order')) || 0,
+        active: !!(form.querySelector('[name=active]') || {}).checked,
+      };
+      try {
+        if (isEdit) {
+          await sbUpdate('shapes', s.id, fields);
+          const row = (state.data.shapes || []).find(x => x.id === s.id);
+          if (row) Object.assign(row, fields);
+          toast(`Shape ${code} updated`, 'success');
+        } else {
+          const data = Object.assign({ id: 'shape_' + code.toLowerCase() }, fields);
+          await sbInsert('shapes', data);
+          if (!state.data.shapes) state.data.shapes = [];
+          state.data.shapes.push(Object.assign({}, data));
+          toast(`Shape ${code} created`, 'success');
+        }
+        closeAllModals();
+        render();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    });
   }
 
   // ========================================================================
@@ -2312,6 +2519,7 @@
       case 'products': bindProducts(); break;
       case 'categories': bindCategories(); break;
       case 'brands': bindBrands(); break;
+      case 'shapes': bindShapes(); break;
       case 'orders': bindOrders(); break;
       case 'customers': bindCustomers(); break;
       case 'inventory': bindInventory(); break;
@@ -2382,6 +2590,14 @@
     const fallbackCats = [...new Set((state.data.products || []).map(x => x.category).filter(Boolean))];
     const catList = categories.length ? categories : fallbackCats.map(id => ({ id, name_en: id }));
     const libraryImages = state.data.website_images || [];
+
+    // Options for the "+ Add shape" select. The MASTER list comes from the
+    // Shapes screen (Admin → Shapes); a legacy dataset without a catalogue
+    // falls back to the four standard codes so the editor keeps working.
+    const catalogShapes = ((state.data && state.data.shapes) || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+    const shapeAddOptions = catalogShapes.length
+      ? catalogShapes.map(sh => ({ code: sh.code, label: sh.name_en || ('Shape ' + sh.code) }))
+      : ['A', 'B', 'C', 'D'].map(code => ({ code, label: 'Shape ' + code }));
 
     // Working copy of the gallery so edits can be cancelled.
     let images = (p?.images && p.images.length ? p.images.slice() : (p?.main_image ? [p.main_image] : []));
@@ -2511,14 +2727,11 @@
 
             <div class="editor-section-title">Key shapes</div>
             <div class="form-group">
-              <p style="font-size:11px;color:var(--text-muted);margin:-2px 0 10px;">Key shapes available for this product. Customers can only select shapes marked in stock.</p>
+              <p style="font-size:11px;color:var(--text-muted);margin:-2px 0 10px;">Key shapes available for this product. Customers can only select shapes marked in stock; shapes hidden in Admin → Shapes are unavailable store-wide.</p>
               <div id="product-shapes-list"></div>
               <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
                 <select id="pf-new-shape" style="width:130px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
-                  <option value="A">Shape A</option>
-                  <option value="B">Shape B</option>
-                  <option value="C">Shape C</option>
-                  <option value="D">Shape D</option>
+                  ${shapeAddOptions.map(o => `<option value="${esc(o.code)}">${esc(o.label)}</option>`).join('')}
                 </select>
                 <button type="button" class="btn btn-secondary btn-sm" id="btn-add-shape">+ Add shape</button>
               </div>
