@@ -862,3 +862,47 @@ Observed live on `https://vilocciii3bro.vercel.app` (the Supabase-backed, custom
   - plus other sub-suites.
 - `npm run test:db` (embedded real PostgreSQL, SQL driver) — **83 passed, 0 failed**.
 
+## 15. Addendum 2026-09-18 — Shape management: the global key-shape catalogue, Admin → Shapes (build 20260918d)
+
+### 15.1 Scope & Changes
+
+Adds the GLOBAL key-shape catalogue that build 20260918c's per-product editor plugs into (that work stays fully intact — this PR was rebased onto it):
+
+1. **Admin → Shapes screen** (`js/admin-app.js`): new sidebar section managing the catalogue itself — add / rename (EN + AR) / describe / reorder / hide / delete. The shape code is locked after creation (it is referenced by products, orders and the Fitment data). The Products editor's "+ Add shape" select is now driven by this catalogue instead of a fixed A–D list.
+2. **Storefront** (`js/app.js`): every key-shape selector (product page, Quick Add, Fitment Finder, Key Guide) and every shape label reads the catalogue served by `/api/data` — localized EN/AR names, catalogue order. A hidden catalogue shape disappears from all of them at once.
+3. **Combined semantics** (catalogue ⊕ per-product flags ⊕ server):
+   - A shape the catalogue lists as hidden can never be selected AND can never be ordered — enforced server-side on both `POST /api/orders` and `POST /api/preorders` (`mapping.shapeAllowed`).
+   - A product-local CUSTOM shape (attached via the Products editor, not managed by the catalogue) stays sellable end-to-end.
+   - An empty/missing catalogue (legacy store, migration pending) keeps the classic behaviour exactly — product availability flags alone decide, and the payload derives the classic A–D.
+4. **Persistence**: the `shapes` collection in `lib/db.js` / `lib/store.js` (JSON driver) and the `key_shapes` table (SQL driver). The public payload includes hidden shapes FLAGGED (`active:false`) — that flag is precisely how the storefront blocks them while still allowing product-local custom codes; every selector enumerating the catalogue filters `active !== false`, so hidden shapes never render.
+5. **Supabase migration 007** (`supabase/migrations/007_key_shapes.sql`): idempotent `key_shapes` table + index + seed of shapes A–D with EN/AR names; wired into `scripts/migrate.js` (`--apply`, `--print-sql`). Reads are fault-tolerant: an unmigrated store falls back to the classic derivation, so nothing breaks before the migration runs.
+6. **Tests & build**: new `test/shapes_admin.js` (47 assertions) run as `test:shapecatalog` and appended to the `npm test` chain alongside the existing `test/shapes.js` (38 assertions, unchanged). `test/supabase_e2e.js` gained section 5c (catalogue CRUD + order rules through the real SQL driver). Asset cache-busters bumped to `20260918d` and synchronized into `public/` and `dist/`.
+
+### 15.2 Deployment
+
+- PR #34 merged to `main` as `7b83400` (2026-09-18 15:12:53Z); feature commit `4ad3267`.
+- The exact merged content built successfully on Vercel: preview deployment of `4ad3267` completed with `success` (project `01a07cb5-b190-7e92-ac8e-aefc65395914-4`, deployment id 6527207011, 15:12:15Z).
+- **Production builds of `7b83400` on all 6 linked projects are QUEUED behind Vercel's account build-rate limit** ("Deployment rate limited — retry in 24 hours"): the build quota for the day was exhausted by the `20260918c` production deploy (§14.2, six projects at 13:56–13:57Z) plus the same day's preview builds. Vercel retries automatically once the window resets; no code change is needed or possible for this limit.
+- Until those deploys land, production serves build `20260918c` unchanged (verified on `vilocci-b31u.vercel.app`).
+
+### 15.3 Migration 007 — operator status
+
+- The migration is ADDITIVE (new `key_shapes` table + seed rows); it is safe to apply before or after the code deploy because the code falls back to the classic derivation when the table is absent.
+- Each Supabase-backed project needs `npm run migrate:apply` once after the deploy (same procedure as migrations 005/006 in §12.1). JSON-fallback instances need nothing — the seed ships `shapes` in `data/velocci-db.json`.
+
+### 15.4 Verified locally at the exact merged commit (`4ad3267`)
+
+- `npm test` — **675 passed, 0 failed** across all 15 suites, including both shape suites side by side:
+  - `test/smoke.js` (41), `test/admin.js` (7), `test/admin_cms.js` (36), `test/admin_packages.js` (48), `test/db_fallback.js` (36), `test/customize.js` (55), `test/customize_nav.js` (71), `test/colors.js` (29), `test/quickadd_mobile.js` (75), `test/admin_brands.js` (39), `test/discount.js` (62), `test/instapay_proof_api.js` (9), `test/nano_coating.js` (82)
+  - `test/shapes.js` (38 ✓ — build 20260918c's product-editor suite, unchanged and passing on top of this feature)
+  - `test/shapes_admin.js` (47 ✓ — catalogue CRUD, order/preorder gates incl. product-local custom shapes, legacy fallback, PDP / Quick Add / Fitment / Key Guide jsdom, AR labels, admin screens, migration CLI)
+- `npm run test:db` (embedded real PostgreSQL, SQL driver) — **97 passed, 0 failed**, including section 5c: 007 applied through the SQL driver → catalogue served A–D in order → hide B → `key_shapes.active=false` in SQL → payload flags it inactive → order for B falls back to no shape → restore → add shape E (code normalized) → delete leaves no row.
+
+### 15.5 Verification checklist once the rate limit resets (production)
+
+After Vercel completes the queued production deploys of `7b83400`:
+
+1. `/js/app.js` on each instance starts with `Build 20260918d — Shape management: every key-shape selector …` and the HTML references `?v=20260918d`.
+2. `/api/data` contains `shapes` (A–D, all `active:true`).
+3. Admin → Shapes screen lists the four shapes; hiding one removes it from a product-page selector, Quick Add, the Fitment Finder and the Key Guide, and an order attempt for it is stored without a shape. Restore afterwards.
+4. The Products editor still behaves exactly as §14.3 (per-shape stock toggles, add/reorder/delete, Key shapes column).
