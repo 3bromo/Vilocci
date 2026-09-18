@@ -48,6 +48,9 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
 - **Bundle upsell** — picks the matching products for the SAME car brand only; never recommends unrelated brands.
 - **Cart drawer** — slide-out with images, brand, key shape, qty, remove, "Complete Your [Brand] Set & Save", real-time subtotal / bundle discount / delivery fee / total, Cash on Delivery note.
 - **Checkout** — guest checkout, **Cash on Delivery only** (no Stripe/PayPal/card). Full name, phone, city, area, address, notes. Prices in EGP.
+- **Discount codes** — the customer types a code in the checkout summary; it is checked by `POST /api/validate-discount`
+  against the codes in **Admin → Discounts**, the saving is shown immediately (cart drawer, checkout summary and the
+  confirmation page all stay in step) and the total is updated. See "Discount codes" below.
 - **Order confirmation** page with order ID.
 - **Pre‑orders** — marked products can be reserved with no payment; stored separately.
 - **Arabic / English** — complete RTL translation, one language at a time, natural translations.
@@ -65,6 +68,8 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
   as a small data URL instead of failing. Editing PATCHes through `/api/admin/update`, so models/years/fitment, tier, order and the
   accent colour are never overwritten.
 - **Bundles** — pick the brand's set, set bundle price; discount & % auto-computed; active/inactive.
+- **Discounts** — create promo codes: code, **percentage or fixed amount**, minimum order, maximum uses (or unlimited),
+  expiration date, active/inactive, and a live `uses / max` counter. Codes are the ones the checkout accepts.
 - **Fitment** — manage brand → model → year → key-shape compatibility.
 - **Homepage** — hero slides (add/edit/reorder/enable), home sections (drag-to-reorder + enable/disable), promo bar + countdown.
 - **Orders** — all fields (order ID, customer, items, brand, key shape, qty, subtotal, discount, delivery, total, date) with status updates: New / Confirmed / Preparing / Shipped / Delivered / Cancelled.
@@ -75,7 +80,43 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
 ### Data & architecture
 - **Single shared JSON datastore** (`data/velocci-db.json`, atomic writes) — the same source powers the storefront and admin. No second database.
 - On-the-fly **SVG product artwork** (`/img/asset.svg`) so every product has brand-distinguished, premium imagery and there is never an empty grid. Admin can also supply their own image URLs.
-- **Server-side order validation** — totals, inventory, shapes and bundle discounts are recomputed on the server; the client is never trusted.
+- **Server-side order validation** — totals, inventory, shapes, bundle discounts **and discount codes** are recomputed on the server; the client is never trusted.
+
+### Discount codes
+
+Codes are created in **Admin → Discounts** and stored in the `discount_codes` table. The storefront never receives them:
+`/api/data` does not contain them, and a code is only ever checked by `POST /api/validate-discount`, server-side.
+
+```
+customer types code  ->  POST /api/validate-discount { code, cart }
+                     ->  checked against Admin -> Discounts
+                     ->  { ok:true, code, type, value, discount }   (or { ok:false, reason })
+                     ->  checkout shows the saving and updates the total
+                     ->  POST /api/orders { …, discountCode }
+                     ->  server RE-validates, re-prices, charges the lower total
+                     ->  used_count incremented
+```
+
+Rules (one implementation, `lib/discounts.js`, shared by both endpoints):
+
+| | |
+| --- | --- |
+| Matching | case-insensitive and whitespace-insensitive — `save20`, `SAVE20` and `" save20 "` are the same code |
+| Percentage | applied to the merchandise subtotal (before the bundle saving, excluding delivery) |
+| Fixed | taken off the merchandise subtotal |
+| Stacking | a code and a bundle saving both apply, but a code can never discount more than the merchandise left after the bundle, so the total can never fall below the delivery fee |
+| Refused when | unknown, inactive, expired, `used_count >= max_uses`, or the subtotal is under the code's minimum order |
+
+The order endpoint re-runs the same check, so a code that expires between quoting and checkout is refused with a
+reason the storefront explains in the customer's language — it can never buy a discount. The redemption counter is
+incremented only after the order is safely written.
+
+> The `orders` table has no column for the code itself, so the durable record of a redemption is the discounted
+> `total` plus the code's `used_count` in Admin → Discounts. Storing the code on the order would need a small
+> migration (`alter table public.orders add column discount_code text`).
+
+Tests: `npm run test:discount` (62 assertions: the rules, the endpoint against the real server, the order total,
+the usage counter, and the checkout UI in jsdom driving the real endpoint).
 - Express + express-session + cookie-parser. Session-protected admin API.
 
 ---
