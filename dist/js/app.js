@@ -23,6 +23,7 @@
     route: { name: 'home', params: {} },
     productShape: {},       // pdp selected key shape per productId
     productColor: {},       // pdp selected color variant per productId
+    productCoating: {},     // pdp Nano Ceramic Coating opt-in per productId
     productQty: 1,
     productOption: 0,       // complete-your-set combo index
     lastOrder: null,        // most recently placed order, for the thank-you page
@@ -140,8 +141,12 @@
   }
 
   // opts.color — the color variant the customer picked (from the product's own
-  // admin-managed list). The same snapshot travels through cart → checkout →
-  // order, so what the customer chose is what the shop fulfills.
+  // admin-managed list). opts.coating — the Nano Ceramic Coating opt-in (Key
+  // Holder / Key Case lines only). Both snapshots travel through
+  // cart → checkout → order, so what the customer chose is what the shop
+  // fulfills. Coated and un-coated additions of the same variant stay
+  // SEPARATE lines, so a merge can never silently change what an existing
+  // line costs.
   function addToCart(productId, keyShape, qty, opts) {
     opts = opts || {};
     const prod = product(productId);
@@ -149,37 +154,52 @@
     const fit = opts.fitment || fitForItem(prod);
     const color = opts.color || null;
     const colorId = color ? (color.id || '') : '';
-    // if already in cart with same shape AND color, bump qty
-    const existing = state.cart.find(i => i.productId === productId && i.keyShape === (keyShape || '') && (i.colorId || '') === colorId);
+    const coating = opts.coating === true && coatingEligible(prod);
+    // if already in cart with same shape AND color AND coating, bump qty
+    const existing = state.cart.find(i => i.productId === productId && i.keyShape === (keyShape || '') && (i.colorId || '') === colorId && !!i.coating === coating);
     if (existing) { existing.qty += (qty || 1); existing.fitment = existing.fitment || fit; }
     else {
-      state.cart.push({ productId, keyShape: keyShape || '', qty: qty || 1, fitment: fit, colorId, color });
+      state.cart.push({ productId, keyShape: keyShape || '', qty: qty || 1, fitment: fit, colorId, color, coating });
     }
     saveCart();
     if (opts.openCart === true) { openCart(); }
     notify(pt('add_to_cart'), 'gold');
   }
 
-  function setQty(productId, keyShape, colorId, qty) {
-    const item = state.cart.find(i => i.productId === productId && i.keyShape === keyShape && (i.colorId || '') === (colorId || ''));
+  // Cart lines are keyed by product + shape + color + coating — the same
+  // identity addToCart merges on, so qty/remove always hit the exact line the
+  // customer sees (a coated line and its un-coated twin never collide).
+  function sameLine(i, productId, keyShape, colorId, coating) {
+    return i.productId === productId && i.keyShape === keyShape
+      && (i.colorId || '') === (colorId || '') && !!i.coating === (coating === true);
+  }
+
+  function setQty(productId, keyShape, colorId, coating, qty) {
+    const item = state.cart.find(i => sameLine(i, productId, keyShape, colorId, coating));
     if (!item) return;
     qty = parseInt(qty) || 1;
-    if (qty <= 0) { state.cart = state.cart.filter(i => !(i.productId === productId && i.keyShape === keyShape && (i.colorId || '') === (colorId || ''))); }
+    if (qty <= 0) { state.cart = state.cart.filter(i => !sameLine(i, productId, keyShape, colorId, coating)); }
     else item.qty = qty;
     saveCart();
   }
-  function removeCartItem(productId, keyShape, colorId) { state.cart = state.cart.filter(i => !(i.productId === productId && i.keyShape === keyShape && (i.colorId || '') === (colorId || ''))); saveCart(); }
+  function removeCartItem(productId, keyShape, colorId, coating) { state.cart = state.cart.filter(i => !sameLine(i, productId, keyShape, colorId, coating)); saveCart(); }
 
-  // Cart totals — mirrors server logic (full set => bundle discount)
+  // Cart totals — mirrors server logic (full set => bundle discount,
+  // coated line => flat Nano Ceramic Coating fee)
   function cartTotals() {
     const items = state.cart.map(item => {
       const prod = product(item.productId);
       return { ...item, prod };
     }).filter(i => i.prod);
     let subtotal = 0;
+    let coatingFee = 0;
     const byBrand = {};
     for (const it of items) {
       subtotal += it.prod.price * it.qty;
+      // One flat fee per COATED LINE — never × qty. Eligibility is re-checked
+      // here (and authoritatively on the server) so an ineligible product can
+      // never carry the fee, even from a hand-edited localStorage cart.
+      if (it.coating && coatingEligible(it.prod)) coatingFee += COATING_FEE;
       const b = byBrand[it.prod.brandSlug] = byBrand[it.prod.brandSlug] || { cats: {}, lineTotal: 0 };
       b.cats[it.prod.category] = true;
       b.lineTotal += it.prod.price * it.qty;
@@ -216,12 +236,47 @@
       }
     }
 
-    const total = subtotal - bundleDiscount - discount + deliveryFee;
+    // The coating fee is an ADDITIONAL charge (like the delivery fee): it is
+    // never reduced by bundle or discount-code savings, and it never changes
+    // the product prices themselves.
+    const total = subtotal - bundleDiscount - discount + deliveryFee + coatingFee;
     return {
-      items, subtotal, bundleDiscount, bundleSubtotal, deliveryFee, discount, total,
+      items, subtotal, bundleDiscount, bundleSubtotal, deliveryFee, discount, coatingFee, total,
       discountCode: state.discount ? state.discount.code : null,
     };
   }
+
+  // ------------------------------------------------------------------ nano ceramic coating
+  // Optional extra for KEY HOLDERS and KEY CASES ONLY (replaces the old,
+  // purely cosmetic Premium Gift Packaging checkbox). One flat EGP 100 per
+  // cart LINE that opts in — never multiplied by the line qty, never a
+  // percentage of the product price, EGP 0 when not selected.
+  //
+  // The copy is inline EN/AR (the DISCOPY pattern) so the feature never
+  // depends on a dictionary migration, and the SERVER re-checks category
+  // eligibility and re-prices every order (the colors/discounts contract):
+  // what is rendered here is display, what is charged is recomputed in
+  // server.js, so a hand-edited localStorage line can never change the price.
+  const COATING_FEE = 100;
+  const COATING_CATS = ['keycase', 'keyholder'];
+  const coatingEligible = (p) => !!p && COATING_CATS.indexOf(p.category) >= 0;
+  const COATCOPY = {
+    label: { en: 'Nano Ceramic Coating', ar: 'طلاء نانو سيراميك' },
+    desc: {
+      en: 'Add a nano ceramic coating to your Key Holder and Key Case for extra protection and durability.',
+      ar: 'أضف طبقة نانو سيراميك إلى حامل المفاتيح وجراب المفاتيح لمزيد من الحماية والمتانة.',
+    },
+    optional: { en: 'Optional extra', ar: 'إضافة اختيارية' },
+  };
+  const ccopy = (key) => { const v = COATCOPY[key] || COATCOPY.label; return A() ? v.ar : v.en; };
+  const COATING_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V5z"/><path d="M9 12l2 2 4-4"/></svg>';
+  // One shared totals row so the cart drawer, the checkout summary and the
+  // order-success page always show the same coating fee in the same words.
+  const coatingRowHTML = (totals) => ((totals && totals.coatingFee || 0) > 0
+    ? `<div class="row"><span>${VEL.esc(ccopy('label'))}</span><span class="coat-fee">+ ${VEL.money(totals.coatingFee)}</span></div>`
+    : '');
+  // One shared per-line chip so every surface marks a coated item identically.
+  const coatingChipHTML = () => `<span class="coat-chip">${COATING_SVG} ${VEL.esc(ccopy('label'))} · + ${VEL.money(COATING_FEE)}</span>`;
 
   // ------------------------------------------------------------------ discounts
   // Copy is inline EN/AR (the same pattern the InstaPay block uses) rather
@@ -293,6 +348,7 @@
         <div class="row"><span>${pt('subtotal')}</span><span>${VEL.money(totals.subtotal)}</span></div>
         <div class="row"><span>${pt('bundle_discount')}</span><span class="mut">${totals.bundleDiscount ? '− ' + VEL.money(totals.bundleDiscount) : VEL.money(0)}</span></div>
         ${discountRowHTML(totals)}
+        ${coatingRowHTML(totals)}
         <div class="row"><span>${pt('delivery_fee')}</span><span class="mut">${totals.deliveryFee ? VEL.money(totals.deliveryFee) : pt('free')}</span></div>
         <div class="row total"><span>${pt('total')}</span><span>${VEL.money(totals.total)}</span></div>
       </div>
@@ -922,19 +978,24 @@
       </div>
     </div>`;
 
-    const giftPackagingHTML = `<div class="gift-packaging-option">
-      <label class="gift-toggle">
-        <input type="checkbox" id="gift-packaging" data-gifttoggle="1">
-        <span class="gift-check"></span>
-        <span class="gift-label">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M3 12h18v9H3z"/><path d="M12 8c-1.5-2-4-3-4-3s1.5 2 4 3zm0 0c1.5-2 4-3 4-3s-1.5 2-4 3z"/></svg>
-          ${lang === 'ar' ? 'تغليف هدية فاخر' : 'Premium Gift Packaging'}
+    // Nano Ceramic Coating — replaces the old Premium Gift Packaging option.
+    // Rendered for Key Holders and Key Cases ONLY (never medals or any other
+    // category), with the flat +EGP 100 price always visible so the customer
+    // knows exactly what selecting it adds. The opt-in lives in state, so the
+    // PDP re-renders triggered by shape/color picks never drop it.
+    const coatingOn = coatingEligible(p) && !!state.productCoating[p.id];
+    const coatingHTML = coatingEligible(p) ? `<div class="coating-option${coatingOn ? ' on' : ''}">
+      <label class="coating-toggle">
+        <input type="checkbox" id="nano-coating" ${coatingOn ? 'checked' : ''}>
+        <span class="coating-check"></span>
+        <span class="coating-label">
+          ${COATING_SVG}
+          <span class="coating-name">${VEL.esc(ccopy('label'))}</span>
+          <span class="coating-price">+ ${VEL.money(COATING_FEE)}</span>
         </span>
       </label>
-      <div class="gift-details" id="gift-details" style="display:none">
-        <p class="gift-desc">${lang === 'ar' ? 'يتم تغليف المنتج في صندوق هدية فاخر مع شريط ذهبي وبطاقة إهداء مخصصة.' : 'Your item arrives in a luxury gift box with a gold ribbon and personalized gift card.'}</p>
-      </div>
-    </div>`;
+      <p class="coating-desc">${VEL.esc(ccopy('desc'))}</p>
+    </div>` : '';
 
     const preorderHTML = isPreorder ? `
       <div class="preorder-banner"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#C8A15A"><path d="M12 2v7m0 0-2-2m2 2 2-2"/><rect x="3" y="6" width="18" height="14" rx="2"/></svg>
@@ -982,7 +1043,7 @@
           </div>
           ${deliveryHTML}
           ${preorderHTML}
-          ${giftPackagingHTML}
+          ${coatingHTML}
           ${colorHTML}
           ${shapeHTML}
           ${invHTML}
@@ -1516,15 +1577,16 @@
           <div class="di-info">
             <div class="di-name">${VEL.esc(prodName(it.prod))}</div>
             ${cartItemMeta(it)}
+            ${it.coating && coatingEligible(it.prod) ? `<div class="di-coat">${coatingChipHTML()}</div>` : ''}
             <div class="di-qty">
-              <button data-qtyd="${it.productId}|${it.keyShape}|${it.colorId || ''}" data-qtyv="-1">−</button>
+              <button data-qtyd="${it.productId}|${it.keyShape}|${it.colorId || ''}|${it.coating ? 1 : 0}" data-qtyv="-1">−</button>
               <input type="text" value="${it.qty}" readonly>
-              <button data-qtyd="${it.productId}|${it.keyShape}|${it.colorId || ''}" data-qtyv="1">+</button>
+              <button data-qtyd="${it.productId}|${it.keyShape}|${it.colorId || ''}|${it.coating ? 1 : 0}" data-qtyv="1">+</button>
             </div>
           </div>
           <div class="di-side">
             <div class="di-price">${VEL.money(it.prod.price * it.qty)}</div>
-            <button class="di-remove" data-remove="${it.productId}|${it.keyShape}|${it.colorId || ''}" title="${lang === 'ar' ? 'إزالة' : 'Remove'}" aria-label="${lang === 'ar' ? 'إزالة من السلة' : 'Remove from cart'}">✕</button>
+            <button class="di-remove" data-remove="${it.productId}|${it.keyShape}|${it.colorId || ''}|${it.coating ? 1 : 0}" title="${lang === 'ar' ? 'إزالة' : 'Remove'}" aria-label="${lang === 'ar' ? 'إزالة من السلة' : 'Remove from cart'}">✕</button>
           </div>
         </div>`).join('');
     } else {
@@ -1547,6 +1609,7 @@
         <div class="row"><span>${pt('subtotal')}</span><span>${VEL.money(totals.subtotal)}</span></div>
         <div class="row"><span>${pt('bundle_discount')}</span><span class="disc">${bundleActive ? '− ' + VEL.money(totals.bundleDiscount) : VEL.money(0)}</span></div>
         ${discountRowHTML(totals)}
+        ${coatingRowHTML(totals)}
         <div class="row"><span>${pt('delivery_fee')}</span><span class="mut">${totals.deliveryFee ? VEL.money(totals.deliveryFee) : (freeRemaining <= 0 ? pt('free') : VEL.money(totals.deliveryFee))}</span></div>
         ${sub < free ? `<div class="row"><span class="free">${pt('free_shipping', { n: freeRemaining.toLocaleString('en-US') })}</span></div>` : ''}
         <div class="row total"><span>${pt('total')}</span><span>${VEL.money(totals.total)}</span></div>
@@ -1644,7 +1707,7 @@
         <div>
           <div class="form-card">
             <h2>${pt('your_cart')} (${cartCount()})</h2>
-            ${totals.items.map(it => `<div class="drawer-item" style="padding:10px 0"><img src="${img(it.prod)}" alt=""><div class="di-info"><div class="di-name" style="font-size:12.5px">${VEL.esc(prodName(it.prod))}</div>${cartItemMeta(it, {style:'font-size:11px'})}</div><div class="di-side"><div style="font-size:11px;color:var(--muted)">× ${it.qty}</div><div class="di-price" style="font-size:13px">${VEL.money(it.prod.price * it.qty)}</div></div></div>`).join('')}
+            ${totals.items.map(it => `<div class="drawer-item" style="padding:10px 0"><img src="${img(it.prod)}" alt=""><div class="di-info"><div class="di-name" style="font-size:12.5px">${VEL.esc(prodName(it.prod))}</div>${cartItemMeta(it, {style:'font-size:11px'})}${it.coating && coatingEligible(it.prod) ? `<div class="di-coat">${coatingChipHTML()}</div>` : ''}</div><div class="di-side"><div style="font-size:11px;color:var(--muted)">× ${it.qty}</div><div class="di-price" style="font-size:13px">${VEL.money(it.prod.price * it.qty)}</div></div></div>`).join('')}
             ${totals.bundleDiscount ? `<div class="bundle-tag" style="margin-top:14px">${pt('bundle_applied')}</div>
             <div class="bundle-price-box"><div class="bp-label">${pt('bundle_price')}</div><div class="bp-val"><span class="old">${VEL.money(totals.bundleSubtotal)}</span><span class="bp-arrow">→</span><span class="bp-new">${VEL.money(totals.bundleSubtotal - totals.bundleDiscount)}</span></div></div>` : ''}
             <div id="checkout-totals">${checkoutTotalsHTML(totals)}</div>
@@ -1906,7 +1969,7 @@
       const shape = it.keyShape ? VESt(pt('shape') + ' ' + it.keyShape) : '';
       const colorPart = it.color && it.color.hex ? `${colorDot(it.color, 10)} ${VESt(colorLabel(it.color))}` : '';
       const meta = [shape, colorPart].filter(Boolean).join(' · ');
-      return `<div class="s-item"><img src="${it.image}" alt=""><div class="s-info"><div class="s-name">${VESt(nm)}</div>${v ? `<div class="s-vehicle">${VESt(v)}${meta ? ' · ' + meta : ''}</div>` : (meta ? `<div class="s-vehicle">${meta}</div>` : '')}<div class="s-qty">${pt('quantity')}: ${it.qty}</div></div><div class="s-price">${VEL.money(it.lineTotal)}</div></div>`;
+      return `<div class="s-item"><img src="${it.image}" alt=""><div class="s-info"><div class="s-name">${VESt(nm)}</div>${v ? `<div class="s-vehicle">${VESt(v)}${meta ? ' · ' + meta : ''}</div>` : (meta ? `<div class="s-vehicle">${meta}</div>` : '')}${it.coating ? `<div class="di-coat">${coatingChipHTML()}</div>` : ''}<div class="s-qty">${pt('quantity')}: ${it.qty}</div></div><div class="s-price">${VEL.money(it.lineTotal)}</div></div>`;
     }).join('');
     return `<div class="container"><div class="success">
       <div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></div>
@@ -1931,6 +1994,7 @@
           <div class="row"><span>${pt('subtotal')}</span><span>${VEL.money(o.subtotal)}</span></div>
           ${o.bundleDiscount ? `<div class="row"><span>${pt('bundle_discount')}</span><span class="disc">− ${VEL.money(o.bundleDiscount)}</span></div>` : ''}
           ${o.discount ? `<div class="row"><span>${VEL.esc(dcopy('label'))} <span class="discount-code-tag">${VEL.esc(o.discountCode || '')}</span></span><span class="disc">− ${VEL.money(o.discount)}</span></div>` : ''}
+          ${coatingRowHTML(o)}
           <div class="row"><span>${pt('delivery_fee')}</span><span>${o.deliveryFee ? VEL.money(o.deliveryFee) : pt('free')}</span></div>
           <div class="row total"><span>${pt('total')}</span><span>${VEL.money(o.total)}</span></div>
         </div>
@@ -2540,12 +2604,14 @@
       $$('.reveal', main()).forEach(el => el.classList.add('in'));
     }
 
-    // gift packaging toggle
-    const giftToggle = $('#gift-packaging');
-    if (giftToggle) {
-      giftToggle.addEventListener('change', () => {
-        const details = $('#gift-details');
-        if (details) details.style.display = giftToggle.checked ? 'block' : 'none';
+    // nano ceramic coating toggle (Key Holder / Key Case product pages only)
+    const coatingToggle = $('#nano-coating');
+    if (coatingToggle) {
+      coatingToggle.addEventListener('change', () => {
+        const p = productBySlug(currentSlug());
+        if (p) state.productCoating[p.id] = coatingToggle.checked;
+        const box = coatingToggle.closest('.coating-option');
+        if (box) box.classList.toggle('on', coatingToggle.checked);
       });
     }
 
@@ -2583,14 +2649,16 @@
       const p = productBySlug(currentSlug()); if (!p) return;
       const shape = state.productShape[p.id];
       if (!shape) { notify(pt('select_key_shape')); return; }
+      // the Nano Ceramic Coating opt-in travels with THIS cart line
+      const coating = coatingEligible(p) && !!state.productCoating[p.id];
       const pcolors = activeColorsOf(p);
       if (pcolors.length) {
         const color = pcolors.find(c => c.id === state.productColor[p.id]);
         if (!color) { notify(pt('color_required')); return; }
-        addToCart(p.id, shape, state.productQty, { color });
+        addToCart(p.id, shape, state.productQty, { color, coating });
         return;
       }
-      addToCart(p.id, shape, state.productQty);
+      addToCart(p.id, shape, state.productQty, { coating });
     });
 
     // preorder
@@ -2731,9 +2799,9 @@
       drawer.dataset.dlgBound = '1';
       drawer.addEventListener('click', (e) => {
         const q = e.target.closest('[data-qtyd]');
-        if (q) { const [pid, sh, cid] = q.getAttribute('data-qtyd').split('|'); const item = state.cart.find(i => i.productId === pid && i.keyShape === sh && (i.colorId || '') === (cid || '')); if (item) setQty(pid, sh, cid, item.qty + parseInt(q.getAttribute('data-qtyv') || '1')); return; }
+        if (q) { const [pid, sh, cid, coat] = q.getAttribute('data-qtyd').split('|'); const coated = coat === '1'; const item = state.cart.find(i => sameLine(i, pid, sh, cid || '', coated)); if (item) setQty(pid, sh, cid, coated, item.qty + parseInt(q.getAttribute('data-qtyv') || '1')); return; }
         const rm = e.target.closest('[data-remove]');
-        if (rm) { const [pid, sh, cid] = rm.getAttribute('data-remove').split('|'); removeCartItem(pid, sh, cid); notify(L() === 'ar' ? 'تمت الإزالة' : 'Item removed'); return; }
+        if (rm) { const [pid, sh, cid, coat] = rm.getAttribute('data-remove').split('|'); removeCartItem(pid, sh, cid, coat === '1'); notify(L() === 'ar' ? 'تمت الإزالة' : 'Item removed'); return; }
         const ab = e.target.closest('[data-addbundle]');
         if (ab) { const p = product(ab.getAttribute('data-addbundle')); if (!p) return; const shape = (p.keyShapes||[]).find(s=>s.available); addToCart(p.id, shape?shape.shape:'', 1, { color: activeColorsOf(p)[0] || null }); return; }
       });
@@ -2887,6 +2955,25 @@
       <div class="color-options qa-colors">${pcolors.map(c => `<button type="button" class="color-opt" data-qac="${VEL.esc(c.id)}" title="${VEL.esc(colorLabel(c))}" aria-label="${VEL.esc(colorLabel(c))}"><span class="color-swatch" style="background:${VEL.esc(c.hex)}"></span><div class="lbl">${VEL.esc(colorLabel(c))}</div></button>`).join('')}</div>
     </section>` : '';
 
+    // Nano Ceramic Coating — an OPTIONAL extra (never a required step, so the
+    // two-step shape → color contract above is untouched). Offered only for
+    // Key Holders and Key Cases; medals and any other category never see it.
+    // The flat +EGP 100 is always visible next to the label.
+    const canCoat = coatingEligible(p);
+    const coatingBlock = canCoat ? `<section class="qa-block qa-coating" data-qablock="coating">
+      <div class="qa-coat-head"><span class="qa-coat-optional">${VEL.esc(ccopy('optional'))}</span></div>
+      <label class="coating-toggle">
+        <input type="checkbox" id="qa-coating">
+        <span class="coating-check"></span>
+        <span class="coating-label">
+          ${COATING_SVG}
+          <span class="coating-name">${VEL.esc(ccopy('label'))}</span>
+          <span class="coating-price">+ ${VEL.money(COATING_FEE)}</span>
+        </span>
+      </label>
+      <p class="coating-desc">${VEL.esc(ccopy('desc'))}</p>
+    </section>` : '';
+
     const modal = document.createElement('div');
     modal.className = 'modal-overlay qa-overlay';
     modal.innerHTML = `<div class="modal qa-modal" role="dialog" aria-modal="true" aria-label="${VEL.esc(prodName(p))}">
@@ -2896,6 +2983,7 @@
       ${stepBar}
       ${shapeBlock}
       ${colorBlock}
+      ${coatingBlock}
       <div class="qa-error hidden" id="qa-error" role="alert"></div>
       <button type="button" class="btn btn-gold btn-block qa-add is-locked" id="qa-add" aria-disabled="true">${pt('add_to_cart')}</button>
     </div>`;
@@ -2962,8 +3050,10 @@
         if (colorStep) colorStep.classList.add('needs-attention');
         return;
       }
-      // shape AND color travel with the cart item (and on through checkout)
-      addToCart(p.id, chosen, 1, { color });
+      // shape, color AND the coating opt-in travel with the cart item
+      // (and on through checkout into the order)
+      const coatBox = $m('#qa-coating');
+      addToCart(p.id, chosen, 1, { color, coating: canCoat && !!coatBox && coatBox.checked });
       modal.remove();
     });
 
@@ -3112,7 +3202,9 @@
       }
     }
 
-    const cart = state.cart.map(i => ({ productId: i.productId, keyShape: i.keyShape, qty: i.qty, fitment: i.fitment || null, colorId: i.colorId || null }));
+    // The coating opt-in travels with each line; the server re-checks the
+    // product category and re-prices the fee itself (never trusts this).
+    const cart = state.cart.map(i => ({ productId: i.productId, keyShape: i.keyShape, qty: i.qty, fitment: i.fitment || null, colorId: i.colorId || null, coating: !!i.coating }));
     const btn = form.querySelector('button[type=submit]');
     btn.disabled = true; btn.textContent = '…';
     // The code is sent for the server to re-validate and re-price; it never
@@ -3126,9 +3218,10 @@
         state.lastOrder = {
           id: j.orderId, createdAt: new Date().toISOString(), customer,
           payment,
-          items: totals.items.map(it => ({ productId: it.productId, keyShape: it.keyShape, qty: it.qty, fitment: it.fitment || null, color: it.color || null, name_en: it.prod.name_en, name_ar: it.prod.name_ar, price: it.prod.price, lineTotal: it.prod.price * it.qty, image: img(it.prod), brandSlug: it.prod.brandSlug, category: it.prod.category })),
+          items: totals.items.map(it => ({ productId: it.productId, keyShape: it.keyShape, qty: it.qty, fitment: it.fitment || null, color: it.color || null, coating: !!(it.coating && coatingEligible(it.prod)), name_en: it.prod.name_en, name_ar: it.prod.name_ar, price: it.prod.price, lineTotal: it.prod.price * it.qty, image: img(it.prod), brandSlug: it.prod.brandSlug, category: it.prod.category })),
           subtotal: totals.subtotal, bundleDiscount: totals.bundleDiscount,
           discount: totals.discount, discountCode: totals.discountCode,
+          coatingFee: totals.coatingFee,
           deliveryFee: totals.deliveryFee, total: totals.total,
         };
         state.cart = []; state.discount = null; saveCart(); location.hash = '#/success/' + j.orderId;

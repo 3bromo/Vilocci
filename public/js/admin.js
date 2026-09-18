@@ -717,7 +717,7 @@
       <div class="panel"><div style="overflow-x:auto"><table>
         <thead><tr><th>Order</th><th>Date</th><th>Customer Name</th><th>Phone</th><th>Detailed Address</th><th>Total</th><th>Status</th><th></th></tr></thead>
         <tbody>${rows.map(o => `<tr>
-          <td><b>${esc(o.id)}</b></td>
+          <td><b>${esc(o.id)}</b>${(o.coatingFee || 0) > 0 ? ` <span title="Nano Ceramic Coating requested (+${money(o.coatingFee)})" style="display:inline-block;padding:1px 8px;border:1px solid rgba(200,161,90,.5);border-radius:999px;background:rgba(200,161,90,.12);color:#8d6829;font-size:10px;font-weight:700;white-space:nowrap">◆ Coating</span>` : ''}</td>
           <td style="white-space:nowrap">${fmtDate(o.createdAt)}</td>
           <td>${esc(o.customer.fullName)}</td>
           <td dir="ltr" style="white-space:nowrap">${esc(o.customer.phone || '—')}</td>
@@ -763,6 +763,7 @@
         <div class="od-info">
           <div class="od-name">${esc(name)}</div>
           ${(fitParts.length || shape) ? `<div class="od-fit">${esc(fitParts.join(' · ') + (fitParts.length && shape ? ' · ' : '') + shape)}</div>` : `<div class="od-fit">${esc(it.brandSlug || '')}</div>`}
+          ${it.coating ? `<div class="od-coat" style="display:inline-block;margin-top:4px;padding:2px 9px;border:1px solid rgba(200,161,90,.5);border-radius:999px;background:rgba(200,161,90,.12);color:#8d6829;font-size:11px;font-weight:700">◆ Nano Ceramic Coating · + ${money(100)}</div>` : ''}
           <div class="od-qty">Qty: ${it.qty} @ ${money(it.price)}</div>
         </div>
         <div class="od-price">${money(it.lineTotal || it.price * it.qty)}</div>
@@ -792,6 +793,7 @@
           <div class="od-totals">
             <div class="row"><span>Subtotal</span><span>${money(o.subtotal || 0)}</span></div>
             <div class="row"><span>Bundle Discount</span><span class="disc">${o.bundleDiscount ? '− ' + money(o.bundleDiscount) : money(0)}</span></div>
+            ${o.coatingFee ? `<div class="row"><span>Nano Ceramic Coating</span><span>+ ${money(o.coatingFee)}</span></div>` : ''}
             <div class="row"><span>Delivery Fee</span><span>${o.deliveryFee ? money(o.deliveryFee) : 'Free'}</span></div>
             <div class="row total"><span>Total</span><span>${money(o.total)}</span></div>
           </div>

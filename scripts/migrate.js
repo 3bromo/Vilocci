@@ -40,6 +40,7 @@ const MIGRATIONS = [
   { version: '003', title: 'Customize (customize_requests, customize category settings, private storage bucket)', file: 'supabase/migrations/003_customize.sql' },
   { version: '004', title: 'Product colors (products.colors variants, order_items.color snapshot)', file: 'supabase/migrations/004_product_colors.sql' },
   { version: '005', title: 'Required InstaPay payment proof (private order screenshot reference)', file: 'supabase/migrations/005_instapay_payment_proof.sql' },
+  { version: '006', title: 'Nano Ceramic Coating extra (orders.coating_fee, order_items.coating)', file: 'supabase/migrations/006_nano_ceramic_coating.sql' },
 ];
 
 const argv = process.argv.slice(2);
