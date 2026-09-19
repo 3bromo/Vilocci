@@ -79,19 +79,36 @@ function waitForServer(child) {
 
     const cod = await request('POST', '/api/orders', { customer, cart, payment: 'Cash on Delivery' });
     check('COD still works without a proof', cod.status === 200 && cod.json.ok === true, JSON.stringify(cod.json));
+    check('COD does not require a payment verification status', cod.json.paymentStatus === 'Not Required', JSON.stringify(cod.json));
 
     const insta = await request('POST', '/api/orders', { customer, cart, payment: 'InstaPay', paymentProof: png });
     check('InstaPay with a valid proof creates the order', insta.status === 200 && insta.json.ok === true, JSON.stringify(insta.json));
+    check('InstaPay starts as Pending Verification', insta.json.paymentStatus === 'Pending Verification', JSON.stringify(insta.json));
 
     const adminList = await request('GET', '/api/admin/orders', undefined, true);
     const stored = (adminList.json.orders || []).find((o) => o.id === insta.json.orderId);
     check('admin Orders identifies InstaPay', stored && stored.payment === 'InstaPay');
     check('admin Orders keeps the proof reference with that order', stored && stored.paymentProof && stored.paymentProof.available === true);
+    check('admin Orders shows Pending Verification', stored && stored.paymentStatus === 'Pending Verification', JSON.stringify(stored));
 
     const detail = await request('GET', `/api/admin/order/${encodeURIComponent(insta.json.orderId)}`, undefined, true);
     check('admin order detail includes payment proof', detail.json.paymentProof && detail.json.paymentProof.available === true);
+    check('admin order detail shows Pending Verification', detail.json.paymentStatus === 'Pending Verification', JSON.stringify(detail.json));
     const proof = await request('GET', `/api/admin/order/${encodeURIComponent(insta.json.orderId)}/payment-proof`, undefined, true);
     check('admin can open the stored proof', proof.status === 200 && proof.json.ok === true && proof.json.url === png);
+
+    const verified = await request('POST', '/api/admin/order-payment-status', { id: insta.json.orderId, status: 'Verified' }, true);
+    check('admin can verify the InstaPay payment', verified.status === 200 && verified.json.paymentStatus === 'Verified', JSON.stringify(verified.json));
+    const afterVerify = await request('GET', `/api/admin/order/${encodeURIComponent(insta.json.orderId)}`, undefined, true);
+    check('Verified payment status persists with the order', afterVerify.json.paymentStatus === 'Verified', JSON.stringify(afterVerify.json));
+
+    const rejected = await request('POST', '/api/admin/order-payment-status', { id: insta.json.orderId, status: 'Rejected' }, true);
+    check('admin can reject the InstaPay payment', rejected.status === 200 && rejected.json.paymentStatus === 'Rejected', JSON.stringify(rejected.json));
+    const afterReject = await request('GET', `/api/admin/order/${encodeURIComponent(insta.json.orderId)}`, undefined, true);
+    check('Rejected payment status persists with the order', afterReject.json.paymentStatus === 'Rejected', JSON.stringify(afterReject.json));
+
+    const codReject = await request('POST', '/api/admin/order-payment-status', { id: cod.json.orderId, status: 'Verified' }, true);
+    check('COD cannot be payment-proof verified', codReject.status === 400, JSON.stringify(codReject.json));
 
     const noProofOrders = (adminList.json.orders || []).filter((o) => o.payment === 'InstaPay' && (!o.paymentProof || !o.paymentProof.available));
     check('no InstaPay order exists without a proof', noProofOrders.length === 0);

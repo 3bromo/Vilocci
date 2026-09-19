@@ -158,6 +158,10 @@ function read(url) {
   check('InstaPay link uses configured URL', !!(instaBtn && expectedUrl && instaBtn.getAttribute('href') === expectedUrl));
   check('InstaPay radio present', !!document.querySelector('input[name="paymentMethod"][value="InstaPay"]'));
   check('COD radio still present', !!document.querySelector('input[name="paymentMethod"][value="Cash on Delivery"]'));
+  check('InstaPay exact final amount is shown near payment instructions', !!document.querySelector('#instapay-due-amount') && /EGP|ج\.م|جنيه/.test(document.querySelector('#instapay-due-amount').textContent));
+  check('required proof title text is exact', /Upload Transfer Proof/.test(document.querySelector('.instapay-proof-label') ? document.querySelector('.instapay-proof-label').textContent : ''));
+  check('required proof description text is exact', /Upload your InstaPay payment screenshot/.test(document.querySelector('.instapay-proof-copy') ? document.querySelector('.instapay-proof-copy').textContent : ''));
+  check('required proof button text is exact', (document.querySelector('#instapay-proof-picker') && document.querySelector('#instapay-proof-picker').textContent.trim()) === 'Upload Transfer Proof');
 
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

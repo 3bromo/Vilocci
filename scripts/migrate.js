@@ -42,6 +42,7 @@ const MIGRATIONS = [
   { version: '005', title: 'Required InstaPay payment proof (private order screenshot reference)', file: 'supabase/migrations/005_instapay_payment_proof.sql' },
   { version: '006', title: 'Nano Ceramic Coating extra (orders.coating_fee, order_items.coating)', file: 'supabase/migrations/006_nano_ceramic_coating.sql' },
   { version: '007', title: 'Shape management (key_shapes master catalogue: names, order, active)', file: 'supabase/migrations/007_key_shapes.sql' },
+  { version: '008', title: 'InstaPay payment verification status (orders.payment_status)', file: 'supabase/migrations/008_instapay_payment_status.sql' },
 ];
 
 const argv = process.argv.slice(2);

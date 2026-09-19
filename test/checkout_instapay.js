@@ -57,9 +57,12 @@ async function runViewport(browser, name, viewport) {
   check(name + ': Pay with InstaPay title is a link', (await title.getAttribute('href')) === expectedUrl);
   check(name + ': title is visible', await title.isVisible());
 
+  check(name + ': exact amount appears near InstaPay instructions', await page.locator('#instapay-due-amount').isVisible());
   const proofInput = page.locator('#instapay-proof-input');
   check(name + ': payment proof picker exists inside InstaPay', await proofInput.count() === 1);
-  check(name + ': payment proof label is visible', await page.locator('#instapay-proof-picker').isVisible());
+  check(name + ': payment proof title is exact', /Upload Transfer Proof/.test(await page.locator('.instapay-proof-label').textContent() || ''));
+  check(name + ': payment proof description is exact', (await page.locator('.instapay-proof-copy').textContent() || '').trim() === 'Upload your InstaPay payment screenshot');
+  check(name + ': payment proof button is exact and visible', await page.locator('#instapay-proof-picker').isVisible() && (await page.locator('#instapay-proof-picker').textContent() || '').trim() === 'Upload Transfer Proof');
   await page.locator('#pay-instapay-radio').check();
   check(name + ': proof becomes required when InstaPay is selected', await proofInput.getAttribute('required') !== null);
   await page.locator('input[value="Cash on Delivery"]').check();
