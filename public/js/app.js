@@ -2,11 +2,16 @@
    VELOCCI — Storefront application (single-file client SPA)
    Loads the shared store once, renders the whole site, and keeps the cart in
    localStorage. Reads live data from /api/data so admin changes reflect.
-   Build 20260918d — Shape management: every key-shape selector (product
-   page, Quick Add, Fitment Finder, Key Guide) and every shape label reads
-   the key-shape catalogue served by /api/data (Admin → Shapes) — localized
-   EN/AR names, catalogue order, and a shape hidden in the admin panel
-   disappears from the storefront everywhere. Builds on the 20260918c base
+   Build 20260919b — Shape images: a catalogue shape the admin gave an
+   uploaded image to (Admin → Shapes / the Products editor's Key Shapes
+   rows, stored in Supabase Storage) is rendered as that real image card on
+   every selector (product page, Quick Add, Fitment Finder, Key Guide);
+   shapes without an image keep the generated silhouette. Builds on the
+   20260918d base — Shape management: every key-shape selector and every
+   shape label reads the key-shape catalogue served by /api/data (Admin →
+   Shapes) — localized EN/AR names, catalogue order, and a shape hidden in
+   the admin panel disappears from the storefront everywhere; the 20260918c
+   base
    (per-shape stock toggle, add/remove, reorder in the Products editor +
    Key shapes column), the Nano Ceramic Coating optional extra (Key Holder /
    Key Case only, flat +EGP 100 per coated cart line), the mobile UX pass,
@@ -125,6 +130,21 @@
     const def = shapeDef(code);
     const nm = def && (L() === 'ar' ? def.name_ar : def.name_en);
     return (nm && String(nm).trim()) ? nm : (pt('shape') + ' ' + code);
+  }
+  // The visual every selector renders for a shape: the image the admin uploaded
+  // for that catalogue shape (Admin → Shapes / the Products editor's Key
+  // Shapes rows) when it has one — shown as a real image card — otherwise the
+  // generated silhouette the storefront has always used. A broken image URL
+  // also falls back to the silhouette (error listener registered in init()).
+  function shapeVisual(code, opts) {
+    const def = shapeDef(code);
+    const url = def && typeof def.image_url === 'string' ? def.image_url.trim() : '';
+    if (url) {
+      const w = (opts && opts.w) || 60;
+      const h = (opts && opts.h) || 92;
+      return `<img class="shape-img" src="${VEL.esc(url)}" alt="${VEL.esc(shapeLabel(code))}" data-code="${VEL.esc(String(code || '').toUpperCase())}" width="${w}" height="${h}" loading="lazy">`;
+    }
+    return VEL.keyShapeSVG(code, opts);
   }
   // The codes the Fitment Finder offers (catalogue order, hidden shapes
   // removed) — falls back to the classic A–D when there is no catalogue.
@@ -1012,7 +1032,7 @@
           const shTitle = shDef && String((L() === 'ar' ? shDef.description_ar : shDef.description_en) || '').trim();
           return `<button class="shape-opt ${cls} ${sel}" data-shapecopy="0" data-shape="${sh.shape}" ${sh.available ? '' : 'disabled'}${shTitle ? ` title="${VEL.esc(shTitle)}"` : ''}>
             ${sh.available ? '' : `<svg class="xstar" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" stroke="#999" stroke-width="2" stroke-linecap="round"/></svg>`}
-            ${VEL.keyShapeSVG(sh.shape, { color: colr, w: 60, h: 92 })}
+            ${shapeVisual(sh.shape, { color: colr, w: 60, h: 92 })}
             <div class="lbl">${VEL.esc(shapeLabel(sh.shape))}</div>
             ${sh.available ? '' : `<div class="oos">${pt('out_of_stock')}</div>`}
           </button>`;
@@ -1469,7 +1489,7 @@
             const sel = f.shape === sh;
             return `<button class="shape-opt ${av ? 'selectable' : 'unavailable'} ${sel ? 'selected' : ''}" data-fit-shape="${sh}" ${av ? '' : 'disabled'} type="button">
               ${av ? '' : `<svg class="xstar" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" stroke="#999" stroke-width="2" stroke-linecap="round"/></svg>`}
-              ${VEL.keyShapeSVG(sh, { color: av ? '#2b2b2b' : '#B9B9B9', w: 60, h: 92 })}
+              ${shapeVisual(sh, { color: av ? '#2b2b2b' : '#B9B9B9', w: 60, h: 92 })}
               <div class="lbl">${VEL.esc(shapeLabel(sh))}</div>
               ${av ? '' : `<div class="oos">${pt('not_available')}</div>`}
             </button>`;
@@ -1617,7 +1637,7 @@
     const guideShapes = fitShapeCodes();
     return `<p>To find the right case for your key, identify the shape of your keyfob:</p>
       <div class="shape-options" style="margin:20px 0">
-        ${guideShapes.map(sh => `<div class="shape-opt selectable"><svg viewBox="0 0 60 92" width="60" height="92">${VEL.keyShapeSVG(sh, { color: '#2b2b2b', w:60, h:92 }).split('<svg')[0]}</svg><div class="lbl">${VEL.esc(shapeLabel(sh))}</div></div>`).join('')}
+        ${guideShapes.map(sh => `<div class="shape-opt selectable">${shapeVisual(sh, { color: '#2b2b2b', w: 60, h: 92 })}<div class="lbl">${VEL.esc(shapeLabel(sh))}</div></div>`).join('')}
       </div>
       <ul>${guideShapes.map(sh => {
         const def = shapeDef(sh);
@@ -3060,7 +3080,7 @@
 
     const shapeBlock = `<section class="qa-block" data-qablock="shape">
       <div class="label qa-label">${pt('select_key_shape')} <span class="sel qa-shape-sel" id="qa-shape-sel"></span></div>
-      <div class="shape-options qa-shapes">${avail.map(sh => `<button type="button" class="shape-opt selectable" data-qa="${sh.shape}">${VEL.keyShapeSVG(sh.shape, { color: '#2b2b2b', w: 52, h: 80 })}<div class="lbl">${VEL.esc(shapeLabel(sh.shape))}</div></button>`).join('')}</div>
+      <div class="shape-options qa-shapes">${avail.map(sh => `<button type="button" class="shape-opt selectable" data-qa="${sh.shape}">${shapeVisual(sh.shape, { color: '#2b2b2b', w: 52, h: 80 })}<div class="lbl">${VEL.esc(shapeLabel(sh.shape))}</div></button>`).join('')}</div>
     </section>`;
 
     // The color step is revealed only after a shape has been chosen — the
@@ -3501,6 +3521,18 @@
   }
 
   function init() {
+    // A broken uploaded shape image falls back to the generated silhouette —
+    // exactly the look of a shape that has no image (capture phase: error
+    // events do not bubble).
+    document.addEventListener('error', (e) => {
+      const img = e.target;
+      if (!img || img.tagName !== 'IMG' || !img.classList || !img.classList.contains('shape-img')) return;
+      const code = img.getAttribute('data-code') || '';
+      const opts = { w: Number(img.getAttribute('width')) || 60, h: Number(img.getAttribute('height')) || 92 };
+      const holder = document.createElement('span');
+      holder.innerHTML = VEL.keyShapeSVG(code, opts);
+      if (holder.firstChild) img.replaceWith(holder.firstChild);
+    }, true);
     setLang(localStorage.getItem(LANG_KEY) || 'en');
     loadCart();
     const savedFit = localStorage.getItem(FIT_KEY); if (savedFit) { try { state.fitment = JSON.parse(savedFit); } catch (e) {} }

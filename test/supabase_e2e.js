@@ -76,8 +76,8 @@ async function main() {
     check('migration CLI exited 0', () => assert.strictEqual(apply.status, 0, `exit ${apply.status}`));
 
     const applied = await q('select version from supabase_migrations.schema_migrations order by version');
-    check('all migrations recorded (001 … 008)', () =>
-      assert.deepStrictEqual(applied.map((r) => r.version), ['001', '002', '003', '004', '005', '006', '007', '008']));
+    check('all migrations recorded (001 … 009)', () =>
+      assert.deepStrictEqual(applied.map((r) => r.version), ['001', '002', '003', '004', '005', '006', '007', '008', '009']));
 
     const colorCols = await q(`select table_name, column_name from information_schema.columns
       where table_schema = 'public' and column_name in ('colors','color')
@@ -111,6 +111,14 @@ async function main() {
       where table_schema = 'public' and table_name = 'orders' and column_name = 'payment_status'`);
     check('008 added orders.payment_status for InstaPay verification', () =>
       assert.strictEqual(paymentStatusCols.length, 1, JSON.stringify(paymentStatusCols)));
+
+    const shapeImgCol = await q(`select column_name from information_schema.columns
+      where table_schema = 'public' and table_name = 'key_shapes' and column_name = 'image_url'`);
+    check('009 added key_shapes.image_url (one uploaded visual per shape)', () =>
+      assert.strictEqual(shapeImgCol.length, 1, JSON.stringify(shapeImgCol)));
+    const seededShapeImgs = await one(`select count(*)::int n from public.key_shapes where image_url is not null`);
+    check('009 is additive — no existing shape starts with an image', () =>
+      assert.strictEqual(seededShapeImgs.n, 0, String(seededShapeImgs.n)));
 
     const seededColors = await one(`select count(*)::int n from public.products where jsonb_array_length(coalesce(colors,'[]'::jsonb)) > 0`);
     check('mapped products carry their seeded color variants', () =>
@@ -441,6 +449,42 @@ async function main() {
     const eGone = await one(`select count(*)::int n from public.key_shapes where id = 'shape_e'`);
     check('deleted shapes leave no row behind (catalogue back to A–D)', () =>
       assert.strictEqual(eGone.n, 0, String(eGone.n)));
+
+    // ------------------------------------------------------------------ 5d
+    section('5d. Shape images through the SQL driver (migration 009)');
+    const imgSet = await (await fetch(`${base}/api/admin/shapes/image`, {
+      method: 'POST', headers: adminHeaders,
+      body: JSON.stringify({ shapeId: 'shape_b', url: 'https://cdn.example/shape-b.png' }),
+    })).json();
+    check('POST /api/admin/shapes/image accepted on the SQL driver', () =>
+      assert.ok(imgSet.ok, JSON.stringify(imgSet)));
+    const bImgRow = await one(`select image_url from public.key_shapes where id = 'shape_b'`);
+    check('the image URL persisted to key_shapes.image_url in SQL', () =>
+      assert.strictEqual(bImgRow.image_url, 'https://cdn.example/shape-b.png'));
+    const dataImg = await (await fetch(`${base}/api/data`)).json();
+    check('the storefront payload serves the shape image', () =>
+      assert.strictEqual((dataImg.shapes.find((s) => s.code === 'B') || {}).image_url, 'https://cdn.example/shape-b.png'));
+    const imgReplace = await (await fetch(`${base}/api/admin/shapes/image`, {
+      method: 'POST', headers: adminHeaders,
+      body: JSON.stringify({ shapeId: 'shape_b', url: 'https://cdn.example/shape-b-v2.png' }),
+    })).json();
+    const bImgRow2 = await one(`select image_url from public.key_shapes where id = 'shape_b'`);
+    check('uploading again replaces the stored image in SQL', () => {
+      assert.ok(imgReplace.ok, JSON.stringify(imgReplace));
+      assert.strictEqual(bImgRow2.image_url, 'https://cdn.example/shape-b-v2.png');
+    });
+    const imgRm = await (await fetch(`${base}/api/admin/shapes/image/remove`, {
+      method: 'POST', headers: adminHeaders,
+      body: JSON.stringify({ shapeId: 'shape_b' }),
+    })).json();
+    const bImgRow3 = await one(`select image_url from public.key_shapes where id = 'shape_b'`);
+    check('removing the image clears key_shapes.image_url in SQL', () => {
+      assert.ok(imgRm.ok, JSON.stringify(imgRm));
+      assert.ok(!bImgRow3.image_url, JSON.stringify(bImgRow3));
+    });
+    const dataNoImg = await (await fetch(`${base}/api/data`)).json();
+    check('the storefront falls back to no image after removal', () =>
+      assert.ok(!(dataNoImg.shapes.find((s) => s.code === 'B') || {}).image_url));
 
     // ------------------------------------------------------------------ 6
     section('6. Admin edit -> Supabase -> storefront');
