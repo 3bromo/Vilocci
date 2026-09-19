@@ -441,7 +441,7 @@ function deliveryFeeFor(settings, subtotal) {
 }
 
 // ---------------------------------------------------------------------------
-// ORDERS (guest checkout, COD only)
+// ORDERS (guest checkout: COD + existing InstaPay manual transfer)
 // ---------------------------------------------------------------------------
 app.post('/api/orders', async (req, res) => {
   try {
@@ -563,6 +563,7 @@ app.post('/api/orders', async (req, res) => {
         status: 'Pending',
         statusHistory: [{ status: 'Pending', at: nowIso }],
         payment: paymentMethod,
+        paymentStatus: 'Pending Verification',
         paymentProof,
         currency: settings.currency || 'EGP',
         source: 'storefront',
@@ -588,6 +589,7 @@ app.post('/api/orders', async (req, res) => {
         discount: Math.round(codeDiscount),
         discountCode: appliedCode ? appliedCode.code : null,
         coatingFee: Math.round(coatingFee),
+        paymentStatus: 'Pending Verification',
       });
     }
 
@@ -612,6 +614,7 @@ app.post('/api/orders', async (req, res) => {
       status: 'Pending',
       statusHistory: [{ status: 'Pending', at: nowIso }],
       payment: paymentMethod,
+      paymentStatus: 'Not Required',
       currency: settings.currency || 'EGP',
       source: 'storefront',
     };
@@ -630,6 +633,7 @@ app.post('/api/orders', async (req, res) => {
       discount: Math.round(codeDiscount),
       discountCode: appliedCode ? appliedCode.code : null,
       coatingFee: Math.round(coatingFee),
+      paymentStatus: 'Not Required',
     });
   } catch (e) {
     console.error('[api/orders]', e.message);
@@ -922,6 +926,27 @@ app.post('/api/admin/order-status', requireAdmin, async (req, res) => {
     const n = await db.setOrderStatus(id, status);
     if (!n) return res.status(404).json({ error: 'Order not found.' });
     res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/order-payment-status', requireAdmin, async (req, res) => {
+  try {
+    const { id, status } = req.body || {};
+    const allowed = ['Pending Verification', 'Verified', 'Rejected'];
+    if (!id) return res.status(400).json({ error: 'Order id is required.' });
+    if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid payment status.' });
+
+    const order = await db.getOrder(id);
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
+    if (order.payment !== 'InstaPay') {
+      return res.status(400).json({ error: 'Payment verification is only available for InstaPay orders.' });
+    }
+
+    const n = await db.setOrderPaymentStatus(id, status);
+    if (!n) return res.status(404).json({ error: 'Order not found.' });
+    res.json({ ok: true, paymentStatus: status });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }

@@ -469,6 +469,10 @@ img { max-width: 100%; height: auto; display: block; }
 /* Nano Ceramic Coating extra — same luxury gold language as badge-gold, with
    its own class so InstaPay badges never change appearance */
 .badge-coating { background: rgba(200,161,90,.16); color: #8d6829; border: 1px solid rgba(200,161,90,.34); white-space: nowrap; }
+.badge-payment-pending { background: var(--warning-light); color: var(--warning); border: 1px solid rgba(245,158,11,.25); white-space: nowrap; }
+.badge-payment-verified { background: var(--success-light); color: var(--success); border: 1px solid rgba(16,185,129,.25); white-space: nowrap; }
+.badge-payment-rejected { background: var(--danger-light); color: var(--danger); border: 1px solid rgba(239,68,68,.25); white-space: nowrap; }
+.badge-payment-na { background: #f3f4f6; color: var(--text-muted); white-space: nowrap; }
 .badge-active { background: var(--success-light); color: var(--success); }
 .badge-inactive { background: #f3f4f6; color: var(--text-muted); }
 
@@ -876,6 +880,8 @@ img { max-width: 100%; height: auto; display: block; }
   color: var(--text-primary);
   margin-bottom: 4px;
 }
+.admin-payment-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.instapay-proof-admin img { width: auto; height: auto; }
 
 /* ==========================================================================
    RESPONSIVE

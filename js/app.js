@@ -408,7 +408,9 @@
   function renderCheckoutTotals() {
     const host = $('#checkout-totals');
     if (!host) return;
-    host.innerHTML = checkoutTotalsHTML(cartTotals());
+    const totals = cartTotals();
+    host.innerHTML = checkoutTotalsHTML(totals);
+    updateInstapayDue(totals);
     bindDiscount();
     renderCartBadge();
   }
@@ -1712,7 +1714,33 @@
     return { enabled: !off && !!url, url: url };
   }
 
-  function paymentMethodsHTML() {
+  const INSTAPAY_PROOF_COPY = {
+    title: 'Upload Transfer Proof',
+    description: 'Upload your InstaPay payment screenshot',
+    button: 'Upload Transfer Proof',
+  };
+
+  function instapayDueHTML(totals) {
+    const label = L() === 'ar' ? 'حوّل هذا المبلغ بالضبط' : 'Transfer exactly';
+    const note = L() === 'ar'
+      ? 'إجمالي الطلب النهائي بعد الخصومات والرسوم وأي إضافات'
+      : 'Final checkout total after discounts, Nano Ceramic Coating, delivery and all fees';
+    return `<div class="instapay-due" id="instapay-due" data-total="${Number(totals.total || 0)}">
+      <span class="instapay-due-label">${VEL.esc(label)}</span>
+      <strong class="instapay-due-amount" id="instapay-due-amount">${VEL.money(totals.total)}</strong>
+      <small>${VEL.esc(note)}</small>
+    </div>`;
+  }
+
+  function updateInstapayDue(totals) {
+    const box = $('#instapay-due');
+    const amount = $('#instapay-due-amount');
+    if (!box || !amount) return;
+    box.setAttribute('data-total', String(Number(totals.total || 0)));
+    amount.textContent = VEL.money(totals.total);
+  }
+
+  function paymentMethodsHTML(totals) {
     const ip = getInstapay();
     const cashInner = `<svg class="pay-ic" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#C8A15A"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
         <div class="pay-option-body">
@@ -1740,13 +1768,20 @@
           <a class="pay-instapay-title" href="${safeUrl}" target="_blank" rel="noopener noreferrer" id="instapay-title-link">${instapayTitle}</a>
           <div class="pay-option-desc">${instapayDesc}</div>
           <div class="instapay-cta" id="instapay-cta-box">
+            ${instapayDueHTML(totals || cartTotals())}
             <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-gold btn-sm" id="instapay-link-btn">${payBtnText}</a>
             <div class="instapay-hint">${hint}</div>
             <div class="instapay-proof" id="instapay-proof-box">
-              <label class="instapay-proof-label" for="instapay-proof-input">${pt('instapay_proof_title')} <span class="req">*</span></label>
-              <div class="instapay-proof-copy">${pt('instapay_proof_hint')}</div>
-              <input id="instapay-proof-input" name="paymentProof" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif" capture="environment" aria-describedby="instapay-proof-error instapay-proof-name">
-              <button type="button" class="btn btn-line btn-sm instapay-proof-picker" id="instapay-proof-picker">${pt('instapay_proof_choose')}</button>
+              <label class="instapay-proof-label" for="instapay-proof-input">${INSTAPAY_PROOF_COPY.title} <span class="req">*</span></label>
+              <div class="instapay-proof-copy">${INSTAPAY_PROOF_COPY.description}</div>
+              <input id="instapay-proof-input" name="paymentProof" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif" aria-describedby="instapay-proof-error instapay-proof-name">
+              <div class="instapay-proof-actions">
+                <button type="button" class="btn btn-line btn-sm instapay-proof-picker" id="instapay-proof-picker">${INSTAPAY_PROOF_COPY.button}</button>
+                <button type="button" class="btn btn-line btn-sm instapay-proof-remove" id="instapay-proof-remove" hidden>${L() === 'ar' ? 'إزالة' : 'Remove'}</button>
+              </div>
+              <div class="instapay-proof-preview" id="instapay-proof-preview" hidden>
+                <img id="instapay-proof-preview-img" alt="Upload Transfer Proof preview">
+              </div>
               <div class="instapay-proof-name" id="instapay-proof-name" aria-live="polite"></div>
               <div class="instapay-proof-error" id="instapay-proof-error" role="alert"></div>
             </div>
@@ -1778,7 +1813,7 @@
             </div>
             <div class="field"><label>${pt('full_address')} <span class="req">*</span></label><textarea name="address" rows="3" required maxlength="200"></textarea><div class="field-hint">${L()==='ar'?'الحد أقصى 200 حرف':'Max 200 characters'}</div></div>
             <div class="field"><label>${pt('order_notes')}</label><textarea name="notes" rows="2" maxlength="300"></textarea><div class="field-hint">${L()==='ar'?'الحد أقصى 300 حرف':'Max 300 characters'}</div></div>
-            ${paymentMethodsHTML()}
+            ${paymentMethodsHTML(totals)}
             <button class="btn btn-gold btn-block" type="submit" style="margin-top:20px">${pt('place_order')}</button>
           </form>
         </div>
@@ -2058,7 +2093,7 @@
         <div class="sc-row"><span>${pt('order_id')}</span><b class="gold">${VESt(o.id)}</b></div>
         <div class="sc-row"><span>${pt('order_date')}</span><span>${VESt(fmtDate(o.createdAt))}</span></div>
         <div class="sc-row"><span>${pt('payment_method')}</span><b class="cod">${o.payment === 'InstaPay' ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg> InstaPay` : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg> ${pt('cash_on_delivery')}`}</b></div>
-        <div class="sc-note">${o.payment === 'InstaPay' ? (L() === 'ar' ? 'تم اختيار الدفع عبر انستاباي' : 'Paid via InstaPay') : pt('cod_note')}</div>
+        <div class="sc-note">${o.payment === 'InstaPay' ? (L() === 'ar' ? 'تم اختيار الدفع عبر انستاباي · حالة الدفع: Pending Verification' : 'InstaPay payment status: Pending Verification') : pt('cod_note')}</div>
       </div>
 
       ${o.bundleDiscount ? `<div class="bundle-tag" style="display:flex;gap:8px;justify-content:center;margin:22px 0 6px">${pt('bundle_applied')}</div>
@@ -3174,6 +3209,50 @@
     if (error) error.textContent = message || '';
     const input = $('#instapay-proof-input');
     if (input) input.setCustomValidity(message || '');
+    const box = $('#instapay-proof-box');
+    if (box) box.classList.toggle('has-error', !!message);
+  }
+
+  function proofFileAllowed(file) {
+    if (!file || file.size <= 0) return false;
+    const type = String(file.type || '').toLowerCase();
+    if (/^image\/(jpeg|jpg|png|webp|heic|heif|avif)$/i.test(type)) return true;
+    // Some mobile browsers/camera roll providers leave HEIC MIME blank.
+    return /\.(jpe?g|png|webp|heic|heif|avif)$/i.test(file.name || '');
+  }
+
+  function clearInstapayProof({ keepError } = {}) {
+    const input = $('#instapay-proof-input');
+    if (input) input.value = '';
+    const name = $('#instapay-proof-name');
+    if (name) name.textContent = '';
+    const preview = $('#instapay-proof-preview');
+    const imgEl = $('#instapay-proof-preview-img');
+    if (imgEl) {
+      if (imgEl.dataset.objectUrl) URL.revokeObjectURL(imgEl.dataset.objectUrl);
+      imgEl.removeAttribute('src');
+      delete imgEl.dataset.objectUrl;
+    }
+    if (preview) preview.hidden = true;
+    const remove = $('#instapay-proof-remove');
+    if (remove) remove.hidden = true;
+    if (!keepError) setInstapayProofError('');
+  }
+
+  function showInstapayProofPreview(file) {
+    const name = $('#instapay-proof-name');
+    if (name) name.textContent = file ? pt('instapay_proof_selected', { name: file.name }) : '';
+    const preview = $('#instapay-proof-preview');
+    const imgEl = $('#instapay-proof-preview-img');
+    if (imgEl && file) {
+      if (imgEl.dataset.objectUrl) URL.revokeObjectURL(imgEl.dataset.objectUrl);
+      const url = URL.createObjectURL(file);
+      imgEl.src = url;
+      imgEl.dataset.objectUrl = url;
+      if (preview) preview.hidden = false;
+    }
+    const remove = $('#instapay-proof-remove');
+    if (remove) remove.hidden = !file;
   }
 
   function syncInstapayProofUI(form) {
@@ -3206,23 +3285,27 @@
       }
       if (input) input.click();
     });
+    const remove = $('#instapay-proof-remove');
+    if (remove) remove.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearInstapayProof();
+      if (syncInstapayProofUI(form)) setInstapayProofError(pt('instapay_proof_missing'));
+    });
     if (input) input.addEventListener('change', () => {
       const file = input.files && input.files[0];
-      const name = $('#instapay-proof-name');
-      if (name) name.textContent = file ? pt('instapay_proof_selected', { name: file.name }) : '';
-      if (!file) { setInstapayProofError(pt('instapay_proof_missing')); return; }
-      if (!/^image\/(jpeg|jpg|png|webp|heic|heif|avif)$/i.test(file.type) || file.size <= 0) {
-        input.value = '';
-        if (name) name.textContent = '';
+      if (!file) { clearInstapayProof({ keepError: true }); setInstapayProofError(pt('instapay_proof_missing')); return; }
+      if (!proofFileAllowed(file)) {
+        clearInstapayProof({ keepError: true });
         setInstapayProofError(pt('instapay_proof_invalid'));
         return;
       }
       if (file.size > 6 * 1024 * 1024) {
-        input.value = '';
-        if (name) name.textContent = '';
+        clearInstapayProof({ keepError: true });
         setInstapayProofError(pt('instapay_proof_too_large'));
         return;
       }
+      showInstapayProofPreview(file);
       setInstapayProofError('');
     });
     syncInstapayProofUI(form);
@@ -3266,7 +3349,7 @@
         return;
       }
       const proofFile = proofInput.files[0];
-      if (!/^image\/(jpeg|jpg|png|webp|heic|heif|avif)$/i.test(proofFile.type) || proofFile.size <= 0) {
+      if (!proofFileAllowed(proofFile)) {
         setInstapayProofError(pt('instapay_proof_invalid'));
         return;
       }
@@ -3297,7 +3380,7 @@
         const totals = cartTotals();
         state.lastOrder = {
           id: j.orderId, createdAt: new Date().toISOString(), customer,
-          payment,
+          payment, paymentStatus: j.paymentStatus || (payment === 'InstaPay' ? 'Pending Verification' : 'Not Required'),
           items: totals.items.map(it => ({ productId: it.productId, keyShape: it.keyShape, qty: it.qty, fitment: it.fitment || null, color: it.color || null, coating: !!(it.coating && coatingEligible(it.prod)), name_en: it.prod.name_en, name_ar: it.prod.name_ar, price: it.prod.price, lineTotal: it.prod.price * it.qty, image: img(it.prod), brandSlug: it.prod.brandSlug, category: it.prod.category })),
           subtotal: totals.subtotal, bundleDiscount: totals.bundleDiscount,
           discount: totals.discount, discountCode: totals.discountCode,

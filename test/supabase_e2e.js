@@ -76,8 +76,8 @@ async function main() {
     check('migration CLI exited 0', () => assert.strictEqual(apply.status, 0, `exit ${apply.status}`));
 
     const applied = await q('select version from supabase_migrations.schema_migrations order by version');
-    check('all migrations recorded (001 … 007)', () =>
-      assert.deepStrictEqual(applied.map((r) => r.version), ['001', '002', '003', '004', '005', '006', '007']));
+    check('all migrations recorded (001 … 008)', () =>
+      assert.deepStrictEqual(applied.map((r) => r.version), ['001', '002', '003', '004', '005', '006', '007', '008']));
 
     const colorCols = await q(`select table_name, column_name from information_schema.columns
       where table_schema = 'public' and column_name in ('colors','color')
@@ -106,6 +106,11 @@ async function main() {
     const seededShapes = await q(`select code from public.key_shapes order by "order"`);
     check('007 seeded the four default shapes A–D', () =>
       assert.deepStrictEqual(seededShapes.map((r) => r.code), ['A', 'B', 'C', 'D']));
+
+    const paymentStatusCols = await q(`select column_name from information_schema.columns
+      where table_schema = 'public' and table_name = 'orders' and column_name = 'payment_status'`);
+    check('008 added orders.payment_status for InstaPay verification', () =>
+      assert.strictEqual(paymentStatusCols.length, 1, JSON.stringify(paymentStatusCols)));
 
     const seededColors = await one(`select count(*)::int n from public.products where jsonb_array_length(coalesce(colors,'[]'::jsonb)) > 0`);
     check('mapped products carry their seeded color variants', () =>
@@ -277,7 +282,7 @@ async function main() {
     });
     const newOrderId = orderJson.orderId;
 
-    const orderRow = await one('select customer_name, customer_phone, customer_address, customer_city, customer_area, total, status from public.orders where id = $1', [newOrderId]);
+    const orderRow = await one('select customer_name, customer_phone, customer_address, customer_city, customer_area, total, status, payment_status from public.orders where id = $1', [newOrderId]);
     check('order row has customer_phone + customer_address columns filled', () => {
       assert.ok(orderRow, 'order row missing');
       assert.strictEqual(orderRow.customer_phone, '+201099998888');
@@ -286,6 +291,7 @@ async function main() {
       assert.strictEqual(orderRow.customer_city, 'Cairo');
       assert.strictEqual(orderRow.customer_area, 'Maadi');
       assert.strictEqual(orderRow.status, 'Pending');
+      assert.strictEqual(orderRow.payment_status, 'Not Required');
     });
     // 2 x 1450 + 850 = 3750, over the 2000 free-shipping threshold
     check('server recomputed the total (2 x 1450 + 850, free delivery)', () =>
@@ -515,6 +521,14 @@ async function main() {
       assert.strictEqual(statusRow.status, 'Confirmed');
       assert.strictEqual(statusRow.status_history.length, 2);
       assert.strictEqual(statusRow.status_history[1].status, 'Confirmed');
+    });
+
+    const codPaymentStatusRes = await (await fetch(`${base}/api/admin/order-payment-status`, {
+      method: 'POST', headers: adminHeaders,
+      body: JSON.stringify({ id: newOrderId, status: 'Verified' }),
+    })).json();
+    check('admin payment verification refuses COD orders', () => {
+      assert.ok(codPaymentStatusRes.error, JSON.stringify(codPaymentStatusRes));
     });
 
     const contentRes = await (await fetch(`${base}/api/admin/save`, {

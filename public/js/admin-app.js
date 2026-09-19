@@ -955,6 +955,22 @@
     return `<span class="badge ${cls}">${esc(s)}</span>`;
   }
 
+  function effectivePaymentStatus(o) {
+    if (!o) return 'Not Required';
+    if (o.payment === 'InstaPay') return o.paymentStatus || o.payment_status || 'Pending Verification';
+    return o.paymentStatus || o.payment_status || 'Not Required';
+  }
+
+  function paymentStatusBadge(status) {
+    const cls = {
+      'Pending Verification': 'badge-payment-pending',
+      'Verified': 'badge-payment-verified',
+      'Rejected': 'badge-payment-rejected',
+      'Not Required': 'badge-payment-na',
+    }[status] || 'badge-payment-pending';
+    return `<span class="badge ${cls}">${esc(status)}</span>`;
+  }
+
   // ========================================================================
   // PRODUCTS
   // ========================================================================
@@ -1444,7 +1460,7 @@
       <div class="card-body" style="padding:0;overflow-x:auto;">
         ${filtered.length ? `
         <table class="data-table">
-          <thead><tr><th>Order ID</th><th>Date</th><th>Customer</th><th>Phone</th><th>Address</th><th>Items</th><th>Total</th><th>Payment</th><th>Status</th><th style="width:120px;">Actions</th></tr></thead>
+          <thead><tr><th>Order ID</th><th>Date</th><th>Customer</th><th>Phone</th><th>Address</th><th>Items</th><th>Total</th><th>Payment Method</th><th>Payment Status</th><th>Transfer Proof</th><th>Status</th><th style="width:120px;">Actions</th></tr></thead>
           <tbody>
             ${filtered.map(o => `<tr>
               <td><strong>${esc(o.id)}</strong>${(o.coatingFee || 0) > 0 ? ` <span class="badge badge-coating" title="Nano Ceramic Coating requested (+${money(o.coatingFee)})">◆ Coating</span>` : ''}</td>
@@ -1455,8 +1471,14 @@
               <td>${(o.items || []).length}</td>
               <td><strong>${money(o.total)}</strong></td>
               <td>${o.payment === 'InstaPay'
-                ? `<span class="badge badge-gold" title="InstaPay payment">⚡ InstaPay${o.paymentProof?.available ? ' · proof' : ''}</span>`
+                ? `<span class="badge badge-gold" title="Payment method: InstaPay">⚡ InstaPay</span>`
                 : `<span style="color:var(--text-muted);">Cash on Delivery</span>`}</td>
+              <td>${paymentStatusBadge(effectivePaymentStatus(o))}</td>
+              <td>${o.payment === 'InstaPay'
+                ? (o.paymentProof?.available
+                  ? `<button class="btn btn-ghost btn-sm" data-view-order="${esc(o.id)}" title="View uploaded transfer proof">View proof</button>`
+                  : `<span class="badge badge-payment-rejected" title="No proof attached">Missing</span>`)
+                : '<span style="color:var(--text-muted);">—</span>'}</td>
               <td>${statusBadge(o.status)}</td>
               <td>
                 <button class="btn btn-ghost btn-sm" data-view-order="${esc(o.id)}" title="Open">👁</button>
@@ -3396,7 +3418,21 @@
     if (!o) { toast('Order not found', 'error'); return; }
 
     const items = o.items || [];
+    const paymentStatus = effectivePaymentStatus(o);
     let paymentProofHTML = '';
+    let paymentVerificationHTML = '';
+    if (o.payment === 'InstaPay') {
+      paymentVerificationHTML = `
+        <div class="detail-section instapay-verification-admin" style="margin-top:18px;">
+          <h4>Payment verification</h4>
+          <p>Payment method: <strong>InstaPay</strong></p>
+          <p>Payment status: ${paymentStatusBadge(paymentStatus)}</p>
+          <div class="admin-payment-actions">
+            <button class="btn btn-primary btn-sm" id="btn-verify-payment" ${paymentStatus === 'Verified' ? 'disabled' : ''}>Verify</button>
+            <button class="btn btn-danger btn-sm" id="btn-reject-payment" ${paymentStatus === 'Rejected' ? 'disabled' : ''}>Reject</button>
+          </div>
+        </div>`;
+    }
     if (o.payment === 'InstaPay') {
       if (o.paymentProof && o.paymentProof.available) {
         const proofResponse = await api('GET', `/api/admin/order/${encodeURIComponent(id)}/payment-proof`);
@@ -3404,18 +3440,18 @@
           const proofUrl = esc(proofResponse.j.url);
           paymentProofHTML = `
             <div class="detail-section instapay-proof-admin" style="margin-top:18px;">
-              <h4>⚡ InstaPay payment proof</h4>
-              <p style="font-size:12px;color:var(--text-secondary);margin:4px 0 10px;">Customer-uploaded transfer screenshot</p>
+              <h4>⚡ Transfer proof / uploaded proof</h4>
+              <p style="font-size:12px;color:var(--text-secondary);margin:4px 0 10px;">Customer-uploaded InstaPay transfer screenshot</p>
               <a href="${proofUrl}" target="_blank" rel="noopener noreferrer" title="Open InstaPay payment proof">
                 <img src="${proofUrl}" alt="Customer InstaPay payment proof" style="display:block;max-width:100%;max-height:420px;object-fit:contain;border:1px solid var(--border);border-radius:8px;background:var(--bg);">
               </a>
               <p style="font-size:11px;color:var(--text-muted);margin:8px 0 0;">Click the image to open the full-size proof.</p>
             </div>`;
         } else {
-          paymentProofHTML = `<div class="detail-section" style="margin-top:18px;"><h4>⚡ InstaPay payment proof</h4><p style="color:var(--danger);font-size:12px;">The proof is saved but could not be opened right now.</p></div>`;
+          paymentProofHTML = `<div class="detail-section" style="margin-top:18px;"><h4>⚡ Transfer proof / uploaded proof</h4><p style="color:var(--danger);font-size:12px;">The proof is saved but could not be opened right now.</p></div>`;
         }
       } else {
-        paymentProofHTML = `<div class="detail-section" style="margin-top:18px;"><h4>⚡ InstaPay payment proof</h4><p style="color:var(--danger);font-size:12px;">No payment proof is attached to this InstaPay order.</p></div>`;
+        paymentProofHTML = `<div class="detail-section" style="margin-top:18px;"><h4>⚡ Transfer proof / uploaded proof</h4><p style="color:var(--danger);font-size:12px;">No payment proof is attached to this InstaPay order.</p></div>`;
       }
     }
     showModal(`
@@ -3438,12 +3474,14 @@
             <div class="detail-section">
               <h4>Order Info</h4>
               <p>📅 ${fmtDateTime(o.createdAt || o.created_at)}</p>
-              <p>💳 <strong>${esc(o.payment || 'Cash on Delivery')}</strong>${o.payment === 'InstaPay' ? ' <span class="badge badge-gold">payment proof required</span>' : ''}</p>
+              <p>💳 Payment method: <strong>${esc(o.payment || 'Cash on Delivery')}</strong>${o.payment === 'InstaPay' ? ' <span class="badge badge-gold">InstaPay</span>' : ''}</p>
+              <p>Payment status: ${paymentStatusBadge(paymentStatus)}</p>
               <p>🌐 ${esc(o.source || 'storefront')}</p>
-              <p>Status: ${statusBadge(o.status)}</p>
+              <p>Order status: ${statusBadge(o.status)}</p>
             </div>
           </div>
           ${paymentProofHTML}
+          ${paymentVerificationHTML}
 
           <h4 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:20px 0 10px;">
             Order items <span style="color:var(--text-muted);font-weight:400;">(${items.length} line${items.length === 1 ? '' : 's'} from order_items)</span>
@@ -3514,6 +3552,22 @@
         render();
       } catch (e) { toast('Failed to update', 'error'); }
     });
+
+    async function updatePaymentVerification(nextStatus) {
+      try {
+        const { ok, j } = await api('POST', '/api/admin/order-payment-status', { id, status: nextStatus });
+        if (!ok) throw new Error((j && j.error) || 'Failed');
+        const stored = (state.data.orders || []).find(x => x.id === id);
+        if (stored) stored.paymentStatus = nextStatus;
+        toast(`Payment ${nextStatus.toLowerCase()}`, 'success');
+        closeAllModals();
+        render();
+      } catch (e) { toast(e.message || 'Failed to update payment status', 'error'); }
+    }
+    const verifyBtn = $('#btn-verify-payment');
+    const rejectBtn = $('#btn-reject-payment');
+    if (verifyBtn) verifyBtn.addEventListener('click', () => updatePaymentVerification('Verified'));
+    if (rejectBtn) rejectBtn.addEventListener('click', () => updatePaymentVerification('Rejected'));
   }
 
   function bindCustomers() {
