@@ -12,6 +12,7 @@
 // Requires the dev dependency `embedded-postgres` (npm i -D embedded-postgres).
 // ============================================================================
 
+const fs = require('fs');
 const { spawnSync } = require('child_process');
 const path = require('path');
 const assert = require('assert');
@@ -119,6 +120,28 @@ async function main() {
     const seededShapeImgs = await one(`select count(*)::int n from public.key_shapes where image_url is not null`);
     check('009 is additive — no existing shape starts with an image', () =>
       assert.strictEqual(seededShapeImgs.n, 0, String(seededShapeImgs.n)));
+
+    // The operator's own acceptance check, verbatim — it must run on a
+    // database that has 009 applied returns the four shapes, in order.
+    const operatorVerification = await q(`select id, code, name_en, active, image_url
+      from public.key_shapes order by "order"`);
+    check('the acceptance query (id, code, name_en, active, image_url ORDER BY "order") returns 4 shapes A–D', () => {
+      assert.strictEqual(operatorVerification.length, 4, JSON.stringify(operatorVerification));
+      assert.deepStrictEqual(operatorVerification.map((r) => r.code), ['A', 'B', 'C', 'D']);
+      assert.ok(operatorVerification.every((r) => r.active === true));
+      assert.ok(operatorVerification.every((r) => r.image_url === null), JSON.stringify(operatorVerification));
+    });
+
+    // The storage half of 009 (the public `shape-images` bucket + the Storage
+    // policies) is Supabase-only: this Postgres has no `storage` schema, and
+    // the migration must still apply cleanly (it skips that section) — proven
+    // by the CLI exiting 0 above and the 009 version row being present.
+    const hasStorageSchema = await one(`select to_regclass('storage.buckets') is not null as present`);
+    const recorded009 = await one(`select checksum from supabase_migrations.schema_migrations where version = '009'`);
+    check('009 applied on a database without the storage schema (skipped safely, still recorded)', () => {
+      assert.strictEqual(hasStorageSchema.present, false);
+      assert.ok(recorded009 && recorded009.checksum, JSON.stringify(recorded009));
+    });
 
     const seededColors = await one(`select count(*)::int n from public.products where jsonb_array_length(coalesce(colors,'[]'::jsonb)) > 0`);
     check('mapped products carry their seeded color variants', () =>
@@ -485,6 +508,47 @@ async function main() {
     const dataNoImg = await (await fetch(`${base}/api/data`)).json();
     check('the storefront falls back to no image after removal', () =>
       assert.ok(!(dataNoImg.shapes.find((s) => s.code === 'B') || {}).image_url));
+
+    // ------------------------------------------------------------------ 5e
+    // Migration 009 against a Supabase-like Storage schema: the bucket must be
+    // created PUBLIC (and re-publicised when it already exists as private) and
+    // the four policies must land on storage.objects.
+    section('5e. Migration 009 — the public shape-images bucket + Storage policies');
+    await q(`create schema if not exists storage`);
+    await q(`create table if not exists storage.buckets (
+      id text primary key, name text, public boolean default false, created_at timestamptz default now())`);
+    await q(`alter table storage.buckets add column if not exists owner uuid`);
+    await q(`create table if not exists storage.objects (
+      id uuid primary key default gen_random_uuid(), bucket_id text, name text,
+      owner uuid, created_at timestamptz default now())`);
+    // A pre-existing bucket flipped private by hand must be fixed, not trusted.
+    await q(`insert into storage.buckets (id, name, public) values ('shape-images', 'shape-images', false)
+             on conflict (id) do update set public = false`);
+    const sql009 = fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', '009_shape_images.sql'), 'utf8');
+    await q(sql009);
+    const bucket = await one(`select id, name, public from storage.buckets where id = 'shape-images'`);
+    check('009 creates the shape-images bucket and makes it PUBLIC', () =>
+      assert.ok(bucket && bucket.public === true, JSON.stringify(bucket)));
+    const policyRows = await q(`select policyname, cmd from pg_policies
+      where schemaname = 'storage' and tablename = 'objects'
+        and policyname in ('Shape images: public read','Shape images: admin upload',
+                           'Shape images: admin update','Shape images: admin delete')
+      order by policyname`);
+    check('009 adds the four Storage policies (public read + admin insert/update/delete)', () =>
+      assert.deepStrictEqual(policyRows.map((r) => r.policyname), [
+        'Shape images: admin delete', 'Shape images: admin update',
+        'Shape images: admin upload', 'Shape images: public read',
+      ]), JSON.stringify(policyRows));
+    check('the public-read policy exists (this is what serves the stored URL)', () =>
+      assert.ok(policyRows.some((r) => r.policyname === 'Shape images: public read' && r.cmd === 'SELECT'), JSON.stringify(policyRows)));
+    await q(sql009);   // idempotent: a second run must be a no-op, not an error
+    const bucketAfter = await one(`select count(*)::int n from storage.buckets where id = 'shape-images' and public = true`);
+    check('009 is idempotent (re-running leaves exactly one public bucket)', () =>
+      assert.strictEqual(bucketAfter.n, 1, String(bucketAfter.n)));
+    const policyCount = await one(`select count(*)::int n from pg_policies
+      where schemaname = 'storage' and tablename = 'objects' and policyname like 'Shape images:%'`);
+    check('re-running 009 never duplicates the Storage policies', () =>
+      assert.strictEqual(policyCount.n, 4, String(policyCount.n)));
 
     // ------------------------------------------------------------------ 6
     section('6. Admin edit -> Supabase -> storefront');

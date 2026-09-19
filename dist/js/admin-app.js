@@ -1,12 +1,14 @@
 /* ==========================================================================
    VILOCCI — Admin Dashboard Application
    Professional e-commerce admin panel with Supabase integration.
-   Build 20260919b — Shape images: in Admin → Products → Edit Product →
-   Key Shapes every shape row now carries its store-wide details — Shape
-   name EN, Shape name AR, and the shape image (upload / preview / replace
-   / remove), stored persistably in Supabase Storage and shown as a real
-   image card on every storefront selector. The same image controls live in
-   Admin → Shapes (table + editor). Builds on the 20260918d base — Shape
+   Build 20260919c — Shape images, completed end to end: the same controls
+   as 20260919b (Admin → Products → Edit Product → Key Shapes and Admin →
+   Shapes: image upload / preview / replace / remove, stored in Supabase
+   Storage and shown as a real image card on every storefront selector) plus
+   a status strip on Admin → Shapes that reports the live wiring — is
+   key_shapes.image_url there (migration 009), does the PUBLIC `shape-images`
+   bucket exist (migration 009), and how many shapes carry an image — so the
+   panel can never look "connected" while the upload path is not. Builds on the 20260918d base — Shape
    management: Admin → Shapes, the global key-shape catalogue (add / rename
    EN+AR / describe / reorder / hide / delete); a hidden shape disappears
    from the PDP selector, Quick Add, the Fitment Finder and new orders —
@@ -551,6 +553,12 @@
     // payload.
     if (view === 'customize-requests') { state.czRequests = null; state.czError = ''; state.czPhotoCache = {}; }
     if (view === 'customize-settings') { state.czSettings = null; }
+    // Shapes: re-read the server-side shape-image status (DB column + bucket)
+    // so the strip above the table always describes THIS deployment.
+    if (view === 'shapes') {
+      state.diagnosis = null;
+      fetchDiagnosis().then(() => { if (state.view === 'shapes') render(); });
+    }
     render();
     window.scrollTo(0, 0);
   }
@@ -1226,6 +1234,61 @@
     return true;
   }
 
+  // ------------------------------------------------------------------------
+  // SHAPE IMAGE HEALTH — the state of the feature, straight from the server
+  // (/api/admin/diagnose?probe=1 → shapeImages): is key_shapes.image_url there
+  // (migration 009), does the public `shape-images` bucket exist and is it
+  // public (migration 009), and how many shapes already carry an image.
+  // ------------------------------------------------------------------------
+  function shapeImagesDiag() {
+    return (state.diagnosis && state.diagnosis.shapeImages) || null;
+  }
+
+  function shapeImagesIssues() {
+    const si = shapeImagesDiag();
+    if (!si || si.error) return [];
+    const issues = [];
+    if (si.column && si.column.present === false) {
+      issues.push('The database is missing key_shapes.image_url — apply supabase/migrations/009_shape_images.sql so an uploaded image can be saved.');
+    }
+    const st = si.storage || {};
+    if (st.configured === false) {
+      issues.push('Supabase Storage is not configured on this server — uploads are stored inline instead of in the shape-images bucket.');
+    } else if (st.error) {
+      issues.push('Supabase Storage could not be read: ' + st.error);
+    } else if (st.exists === false) {
+      issues.push('The shape-images bucket does not exist yet — it is created automatically on the first upload (migration 009 creates it up front).');
+    } else if (st.public === false) {
+      issues.push('The shape-images bucket is PRIVATE — the stored image URLs will not render on the storefront. Run migration 009 or make the bucket public in Supabase → Storage.');
+    }
+    return issues;
+  }
+
+  // The status strip on top of Admin → Shapes. Keeps the "is this real?"
+  // question answerable from the panel itself: DB column, bucket + visibility,
+  // how many shapes have an image, and where the files are served from.
+  function shapeStatusHTML() {
+    const shapes = shapesList();
+    const withImg = shapes.filter(s => s.image_url).length;
+    const si = shapeImagesDiag();
+    const st = (si && si.storage) || null;
+    const issues = shapeImagesIssues();
+    const badge = (ok, text) => `<span class="badge ${ok ? 'badge-active' : 'badge-inactive'}">${esc(text)}</span>`;
+    let storageLine;
+    if (!si) storageLine = '<span style="color:var(--text-muted);">Checking the server…</span>';
+    else if (issues.length) storageLine = `<span style="color:var(--danger);">⚠ ${esc(issues.join(' '))}</span>`;
+    else storageLine = `${badge(true, 'bucket public')} <span style="color:var(--text-muted);">${esc(st?.bucket || 'shape-images')} · ${esc(String(st?.objects != null ? st.objects : 0))} file(s)</span>`;
+    return `<div class="card" style="margin-bottom:14px;">
+      <div class="card-body" style="display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;font-size:12px;">
+        <strong style="font-size:13px;">Shape images</strong>
+        <span>${badge(si && si.column && si.column.present !== false, si && si.column && si.column.present === false ? 'image_url column MISSING' : 'image_url column ready')}</span>
+        <span>${esc(String(withImg))} of ${esc(String(shapes.length))} shape(s) have an image</span>
+        <span>Storage: ${storageLine}</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-shape-status-refresh" title="Re-check the database, the bucket and the upload path">↻ Refresh status</button>
+      </div>
+    </div>`;
+  }
+
   // Thumbnail markup shared by the Shapes table and the product editor rows.
   function shapeThumbHTML(s, sizePx) {
     const size = sizePx || 44;
@@ -1243,6 +1306,7 @@
       : shapes;
 
     return `
+    ${shapeStatusHTML()}
     <div class="toolbar">
       <div class="search-box">
         <span class="search-icon">🔍</span>
@@ -1296,6 +1360,15 @@
   function bindShapes() {
     const search = $('#shape-search');
     if (search) search.addEventListener('input', (e) => { state.shapeSearch = e.target.value; render(); });
+
+    // Re-read the server-side status (DB column + storage bucket) on demand.
+    const statusBtn = $('#btn-shape-status-refresh');
+    if (statusBtn) statusBtn.addEventListener('click', async () => {
+      state.diagnosis = null;
+      await fetchDiagnosis();
+      toast(shapeImagesIssues().length ? 'Shape image status refreshed — see the notes above' : 'Shape images are fully wired (database + storage bucket)', shapeImagesIssues().length ? 'error' : 'success');
+      render();
+    });
 
     const addBtn = $('#btn-add-shape-cat');
     if (addBtn) addBtn.addEventListener('click', () => showShapeEditor(null));
