@@ -319,8 +319,29 @@ app.get('/api/admin/session', async (req, res) => {
 // ---------------------------------------------------------------------------
 // PUBLIC DATA API — everything the storefront needs in one payload
 // ---------------------------------------------------------------------------
+// `shape-images` is public storefront infrastructure. Provisioning it here is
+// deliberately limited to creating/updating that one named bucket; it never
+// touches catalog data and lets a fresh Vercel instance self-heal after the
+// migration has added the image_url column. The migration also installs the
+// explicit Storage RLS policies; the service-role upload path bypasses them.
+let shapeStorageSetup = null;
+function ensureShapeStorage() {
+  if (!storage.isConfigured()) return Promise.resolve(false);
+  if (!shapeStorageSetup) {
+    shapeStorageSetup = storage.ensureShapeBucket()
+      .then(() => true)
+      .catch((e) => {
+        console.warn('[shapes] public Storage bucket setup failed:', e.message);
+        shapeStorageSetup = null; // retry on the next request/cold start
+        return false;
+      });
+  }
+  return shapeStorageSetup;
+}
+
 app.get('/api/data', async (req, res) => {
   try {
+    await ensureShapeStorage();
     const catalog = await db.getCatalog();
     res.set('Cache-Control', 'no-store');
     res.json(db.publicPayload(catalog));
@@ -946,6 +967,7 @@ app.post('/api/admin/shapes/image', requireAdmin, async (req, res) => {
 
     let finalUrl = '';
     let mode = 'none';
+    const previousUrl = String(shape.image_url || '').trim();
     const cleanUrl = String(url || '').trim();
     if (cleanUrl) {
       // Paste-a-URL path (the durable option on read-only hosts). Accept
@@ -979,6 +1001,13 @@ app.post('/api/admin/shapes/image', requireAdmin, async (req, res) => {
     }
 
     await db.patchRecord('shapes', shapeId, { image_url: finalUrl });
+    // If a replacement changed the file extension, the canonical object path
+    // changed too. Remove only the old object from our own bucket, never a
+    // pasted external URL. The database update above is already durable, so a
+    // best-effort cleanup can never leave the storefront pointing at a dead URL.
+    if (previousUrl && previousUrl !== finalUrl) {
+      await storage.removeShapeImage(previousUrl);
+    }
     res.json({ ok: true, url: finalUrl, storage: mode, shapeId });
   } catch (e) {
     console.error('[shapes/image]', e.message);
@@ -995,10 +1024,11 @@ app.post('/api/admin/shapes/image/remove', requireAdmin, async (req, res) => {
     const catalog = await db.getCatalog();
     const shape = (catalog.shapes || []).find((s) => s.id === shapeId);
     if (!shape) return res.status(404).json({ error: `Shape not found: ${shapeId}` });
-    // Best effort: drop the stored object when it lives in our bucket. Pasted
-    // external URLs and inline data URLs have no object to delete.
-    await storage.removeShapeImage(shape.image_url);
+    const previousUrl = String(shape.image_url || '').trim();
+    // Clear the durable database value first. Pasted external URLs and inline
+    // data URLs have no storage object; our helper safely ignores those.
     await db.patchRecord('shapes', shapeId, { image_url: '' });
+    await storage.removeShapeImage(previousUrl);
     res.json({ ok: true, shapeId });
   } catch (e) {
     console.error('[shapes/image/remove]', e.message);

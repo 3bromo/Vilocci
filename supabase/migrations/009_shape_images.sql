@@ -27,3 +27,44 @@
 -- ============================================================================
 
 alter table public.key_shapes add column if not exists image_url text;
+
+-- ============================================================================
+-- 2. PUBLIC STORAGE BUCKET + POLICIES
+-- ----------------------------------------------------------------------------
+-- Shape images are storefront content, unlike the private Customize and
+-- payment-proof photos. Keep the bucket public so the durable image_url can be
+-- rendered directly by the browser without a signed URL. The conditional block
+-- keeps this migration safe in the embedded/local PostgreSQL test database,
+-- where Supabase's storage schema is not installed.
+-- ============================================================================
+do $$
+begin
+  if to_regclass('storage.buckets') is not null then
+    insert into storage.buckets (id, name, public)
+    values ('shape-images', 'shape-images', true)
+    on conflict (id) do update set
+      name = excluded.name,
+      public = true;
+  end if;
+
+  if to_regclass('storage.objects') is not null then
+    -- Public storefront reads.
+    execute 'drop policy if exists "Shape images: public read" on storage.objects';
+    execute 'create policy "Shape images: public read" on storage.objects
+             for select using (bucket_id = ''shape-images'')';
+
+    -- Authenticated admins may manage objects directly. The application server
+    -- normally uses the service-role key (which bypasses RLS), but these
+    -- policies keep the bucket correct for any authenticated admin tooling too.
+    execute 'drop policy if exists "Shape images: admin upload" on storage.objects';
+    execute 'create policy "Shape images: admin upload" on storage.objects
+             for insert with check (bucket_id = ''shape-images'' and public.is_admin())';
+    execute 'drop policy if exists "Shape images: admin update" on storage.objects';
+    execute 'create policy "Shape images: admin update" on storage.objects
+             for update using (bucket_id = ''shape-images'' and public.is_admin())
+             with check (bucket_id = ''shape-images'' and public.is_admin())';
+    execute 'drop policy if exists "Shape images: admin delete" on storage.objects';
+    execute 'create policy "Shape images: admin delete" on storage.objects
+             for delete using (bucket_id = ''shape-images'' and public.is_admin())';
+  end if;
+end $$;

@@ -395,6 +395,15 @@ async function bootAdmin(catalog) {
     console.log('\n== 10. Migration 009 ships with the CLI ==');
     const printSql = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'migrate.js'), '--print-sql'], { cwd: ROOT, encoding: 'utf8' });
     check('migrate --print-sql includes the 009 shape images migration', printSql.stdout.includes('009_shape_images.sql') && /add column if not exists image_url/i.test(printSql.stdout));
+    // Migration 009 also provisions the public storefront bucket and the
+    // explicit Storage policies. The local embedded database has no storage
+    // schema, so this is intentionally checked from the generated SQL text.
+    check('009 provisions the public shape-images bucket', /values\s*\(\s*'shape-images'\s*,\s*'shape-images'\s*,\s*true\s*\)/i.test(printSql.stdout));
+    check('009 includes public-read and admin Storage policies',
+      /Shape images: public read/i.test(printSql.stdout)
+      && /Shape images: admin upload/i.test(printSql.stdout)
+      && /Shape images: admin update/i.test(printSql.stdout)
+      && /Shape images: admin delete/i.test(printSql.stdout));
     // Comments may mention DROP/DELETE/`TRUNCATE` (the safety rules do) — strip
     // them before asserting the actual statements are additive only.
     const tail009 = (printSql.stdout.split('009_shape_images.sql').pop() || '').replace(/--[^\n]*/g, '');
