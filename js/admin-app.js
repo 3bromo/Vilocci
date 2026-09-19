@@ -1,12 +1,17 @@
 /* ==========================================================================
    VILOCCI — Admin Dashboard Application
    Professional e-commerce admin panel with Supabase integration.
-   Build 20260918d — Shape management: Admin → Shapes, the global key-shape
-   catalogue (add / rename EN+AR / describe / reorder / hide / delete). A
-   hidden shape disappears from the PDP selector, Quick Add, the Fitment
-   Finder and new orders. Builds on the 20260918c base (per-shape stock
-   toggle, add/remove, reorder in the Products editor + Key shapes column),
-   which stays fully intact.
+   Build 20260919b — Shape images: in Admin → Products → Edit Product →
+   Key Shapes every shape row now carries its store-wide details — Shape
+   name EN, Shape name AR, and the shape image (upload / preview / replace
+   / remove), stored persistably in Supabase Storage and shown as a real
+   image card on every storefront selector. The same image controls live in
+   Admin → Shapes (table + editor). Builds on the 20260918d base — Shape
+   management: Admin → Shapes, the global key-shape catalogue (add / rename
+   EN+AR / describe / reorder / hide / delete); a hidden shape disappears
+   from the PDP selector, Quick Add, the Fitment Finder and new orders —
+   and on the 20260918c base (per-shape stock toggle, add/remove, reorder
+   in the Products editor + Key shapes column), which stays fully intact.
    ========================================================================== */
 (() => {
   'use strict';
@@ -1178,6 +1183,57 @@
   // AND product-available before a customer can pick it.
   const shapesList = () => ((state.data && state.data.shapes) || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
   const shapeProductCount = (code) => (state.data?.products || []).filter(p => (p.keyShapes || []).some(s => s.shape === code)).length;
+  const shapeByCode = (code) => shapesList().find(s => String(s.code || '').toUpperCase() === String(code || '').toUpperCase());
+
+  // ------------------------------------------------------------------------
+  // SHAPE IMAGES — one uploaded visual per catalogue shape.
+  // The image is a property of the SHAPE itself (stored on the catalogue row
+  // via /api/admin/shapes/image → Supabase Storage bucket `shape-images`), so
+  // the Shapes screen and the Products editor's Key Shapes rows manage the
+  // very same file — there is exactly one image per shape code store-wide.
+  // ------------------------------------------------------------------------
+  function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Could not read the file.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function setShapeImageFromFile(shapeId, file) {
+    const dataUrl = await fileToDataUrl(file);
+    const { ok, j } = await api('POST', '/api/admin/shapes/image', { shapeId, dataUrl });
+    if (!ok || !j || !j.ok) throw new Error((j && j.error) || 'Shape image upload failed');
+    const s = (state.data.shapes || []).find(x => x.id === shapeId);
+    if (s) s.image_url = j.url;
+    return j.url;
+  }
+
+  async function setShapeImageUrl(shapeId, url) {
+    const { ok, j } = await api('POST', '/api/admin/shapes/image', { shapeId, url });
+    if (!ok || !j || !j.ok) throw new Error((j && j.error) || 'Shape image update failed');
+    const s = (state.data.shapes || []).find(x => x.id === shapeId);
+    if (s) s.image_url = j.url;
+    return j.url;
+  }
+
+  async function clearShapeImage(shapeId) {
+    const { ok, j } = await api('POST', '/api/admin/shapes/image/remove', { shapeId });
+    if (!ok || !j || !j.ok) throw new Error((j && j.error) || 'Could not remove the shape image');
+    const s = (state.data.shapes || []).find(x => x.id === shapeId);
+    if (s) s.image_url = '';
+    return true;
+  }
+
+  // Thumbnail markup shared by the Shapes table and the product editor rows.
+  function shapeThumbHTML(s, sizePx) {
+    const size = sizePx || 44;
+    if (s && s.image_url) {
+      return `<img src="${esc(s.image_url)}" alt="Shape ${esc(s.code || '')}" class="pshape-thumb" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:8px;border:1px solid var(--border);background:#fff;">`;
+    }
+    return `<div class="pshape-thumb empty" style="width:${size}px;height:${size}px;border-radius:8px;border:1px dashed var(--border);background:var(--cream);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size * 0.4)}px;">🗝️</div>`;
+  }
 
   function renderShapes() {
     const shapes = shapesList();
@@ -1198,10 +1254,20 @@
       <div class="card-body" style="padding:0;overflow-x:auto;">
         ${filtered.length ? `
         <table class="data-table">
-          <thead><tr><th style="width:70px;">Code</th><th>Name</th><th>Description</th><th>Products</th><th>Order</th><th>Status</th><th style="width:140px;">Actions</th></tr></thead>
+          <thead><tr><th style="width:70px;">Code</th><th style="width:110px;">Image</th><th>Name</th><th>Description</th><th>Products</th><th>Order</th><th>Status</th><th style="width:140px;">Actions</th></tr></thead>
           <tbody>
             ${filtered.map(s => `<tr>
               <td><div style="font-weight:700;font-size:15px;">${esc(s.code)}</div></td>
+              <td>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  ${shapeThumbHTML(s, 44)}
+                  <div style="display:flex;flex-direction:column;gap:2px;">
+                    <button type="button" class="btn btn-ghost btn-sm" data-shape-img-up="${esc(s.id)}" title="${s.image_url ? 'Replace the shape image' : 'Upload a shape image'}">${s.image_url ? '🔁' : '📤'}</button>
+                    ${s.image_url ? `<button type="button" class="btn btn-ghost btn-sm" data-shape-img-rm="${esc(s.id)}" title="Remove the shape image">✕</button>` : ''}
+                  </div>
+                  <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" data-shape-img-file="${esc(s.id)}" style="display:none;">
+                </div>
+              </td>
               <td>
                 <div style="font-weight:600;font-size:13px;">${esc(s.name_en || ('Shape ' + s.code))}</div>
                 ${s.name_ar ? `<div style="font-size:11px;color:var(--text-muted);" dir="rtl">${esc(s.name_ar)}</div>` : ''}
@@ -1235,6 +1301,36 @@
     if (addBtn) addBtn.addEventListener('click', () => showShapeEditor(null));
 
     $$('[data-edit-shape]').forEach(el => el.addEventListener('click', () => showShapeEditor(el.dataset.editShape)));
+
+    // Shape image: upload / replace / remove straight from the table. The
+    // image is stored on the catalogue shape itself, so every selector on the
+    // storefront picks it up as soon as the upload finishes.
+    $$('[data-shape-img-up]').forEach(btn => btn.addEventListener('click', () => {
+      const fileInput = document.querySelector(`[data-shape-img-file="${btn.dataset.shapeImgUp}"]`);
+      if (fileInput) fileInput.click();
+    }));
+    $$('[data-shape-img-file]').forEach(inp => inp.addEventListener('change', async () => {
+      const file = inp.files && inp.files[0];
+      const id = inp.dataset.shapeImgFile;
+      if (!file || !id) return;
+      try {
+        await setShapeImageFromFile(id, file);
+        toast('Shape image updated — the storefront now shows it on every selector', 'success');
+        render();
+      } catch (e) { toast('Upload failed: ' + e.message, 'error'); }
+      inp.value = '';
+    }));
+    $$('[data-shape-img-rm]').forEach(btn => btn.addEventListener('click', () => {
+      const id = btn.dataset.shapeImgRm;
+      const s = shapesList().find(x => x.id === id);
+      showConfirm('Remove Shape Image', `Remove the image of Shape ${s?.code || id}? The storefront falls back to the generated silhouette.`, async () => {
+        try {
+          await clearShapeImage(id);
+          toast('Shape image removed', 'success');
+          render();
+        } catch (e) { toast('Failed: ' + e.message, 'error'); }
+      });
+    }));
 
     $$('[data-toggle-shape]').forEach(el => el.addEventListener('click', async () => {
       const id = el.dataset.toggleShape;
@@ -1316,6 +1412,20 @@
                 <textarea name="description_ar" rows="2" dir="rtl">${esc(s?.description_ar || '')}</textarea>
               </div>
             </div>
+            ${isEdit ? `
+            <div class="form-group">
+              <label>Shape image</label>
+              <div style="display:flex;align-items:center;gap:12px;">
+                <span id="shape-img-preview">${shapeThumbHTML(s, 56)}</span>
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-shape-img-up">${s?.image_url ? '🔁 Replace image' : '📤 Upload image'}</button>
+                  ${s?.image_url ? '<button type="button" class="btn btn-ghost btn-sm" id="btn-shape-img-rm">✕ Remove image</button>' : ''}
+                  <input type="file" id="shape-img-file" accept="image/jpeg,image/png,image/webp,image/avif" style="display:none;">
+                </div>
+              </div>
+              <p style="font-size:11px;color:var(--text-muted);margin:6px 0 0;">Shown on every storefront selector for this shape (product page, Quick Add, Fitment Finder, Key Guide). A shape without an image keeps the generated silhouette.</p>
+            </div>` : `
+            <p style="font-size:11px;color:var(--text-muted);">Save the shape first — you can then upload its image from this editor or straight from the Shapes table.</p>`}
             <div class="form-group">
               <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="active" ${(!s || s.active !== false) ? 'checked' : ''}> Visible on the storefront (uncheck to hide from every selector and new orders)</label>
             </div>
@@ -1326,6 +1436,35 @@
           <button class="btn btn-primary" id="btn-save-shape">${isEdit ? 'Save Changes' : 'Create Shape'}</button>
         </div>
       </div>`);
+
+    // Shape image controls (edit mode only). The upload lands on the
+    // catalogue shape through /api/admin/shapes/image, then the editor is
+    // re-opened so the preview and the Replace/Remove buttons refresh.
+    const shapeImgUp = $('#btn-shape-img-up');
+    if (shapeImgUp && s) {
+      const shapeImgFile = $('#shape-img-file');
+      shapeImgUp.addEventListener('click', () => shapeImgFile && shapeImgFile.click());
+      shapeImgFile.addEventListener('change', async () => {
+        const file = shapeImgFile.files && shapeImgFile.files[0];
+        if (!file) return;
+        try {
+          await setShapeImageFromFile(s.id, file);
+          toast(`Shape ${s.code} image updated`, 'success');
+          closeAllModals(); showShapeEditor(s.id);
+        } catch (e) { toast('Upload failed: ' + e.message, 'error'); }
+        shapeImgFile.value = '';
+      });
+      const shapeImgRm = $('#btn-shape-img-rm');
+      if (shapeImgRm) shapeImgRm.addEventListener('click', () => {
+        showConfirm('Remove Shape Image', `Remove the image of Shape ${s.code}? The storefront falls back to the generated silhouette.`, async () => {
+          try {
+            await clearShapeImage(s.id);
+            toast(`Shape ${s.code} image removed`, 'success');
+            closeAllModals(); showShapeEditor(s.id);
+          } catch (e) { toast('Failed: ' + e.message, 'error'); }
+        });
+      });
+    }
 
     $('#btn-save-shape').addEventListener('click', async () => {
       const form = $('#shape-form');
@@ -2749,7 +2888,7 @@
 
             <div class="editor-section-title">Key shapes</div>
             <div class="form-group">
-              <p style="font-size:11px;color:var(--text-muted);margin:-2px 0 10px;">Key shapes available for this product. Customers can only select shapes marked in stock; shapes hidden in Admin → Shapes are unavailable store-wide.</p>
+              <p style="font-size:11px;color:var(--text-muted);margin:-2px 0 10px;">Key shapes available for this product. Customers can only select shapes marked in stock; shapes hidden in Admin → Shapes are unavailable store-wide. Each row also edits the shape's store-wide details (EN/AR names + shape image, saved on the shape itself — the storefront shows the uploaded image on every selector).</p>
               <div id="product-shapes-list"></div>
               <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
                 <select id="pf-new-shape" style="width:130px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
@@ -2923,14 +3062,34 @@
       : defaultShapes.map(s => Object.assign({}, s));
 
     const shapeListEl = $('#product-shapes-list');
+    // Each row manages TWO things: the product's OWN availability flag for the
+    // shape (saved with the product, as before) and — new — the shape's
+    // store-wide details from the catalogue (Admin → Shapes): the EN/AR names
+    // and the shape image. Those persist immediately on the catalogue shape,
+    // because they are properties of the shape itself, not of this product.
     function renderShapeList() {
       if (!shapeListEl) return;
       shapeListEl.innerHTML = shapes.length ? shapes.map((s, i) => {
         const available = s.available !== false;
+        const cat = shapeByCode(s.shape);
+        const details = cat ? `
+          <div class="pshape-names">
+            <input class="pshape-name" data-shname-en="${i}" value="${esc(cat.name_en || '')}" placeholder="Name (EN)" maxlength="60" title="Shape name (EN) — stored on the shape itself, shown store-wide">
+            <input class="pshape-name" data-shname-ar="${i}" value="${esc(cat.name_ar || '')}" dir="rtl" placeholder="اسم الشكل (عربي)" maxlength="60" title="Shape name (AR) — stored on the shape itself, shown store-wide">
+          </div>
+          <div class="pshape-imgcell">
+            ${shapeThumbHTML(cat, 44)}
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <button type="button" class="btn btn-ghost btn-sm" data-shimg-up="${i}" title="${cat.image_url ? 'Replace the shape image' : 'Upload a shape image'}">${cat.image_url ? '🔁' : '📤'}</button>
+              ${cat.image_url ? `<button type="button" class="btn btn-ghost btn-sm" data-shimg-rm="${i}" title="Remove the shape image">✕</button>` : ''}
+            </div>
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" data-shimg-file="${i}" style="display:none;">
+          </div>`
+        : `<span class="pshape-custom-note" style="font-size:11px;color:var(--text-muted);max-width:280px;">Product-local custom shape — add it to the catalogue in Admin → Shapes to manage its names and image.</span>`;
         return `
         <div class="pshape-row${available ? '' : ' pshape-off'}">
           <span class="pshape-badge${available ? '' : ' off'}">${esc(s.shape)}</span>
-          <span class="pshape-title">Shape ${esc(s.shape)}</span>
+          ${details}
           <input type="hidden" name="shape_${esc(s.shape)}" value="${esc(s.shape)}">
           <label class="toggle pshape-toggle" title="${available ? 'In stock — selectable on the storefront' : 'Out of stock — disabled on the storefront'}">
             <input type="checkbox" name="shapeok_${esc(s.shape)}" data-shapeok="${i}" ${available ? 'checked' : ''}>
@@ -2944,6 +3103,52 @@
       }).join('')
       : '<p style="font-size:12px;color:var(--text-muted);margin:0 0 8px;">No shapes configured — customers will see this product as out of stock.</p>';
 
+      // ---- catalogue details: EN/AR names persist on the shape itself ----
+      const saveShapeName = async (i, field, input) => {
+        const cat = shapeByCode(shapes[i].shape);
+        if (!cat) return;
+        const value = input.value.trim();
+        if (value === String(cat[field] || '')) return;
+        try {
+          await sbUpdate('shapes', cat.id, { [field]: value });
+          cat[field] = value;
+          toast(`Shape ${cat.code} name updated store-wide`, 'success');
+        } catch (e) { toast('Failed to save the shape name: ' + e.message, 'error'); }
+      };
+      $$('[data-shname-en]', shapeListEl).forEach(inp => inp.addEventListener('change', () => saveShapeName(Number(inp.dataset.shnameEn), 'name_en', inp)));
+      $$('[data-shname-ar]', shapeListEl).forEach(inp => inp.addEventListener('change', () => saveShapeName(Number(inp.dataset.shnameAr), 'name_ar', inp)));
+
+      // ---- catalogue image: upload / replace / remove ----
+      $$('[data-shimg-up]', shapeListEl).forEach(b => b.addEventListener('click', () => {
+        const fileInput = shapeListEl.querySelector(`[data-shimg-file="${b.dataset.shimgUp}"]`);
+        if (fileInput) fileInput.click();
+      }));
+      $$('[data-shimg-file]', shapeListEl).forEach(inp => inp.addEventListener('change', async () => {
+        const i = Number(inp.dataset.shimgFile);
+        const file = inp.files && inp.files[0];
+        const cat = shapes[i] && shapeByCode(shapes[i].shape);
+        if (!file || !cat) return;
+        try {
+          await setShapeImageFromFile(cat.id, file);
+          toast(`Shape ${cat.code} image updated — the storefront now shows it on every selector`, 'success');
+          renderShapeList();
+        } catch (e) { toast('Upload failed: ' + e.message, 'error'); }
+        inp.value = '';
+      }));
+      $$('[data-shimg-rm]', shapeListEl).forEach(b => b.addEventListener('click', () => {
+        const i = Number(b.dataset.shimgRm);
+        const cat = shapes[i] && shapeByCode(shapes[i].shape);
+        if (!cat) return;
+        showConfirm('Remove Shape Image', `Remove the image of Shape ${cat.code}? The storefront falls back to the generated silhouette.`, async () => {
+          try {
+            await clearShapeImage(cat.id);
+            toast(`Shape ${cat.code} image removed`, 'success');
+            renderShapeList();
+          } catch (e) { toast('Failed: ' + e.message, 'error'); }
+        });
+      }));
+
+      // ---- per-product availability (saved with the product, unchanged) ----
       $$('[data-shapeok]', shapeListEl).forEach(inp => inp.addEventListener('change', () => {
         const i = Number(inp.dataset.shapeok);
         shapes[i].available = inp.checked;

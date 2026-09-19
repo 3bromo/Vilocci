@@ -1224,8 +1224,17 @@ img { max-width: 100%; height: auto; display: block; }
 .pshape-cell { display: inline-flex; align-items: center; gap: 4px; }
 .pshape-count { font-size: 10px; color: var(--text-muted); margin-inline-start: 3px; font-weight: 600; }
 
+/* Shape details inside the Products editor rows — the EN/AR names and the
+   uploaded shape image belong to the catalogue shape itself (store-wide). */
+.pshape-names { display: flex; flex-direction: column; gap: 4px; min-width: 170px; }
+.pshape-name { font-size: 12px; padding: 5px 8px; }
+.pshape-imgcell { display: flex; align-items: center; gap: 6px; }
+.pshape-thumb { flex: 0 0 auto; display: block; }
+.pshape-custom-note { line-height: 1.4; }
+
 @media (max-width: 900px) {
   .pshape-row { gap: 6px; }
   .pshape-title { min-width: 60px; }
+  .pshape-names { min-width: 130px; }
 }
 

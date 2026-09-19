@@ -920,6 +920,92 @@ app.post('/api/admin/upload', requireAdmin, (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// SHAPE IMAGES — upload / replace / remove the image of a catalogue shape
+// ---------------------------------------------------------------------------
+// The image belongs to the SHAPE ITSELF (Admin → Shapes), never to one
+// product: every selector that shows that shape (any product page, Quick Add,
+// Fitment Finder, Key Guide) renders the same uploaded visual. Both the
+// Shapes screen and the Products editor's Key Shapes rows talk to these two
+// endpoints, so there is exactly ONE image per shape code.
+//
+// Storage: Supabase Storage, PUBLIC bucket `shape-images` (the image is
+// storefront content). The shape row stores the durable public URL
+// (key_shapes.image_url / shapes[].image_url), exactly like brands.logo.
+// Without Storage configured (local JSON store) the data URL is stored
+// inline — the same fallback Customize uses — so the feature keeps working.
+const SHAPE_IMAGE_URL_MAX = 2048;
+
+app.post('/api/admin/shapes/image', requireAdmin, async (req, res) => {
+  try {
+    const { shapeId, dataUrl, url } = req.body || {};
+    if (!shapeId) return res.status(400).json({ error: 'The shape id is required.' });
+    const catalog = await db.getCatalog();
+    const shape = (catalog.shapes || []).find((s) => s.id === shapeId);
+    if (!shape) return res.status(404).json({ error: `Shape not found: ${shapeId}` });
+
+    let finalUrl = '';
+    let mode = 'none';
+    const cleanUrl = String(url || '').trim();
+    if (cleanUrl) {
+      // Paste-a-URL path (the durable option on read-only hosts). Accept
+      // absolute http(s) URLs and same-origin paths only.
+      if (!/^(https?:\/\/|\/)/i.test(cleanUrl)) {
+        return res.status(400).json({ error: 'The image URL must start with http(s):// or /.' });
+      }
+      if (cleanUrl.length > SHAPE_IMAGE_URL_MAX) {
+        return res.status(400).json({ error: 'The image URL is too long.' });
+      }
+      finalUrl = cleanUrl;
+      mode = 'url';
+    } else if (dataUrl) {
+      if (typeof dataUrl !== 'string' || !/^data:image\//.test(dataUrl)) {
+        return res.status(400).json({ error: 'The shape image must be an uploaded image file.' });
+      }
+      const upload = await storage.uploadShapeImage(dataUrl, { shapeId });
+      if (upload.ok) {
+        finalUrl = upload.url;
+        mode = 'supabase-storage';
+      } else if (upload.reason === 'not-configured') {
+        // No Supabase Storage on this server: keep the data URL inline so
+        // the image is still persisted (JSON-fallback behaviour).
+        finalUrl = dataUrl.trim();
+        mode = 'inline-data-url';
+      } else {
+        return res.status(502).json({ error: `Shape image upload failed: ${upload.message}` });
+      }
+    } else {
+      return res.status(400).json({ error: 'Provide an uploaded image (dataUrl) or an image URL.' });
+    }
+
+    await db.patchRecord('shapes', shapeId, { image_url: finalUrl });
+    res.json({ ok: true, url: finalUrl, storage: mode, shapeId });
+  } catch (e) {
+    console.error('[shapes/image]', e.message);
+    const status = e.code === 'INVALID_IMAGE' || e.code === 'MISSING_IMAGE' || e.code === 'UNSUPPORTED_TYPE'
+      || e.code === 'IMAGE_TOO_LARGE' || e.code === 'EMPTY_IMAGE' || e.code === 'BAD_SIGNATURE' ? 400 : 500;
+    res.status(status).json({ error: e.message || 'Shape image upload failed.' });
+  }
+});
+
+app.post('/api/admin/shapes/image/remove', requireAdmin, async (req, res) => {
+  try {
+    const { shapeId } = req.body || {};
+    if (!shapeId) return res.status(400).json({ error: 'The shape id is required.' });
+    const catalog = await db.getCatalog();
+    const shape = (catalog.shapes || []).find((s) => s.id === shapeId);
+    if (!shape) return res.status(404).json({ error: `Shape not found: ${shapeId}` });
+    // Best effort: drop the stored object when it lives in our bucket. Pasted
+    // external URLs and inline data URLs have no object to delete.
+    await storage.removeShapeImage(shape.image_url);
+    await db.patchRecord('shapes', shapeId, { image_url: '' });
+    res.json({ ok: true, shapeId });
+  } catch (e) {
+    console.error('[shapes/image/remove]', e.message);
+    res.status(500).json({ error: e.message || 'Could not remove the shape image.' });
+  }
+});
+
 app.post('/api/admin/order-status', requireAdmin, async (req, res) => {
   try {
     const { id, status } = req.body || {};
