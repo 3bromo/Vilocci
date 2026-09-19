@@ -2,11 +2,13 @@
    VELOCCI — Storefront application (single-file client SPA)
    Loads the shared store once, renders the whole site, and keeps the cart in
    localStorage. Reads live data from /api/data so admin changes reflect.
-   Build 20260919b — Shape images: a catalogue shape the admin gave an
+   Build 20260919c — Shape images: a catalogue shape the admin gave an
    uploaded image to (Admin → Shapes / the Products editor's Key Shapes
-   rows, stored in Supabase Storage) is rendered as that real image card on
-   every selector (product page, Quick Add, Fitment Finder, Key Guide);
-   shapes without an image keep the generated silhouette. Builds on the
+   rows, stored in Supabase Storage's public `shape-images` bucket) is
+   rendered as that real image card on every selector (product page, Quick
+   Add, Fitment Finder, Key Guide); shapes without an image keep the
+   generated silhouette, and a stored URL that stops working falls back to
+   the silhouette too (error listener in init()). Builds on the
    20260918d base — Shape management: every key-shape selector and every
    shape label reads the key-shape catalogue served by /api/data (Admin →
    Shapes) — localized EN/AR names, catalogue order, and a shape hidden in

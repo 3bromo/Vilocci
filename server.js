@@ -142,8 +142,11 @@ app.get('/api/admin/diagnose', async (req, res) => {
 
   // ?probe=1 — actually read the catalog so the health state below reflects a
   // real attempt on THIS instance (serverless instances are cold per request).
+  // It also reports the Shape Images state (migration 009 column + the public
+  // `shape-images` storage bucket) — the feature's own health check.
   let probe = null;
-  if (req.query.probe) {
+  let shapeImages = null;
+  if (req.query.probe || req.query.shapes) {
     const t0 = Date.now();
     try {
       const catalog = await db.getCatalog();
@@ -164,6 +167,23 @@ app.get('/api/admin/diagnose', async (req, res) => {
     }
     probe.servedBy = db.health().activeDriver;
     probe.health = db.health();
+
+    // Shape Images — key_shapes.image_url (migration 009) + the storage bucket
+    // the uploaded files live in (migration 010 / lib/storage.js). Read-only.
+    try {
+      const status = await db.shapeImagesStatus();
+      shapeImages = {
+        migration: '009_shape_images.sql',
+        column: status.column,
+        rowCount: status.rowCount,
+        rowsWithImage: status.withImage,
+        rows: status.rows,
+        storage: await storage.shapeStorageStatus(),
+        error: status.error,
+      };
+    } catch (e) {
+      shapeImages = { error: e.message };
+    }
   }
 
   const detail = db.info();
@@ -185,6 +205,7 @@ app.get('/api/admin/diagnose', async (req, res) => {
 
   res.json({
     probe,
+    shapeImages,
     issues,
     rawEnvUrl: rawUrl || '(not set)',
     sanitizedUrl: SUPABASE_URL || '(empty)',
@@ -865,13 +886,30 @@ app.post('/api/admin/save', requireAdmin, async (req, res) => {
 });
 
 // Partial update: patches the given fields and keeps everything else.
+// Admin → Shapes writes key_shapes rows, whose column list includes image_url:
+// on a database where migration 009 has not been applied the write fails with
+// an opaque PostgREST error. The additive statement is applied automatically
+// when this deployment holds a credential that can run DDL, and the admin is
+// given the exact operator instruction when it does not.
 app.post('/api/admin/update', requireAdmin, async (req, res) => {
+  const { collection, id, updates } = req.body || {};
+  if (!id) return res.status(400).json({ error: 'id is required.' });
   try {
-    const { collection, id, updates } = req.body || {};
-    if (!id) return res.status(400).json({ error: 'id is required.' });
     const saved = await db.patchRecord(collection, id, updates || {});
     res.json({ ok: true, record: saved });
   } catch (e) {
+    if (collection === 'shapes' && db.isMissingColumnError(e)) {
+      const schema = await db.ensureShapeImageColumn();
+      if (schema.ok) {
+        try {
+          const saved = await db.patchRecord(collection, id, updates || {});
+          return res.json({ ok: true, record: saved });
+        } catch (e2) {
+          return res.status(400).json({ error: e2.message });
+        }
+      }
+      return res.status(503).json({ error: schema.message, detail: e.message, migration: schema });
+    }
     res.status(400).json({ error: e.message });
   }
 });
@@ -1000,7 +1038,26 @@ app.post('/api/admin/shapes/image', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Provide an uploaded image (dataUrl) or an image URL.' });
     }
 
-    await db.patchRecord('shapes', shapeId, { image_url: finalUrl });
+    // Persisting the URL needs key_shapes.image_url (migration 009). If the
+    // column is missing the request would fail with an opaque PostgREST error,
+    // so: try to apply the additive statement when this deployment holds a
+    // credential that can, then persist; if it is still impossible, answer
+    // with the exact operator instruction instead of a stack trace.
+    try {
+      await db.patchRecord('shapes', shapeId, { image_url: finalUrl });
+    } catch (patchErr) {
+      const schema = await db.ensureShapeImageColumn();
+      if (!schema.ok) {
+        return res.status(503).json({
+          error: 'The database is missing key_shapes.image_url (migration 009), so the image could not be saved. '
+            + 'Apply supabase/migrations/009_shape_images.sql in Supabase → SQL Editor '
+            + '(or run `npm run migrate:apply` with SUPABASE_DB_URL set), then upload again.',
+          detail: patchErr.message,
+          migration: schema,
+        });
+      }
+      await db.patchRecord('shapes', shapeId, { image_url: finalUrl });
+    }
     // If a replacement changed the file extension, the canonical object path
     // changed too. Remove only the old object from our own bucket, never a
     // pasted external URL. The database update above is already durable, so a

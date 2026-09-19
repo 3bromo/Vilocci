@@ -166,6 +166,24 @@ async function bootAdmin(catalog) {
         if (url.indexOf('/api/admin/data') >= 0) {
           return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(catalog) });
         }
+        // The Shapes screen's status strip reads this endpoint.
+        if (url.indexOf('/api/admin/diagnose') >= 0) {
+          const shapes = catalog.shapes || [];
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({
+            probe: { ok: true, servedBy: 'postgrest' },
+            issues: [],
+            shapeImages: {
+              column: { present: true, mode: 'postgrest' },
+              rowCount: shapes.length,
+              rowsWithImage: shapes.filter((s) => s.image_url).length,
+              rows: shapes.map((s) => ({
+                id: s.id, code: s.code, name_en: s.name_en,
+                active: s.active !== false, image_url: s.image_url || '',
+              })),
+              storage: { configured: true, bucket: 'shape-images', public: true, exists: true, objects: shapes.filter((s) => s.image_url).length, error: null },
+            },
+          }) });
+        }
         if (url.indexOf('/api/admin/shapes/image/remove') >= 0) {
           const s = (catalog.shapes || []).find((x) => body && x.id === body.shapeId);
           if (s) s.image_url = '';
@@ -282,6 +300,20 @@ async function bootAdmin(catalog) {
     check('a shape WITHOUT an image keeps the generated silhouette on the PDP', !!aBtn && !aBtn.querySelector('img.shape-img') && !!aBtn.querySelector('svg'));
     check('the image card keeps the catalogue label', !!bBtn && /Shape B|الشكل B/.test(bBtn.textContent));
 
+    // A stored URL that turns out to be dead (file deleted, bucket renamed,
+    // typo) must never leave an empty card: the error listener swaps the <img>
+    // back to the generated silhouette.
+    if (bImg) {
+      bImg.dispatchEvent(new dom.window.Event('error'));
+      await wait(30);
+      const bBtnAfter = doc.querySelector('.shape-opt[data-shape="B"]');
+      check('a broken image URL falls back to the silhouette',
+        !!bBtnAfter && !bBtnAfter.querySelector('img.shape-img') && !!bBtnAfter.querySelector('svg'),
+        bBtnAfter && bBtnAfter.innerHTML.slice(0, 80));
+    } else {
+      check('a broken image URL falls back to the silhouette', false, 'no image card to break');
+    }
+
     // Quick Add shows the same image card (the button lives on product cards,
     // e.g. the homepage — navigate back there first and pick any rendered
     // card of a product that offers Shape B).
@@ -392,7 +424,7 @@ async function bootAdmin(catalog) {
     admin.dom.window.close(); admin2.dom.window.close();
 
     // ------------------------------------------------------------------ 10
-    console.log('\n== 10. Migration 009 ships with the CLI ==');
+    console.log('\n== 10. Migration 009 ships with the CLI (column + public bucket + policies) ==');
     const printSql = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'migrate.js'), '--print-sql'], { cwd: ROOT, encoding: 'utf8' });
     check('migrate --print-sql includes the 009 shape images migration', printSql.stdout.includes('009_shape_images.sql') && /add column if not exists image_url/i.test(printSql.stdout));
     // Migration 009 also provisions the public storefront bucket and the
@@ -408,6 +440,75 @@ async function bootAdmin(catalog) {
     // them before asserting the actual statements are additive only.
     const tail009 = (printSql.stdout.split('009_shape_images.sql').pop() || '').replace(/--[^\n]*/g, '');
     check('009 is additive only (no drops, no deletes)', !/drop table|truncate|delete from/i.test(tail009));
+
+    // The storage half of the feature lives in the SAME 009 migration: the
+    // public bucket plus the explicit Storage policies. The local embedded
+    // database has no storage schema, so these are checked from the generated
+    // SQL text (test/supabase_e2e.js runs them against a Supabase-like schema).
+    const migration009 = fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', '009_shape_images.sql'), 'utf8');
+    const sql009 = migration009.replace(/--[^\n]*/g, '');
+    check('009 creates the shape-images bucket as PUBLIC (upsert keeps existing objects)',
+      /insert into storage\.buckets[\s\S]*?'shape-images'[\s\S]*?true[\s\S]*?on conflict \(id\) do update/i.test(sql009),
+      'no public bucket upsert found');
+    check('009 forces the bucket back to public on an existing row',
+      /on conflict \(id\) do update set[\s\S]*?public = true/i.test(sql009), 'the upsert does not set public = true');
+    check('009 only touches storage when the Storage schema exists',
+      /to_regclass\('storage\.buckets'\)/.test(sql009) && /to_regclass\('storage\.objects'\)/.test(sql009),
+      'missing the storage-schema guard');
+    ['Shape images: public read', 'Shape images: admin upload', 'Shape images: admin update', 'Shape images: admin delete']
+      .forEach((p) => {
+        const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        check(`009 creates the "${p}" policy (idempotently)`,
+          new RegExp(`create policy "${escaped}" on storage\\.objects`).test(sql009)
+          && new RegExp(`drop policy if exists "${escaped}" on storage\\.objects`).test(sql009),
+          'policy missing or not idempotent');
+      });
+    check('every 009 Storage policy is scoped to the shape-images bucket',
+      (sql009.match(/bucket_id = ''shape-images''/g) || []).length >= 4,
+      'a policy is not scoped to the bucket');
+    const dryRun = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'migrate.js')], { cwd: ROOT, encoding: 'utf8' });
+    check('the migration dry run lists the 009 shape-images migration',
+      /009[\s\S]{0,120}?shape images/i.test(dryRun.stdout), (dryRun.stdout || '').slice(-300));
+
+    // ------------------------------------------------------------------ 11
+    console.log('\n== 11. /api/admin/diagnose reports the shape-image state ==');
+    // Restore a known image so the diagnostic has something to report.
+    await http('POST', '/api/admin/shapes/image', { shapeId: 'shape_b', url: 'https://cdn.test/shape-b.png' }, { admin: true });
+    const diag = (await http('GET', '/api/admin/diagnose?probe=1')).json;
+    check('diagnose exposes a shapeImages section', !!diag && !!diag.shapeImages, JSON.stringify(diag && Object.keys(diag)));
+    const si = (diag && diag.shapeImages) || {};
+    check('diagnose reports the image_url column state (migration 009)', si.column && si.column.present === true, JSON.stringify(si.column));
+    check('diagnose reports the key_shapes rows the operator checks by hand',
+      si.rowCount === 4 && (si.rows || []).map((r) => r.code).join(',') === 'A,B,C,D', JSON.stringify(si.rows));
+    check('diagnose reports how many shapes carry an image', si.rowsWithImage === 1
+      && (si.rows.find((r) => r.code === 'B') || {}).image_url === 'https://cdn.test/shape-b.png', JSON.stringify(si.rows));
+    check('diagnose reports the storage bucket state honestly (no Supabase on this server)',
+      si.storage && si.storage.bucket === 'shape-images' && si.storage.configured === false && !!si.storage.error,
+      JSON.stringify(si.storage));
+
+    // ------------------------------------------------------------------ 12
+    console.log('\n== 12. Admin panel — the Shapes screen reports the wiring ==');
+    const adminPayload2 = (await http('GET', '/api/admin/data', null, { admin: true })).json;
+    const admin3 = await bootAdmin(adminPayload2);
+    const navShapes3 = [...admin3.doc.querySelectorAll('[data-nav]')].find((a) => a.getAttribute('data-nav') === 'shapes');
+    if (navShapes3) admin3.click(navShapes3);
+    await wait(80);
+    const strip = admin3.doc.querySelector('#btn-shape-status-refresh');
+    check('the Shapes screen renders the shape-image status strip', !!strip);
+    const stripCard = strip && strip.closest('.card');
+    const stripText = (stripCard && stripCard.textContent) || '';
+    check('the strip names the database column, the bucket and how many shapes have images',
+      /image_url column ready/.test(stripText) && /bucket public/.test(stripText) && /of 4 shape\(s\)/.test(stripText.replace(/\s+/g, ' ')),
+      stripText.replace(/\s+/g, ' ').slice(0, 200));
+    if (strip) {
+      admin3.click(strip);
+      await wait(120);
+      const diagCall = admin3.calls.find((c) => c.url.indexOf('/api/admin/diagnose') >= 0);
+      check('refreshing re-checks the server (database column + bucket)', !!diagCall, JSON.stringify(admin3.calls.map((c) => c.url).slice(0, 8)));
+    } else {
+      check('refreshing re-checks the server (database column + bucket)', false, 'no refresh control');
+    }
+    admin3.dom.window.close();
   } finally {
     try { srv.child.kill('SIGTERM'); } catch (e) { /* ignore */ }
     try { fs.rmSync(scratchDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
