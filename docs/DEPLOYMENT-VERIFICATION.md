@@ -906,3 +906,87 @@ After Vercel completes the queued production deploys of `7b83400`:
 2. `/api/data` contains `shapes` (A–D, all `active:true`).
 3. Admin → Shapes screen lists the four shapes; hiding one removes it from a product-page selector, Quick Add, the Fitment Finder and the Key Guide, and an order attempt for it is stored without a shape. Restore afterwards.
 4. The Products editor still behaves exactly as §14.3 (per-shape stock toggles, add/reorder/delete, Key shapes column).
+
+## 16. Addendum 2026-09-19 — Shape Images end to end: public `shape-images` bucket + Storage policies, verified on the merged commit (build 20260919c)
+
+### 16.1 Scope & Changes
+
+Finishes the Shape Images feature that build 20260919c only half-shipped (the admin field, the storefront image card and the DB column existed; nothing guaranteed the **public bucket** and the **Storage policies**, and there was no way to see the wiring state from the app).
+
+- **Migration** — `supabase/migrations/009_shape_images.sql` is now the *single* migration for the whole feature: `key_shapes.image_url` + the PUBLIC `shape-images` bucket (`insert … on conflict (id) do update set name = excluded.name, public = true` — an existing private bucket is flipped back to public, objects preserved) + four `storage.objects` policies ("Shape images: public read" SELECT, "…admin upload" INSERT, "…admin update" UPDATE, "…admin delete" DELETE, all `bucket_id = 'shape-images'`, the write ones gated on `public.is_admin()`). Idempotent (`drop policy if exists` / `create policy`), additive only, and guarded by `to_regclass('storage.buckets'|'storage.objects')` so a local/test PostgreSQL without the storage schema applies it cleanly. The duplicate `010_shape_images_bucket.sql` this branch had written before PR #38 landed the same provisioning in 009 was **deleted during the rebase** — no second migration, no schema drift.
+- **Server** — `lib/storage.js`: `ensureShapeBucket()` verifies before every upload (getBucket first; missing → `createBucket(public:true)` + re-verify; existing-but-private → `updateBucket({public:true})`; errors thrown, never swallowed) and the upload retries once if the bucket disappears mid-flight; new `shapeStorageStatus()`. `lib/db.js`: `shapeImageColumnPresent()` / `ensureShapeImageColumn()` / `shapeImagesStatus()`. `server.js`: `/api/admin/diagnose?probe=1|?shapes=1` returns a `shapeImages` block (column state, the `key_shapes` rows, rows-with-image, bucket state); the upload path self-applies the additive column when the deployment holds a DDL credential, otherwise answers 503 with the exact SQL to run.
+- **Admin UI** — Admin → Shapes gained the status strip (column ready/MISSING, "n of 4 shape(s) have an image", bucket PUBLIC/private + file count, ↻ refresh) on top of the per-shape 📤 upload / 🔁 replace / ✕ remove controls.
+- **Operator probe** — `scripts/shape_image_probe.js` (`npm run probe:shapes`): runs the acceptance flow against any deployment with an admin token — diagnose → upload → read back through `/api/data` → fetch the stored public URL → replace with a visibly different image → optional `--remove` (fallback must return). Needs no credential of its own.
+
+### 16.2 Deployment
+
+- Feature commit `1d306a2` ("Complete the Shape Images feature: public storage bucket + policies, verified wiring"), merged to `main` as **`12dcd67`** (PR #39, 2026-09-19T11:28:29Z).
+- **All six linked Vercel projects built `12dcd67` to Production with `success`**:
+
+| Project | Deployment id | Production URL |
+| --- | --- | --- |
+| vilocciii3bro | 6540362192 | https://vilocciii3bro-9d0an34u1-3bromos-projects.vercel.app |
+| 01a07cb5-b190-7e92-ac8e-aefc65395914-4 | 6540360549 | https://01a07cb5-b190-7e92-ac8e-aefc65395914-4-e60712nty.vercel.app |
+| velocciiiii | 6540358688 | https://velocciiiii-63mfzc2ww-3bromos-projects.vercel.app |
+| vilocci-pvpw | 6540364137 | https://vilocci-pvpw-l1x38y4yc-3bromos-projects.vercel.app |
+| vilocci-b31u | 6540365834 | https://vilocci-b31u-dpc9vzaau-3bromos-projects.vercel.app |
+| vilocci-i54t | 6540368528 | https://vilocci-i54t-f0ogupoxq-3bromos-projects.vercel.app |
+
+### 16.3 Verified ON PRODUCTION (vilocciii3bro.vercel.app, 2026-09-19T11:31Z)
+
+- `GET /api/admin/diagnose?probe=1` (identical with `?shapes=1`) proves the deployed build carries the feature **and** reports the production database/storage state:
+
+```json
+"shapeImages":{"migration":"009_shape_images.sql",
+  "column":{"present":true,"mode":"postgrest"},
+  "rowCount":4,"rowsWithImage":0,
+  "rows":[{"id":"shape_a","code":"A","name_en":"Shape A","active":true,"image_url":""},
+          {"id":"shape_b","code":"B","name_en":"Shape B","active":true,"image_url":""},
+          {"id":"shape_c","code":"C","name_en":"Shape C","active":true,"image_url":""},
+          {"id":"shape_d","code":"D","name_en":"Shape D","active":true,"image_url":""}],
+  "storage":{"configured":true,"bucket":"shape-images","public":true,"exists":true,"objects":0,
+             "publicUrlExample":"https://zbqnkebsmhhemknpazme.supabase.co/storage/v1/object/public/shape-images/shapes/shape_a.png",
+             "error":null},"error":null}
+```
+
+  - **`key_shapes.image_url` exists in production** (migration 009 applied) — `column.present: true`.
+  - **The operator acceptance query works and returns the four expected rows**: `id, code, name_en, active, image_url` → `shape_a/A/Shape A/true/""`, `shape_b/B`, `shape_c/C`, `shape_d/D` (row count **4**).
+  - **The `shape-images` bucket exists and is PUBLIC** (`"public":true`, `"exists":true`), i.e. a stored `image_url` renders on the storefront without a signed URL; `objects: 0` because no image has been uploaded yet.
+  - `issues: []`, `probe.ok: true` (117 products / 25 orders / `servedBy: postgrest`) — the production store is healthy and untouched by the checks (all reads).
+- `GET /js/app.js` on production starts with `Build 20260919c — Shape images: …` and contains `shapeVisual()` (image when the catalogue shape has `image_url`, silhouette otherwise) → the deployed bundle is the merged one.
+- Live product page `/#/product/velocci-key-holder-mg` renders the "SELECT YOUR KEY SHAPE" row from the live catalogue (A/B/C for that product) — the selector the uploaded image plugs into.
+- Data safety: every production check above is a read; nothing was deleted, overwritten or reset (products/orders/categories/brands/`key_shapes` are exactly as before).
+
+### 16.4 NOT verified live — and exactly why
+
+The **upload action itself** (admin uploads an image → row saved → the storefront shows it) could not be executed from the agent environment: it requires an authenticated admin session (Supabase email + password, verified server-side by `requireAdmin` against `admin_users`), and this sandbox has **no outbound network** (`curl https://*.vercel.app` and `https://*.supabase.co` both fail at TLS with `SSL_ERROR_SYSCALL`) and no credentials in the repo. Consequently, at the time of writing:
+
+- `key_shapes.image_url` is still `""` for all four shapes and `rowsWithImage` is `0`;
+- the storefront therefore shows the **generated silhouettes** — the documented fallback — for every shape;
+- the upload → storage → public-URL path is proven by the local suites (real PostgreSQL + stubbed Supabase Storage client + jsdom admin/storefront), and the *deployed* wiring is proven by the diagnosis block above, but a live production upload has not been performed.
+
+Closing it takes ~1 minute, either way:
+
+1. **Admin UI** — Admin → Shapes → 📤 on Shape A → pick an image. The card must switch to the uploaded image; refresh the page → it is still there (that is the `key_shapes.image_url` value in production). Then open a product page that offers Shape A and confirm the image replaces the silhouette.
+2. **Probe script** — from a machine with network access:
+
+```
+npm run probe:shapes -- --url https://vilocciii3bro.vercel.app --token "<ADMIN_JWT>"
+# …then, to go back to the silhouette fallback:  … --remove
+```
+
+`--token` is the Supabase access token of an admin session: browser DevTools → Network → any `/api/admin/*` request → `Authorization: Bearer …` (or Application → Local Storage → `supabase.auth.token`). Expected output: `✓ all 14 checks passed` (diagnose → upload → `/api/data` read-back → the stored URL answers `200 image/*` → replace → [remove]). The script never stores the token and touches only the one shape it is pointed at.
+
+### 16.5 Verified locally at the exact merged commit (`12dcd67` / `1d306a2`)
+
+- `npm test` — **766 passed, 0 failed** across all 17 suites, notably:
+  - `test/shape_images.js` — **61 ✓**: 009’s SQL (public bucket upsert, the four idempotent Storage policies, additive-only, storage-schema guards), `migrate --print-sql`/dry-run listing 001…009, the diagnose block, the jsdom Shapes status strip, the broken-image → silhouette fallback, and the operator probe script.
+  - `test/shape_storage.js` — **14 ✓** (stubbed `@supabase/supabase-js`): bucket created public, a private bucket flipped to public, a deleted bucket recreated + the upload retried, the public URL shape, object removal, external URLs ignored, SVG/magic-byte rejection.
+  - the pre-existing shape suites (`test/shapes.js` 38 ✓, `test/shapes_admin.js` 47 ✓) pass unchanged — catalogue order/hide semantics and the per-product availability logic are intact.
+- `npm run test:db` (embedded real PostgreSQL 18.4) — **114 passed, 0 failed**: 009 applied + recorded on a storage-less database (skipped safely), a Supabase-like `storage` schema proves the bucket becomes PUBLIC with exactly the four policies and that re-running 009 duplicates nothing, and §5d exercises the operator SELECT (`select id, code, name_en, active, image_url from public.key_shapes order by "order"`) through the SQL driver.
+- `scripts/shape_image_probe.js` was itself run end to end against a local server (`PORT=3510 DATA_DRIVER=json ADMIN_DEV_TOKEN=…`): diagnose ✓ → upload ✓ → `/api/data` read-back ✓ → replace ✓ → `--remove` returns the row to `""` → **all 14 checks passed**.
+
+### 16.6 Migration 009 — operator status per project
+
+- **Production project `zbqnkebsmhhemknpazme` needs no further step**: it already reports the `image_url` column and a **public** `shape-images` bucket (§16.3). The bucket is also self-provisioned/repaired at runtime (`ensureShapeBucket()` before every upload and the memoized `ensureShapeStorage()` behind `/api/data`), so a deleted or privatised bucket heals itself.
+- Any *other* Supabase-backed project: apply `supabase/migrations/009_shape_images.sql` once (Supabase → SQL Editor, or `npm run migrate:apply` with `SUPABASE_DB_URL`). Additive and idempotent — it adds the column if missing, upserts the bucket, and recreates the same four policies by name; it never drops a table, deletes a row or resets anything. JSON-fallback instances need nothing (the upload falls back to an inline data URL).
