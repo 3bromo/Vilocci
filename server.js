@@ -169,7 +169,7 @@ app.get('/api/admin/diagnose', async (req, res) => {
     probe.health = db.health();
 
     // Shape Images — key_shapes.image_url (migration 009) + the storage bucket
-    // the uploaded files live in (migration 010 / lib/storage.js). Read-only.
+    // the uploaded files live in (same migration / lib/storage.js). Read-only.
     try {
       const status = await db.shapeImagesStatus();
       shapeImages = {

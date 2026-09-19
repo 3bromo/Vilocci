@@ -509,6 +509,25 @@ async function bootAdmin(catalog) {
       check('refreshing re-checks the server (database column + bucket)', false, 'no refresh control');
     }
     admin3.dom.window.close();
+
+    // ------------------------------------------------------------------ 13
+    console.log('\n== 13. Operator probe: the same flow against a DEPLOYED store ==');
+    // scripts/shape_image_probe.js is what the operator (or a reviewer) runs
+    // against production with an admin token: diagnose → upload → read back
+    // through /api/data → fetch the stored URL → replace → optional remove.
+    const probePath = path.join(ROOT, 'scripts', 'shape_image_probe.js');
+    check('the probe script ships with the repo', fs.existsSync(probePath));
+    check('npm run probe:shapes points at it',
+      /probe:shapes[\s\S]{0,60}shape_image_probe\.js/.test(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')));
+    const noCreds = spawnSync(process.execPath, [probePath, '--url', 'http://127.0.0.1:9', '--json'], { cwd: ROOT, encoding: 'utf8', timeout: 20000 });
+    let noCredsJson = null;
+    try { noCredsJson = JSON.parse(noCreds.stdout); } catch (e) { /* ignore */ }
+    check('without a credential it fails fast with an explanatory check (no request is sent)',
+      noCreds.status === 2 && noCredsJson && noCredsJson.checks && noCredsJson.checks[0].ok === false
+        && /credential/i.test(noCredsJson.checks[0].name),
+      `exit=${noCreds.status} ${(noCreds.stdout || '').replace(/\s+/g, ' ').slice(0, 160)}`);
+    const syntax = spawnSync(process.execPath, ['--check', probePath], { cwd: ROOT, encoding: 'utf8' });
+    check('the probe script parses cleanly', syntax.status === 0, (syntax.stderr || '').slice(0, 200));
   } finally {
     try { srv.child.kill('SIGTERM'); } catch (e) { /* ignore */ }
     try { fs.rmSync(scratchDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }

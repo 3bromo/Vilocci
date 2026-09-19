@@ -33,7 +33,8 @@
     "test:shapes": "node test/shapes.js",
     "test:shapecatalog": "node test/shapes_admin.js",
     "test:shapeimages": "node test/shape_images.js",
-    "test:shapestorage": "node test/shape_storage.js"
+    "test:shapestorage": "node test/shape_storage.js",
+    "probe:shapes": "node scripts/shape_image_probe.js"
   },
   "engines": {
     "node": ">=18"
