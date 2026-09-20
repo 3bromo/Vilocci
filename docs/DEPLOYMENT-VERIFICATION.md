@@ -990,3 +990,25 @@ npm run probe:shapes -- --url https://vilocciii3bro.vercel.app --token "<ADMIN_J
 
 - **Production project `zbqnkebsmhhemknpazme` needs no further step**: it already reports the `image_url` column and a **public** `shape-images` bucket (§16.3). The bucket is also self-provisioned/repaired at runtime (`ensureShapeBucket()` before every upload and the memoized `ensureShapeStorage()` behind `/api/data`), so a deleted or privatised bucket heals itself.
 - Any *other* Supabase-backed project: apply `supabase/migrations/009_shape_images.sql` once (Supabase → SQL Editor, or `npm run migrate:apply` with `SUPABASE_DB_URL`). Additive and idempotent — it adds the column if missing, upserts the bucket, and recreates the same four policies by name; it never drops a table, deletes a row or resets anything. JSON-fallback instances need nothing (the upload falls back to an inline data URL).
+
+---
+
+## 17. Addendum 2026-09-20 — Storefront search upgrade: indexed relevance search, dedicated close button, autofocus/mobile keyboard (build 20260920b)
+
+### 17.1 What shipped (PR #42, merged into `main` as `d2c5eeb` at 2026-09-20T15:21:12Z)
+
+- **New search algorithm** — `VEL.Search` (`js/search.js`, re-exported through `js/engine.js`): products are indexed once per render (`createIndex`) with text normalization (NFKC, Arabic letter/diacritic folding — أإآٱ→ا, ى→ي, ة→ه, tashkeel stripped, ؤئ→ء) over names (EN/AR), brand, models, category and any `searchable` extras; every keystroke only *scores* the in-memory index: exact/prefix/substring tiers on the name, token hits, compact (space-free) substring hits, and a bounded Levenshtein fuzzy tier (distance ≤ 2 for tokens ≥ 6 chars, ≤ 1 for ≥ 4) — so "Mercdes" still finds Mercedes-Benz. Top 7 by score, tie-broken alphabetically.
+- **Dedicated close button** — the search panel (`role="search"`) now renders a `#search-close` `×` button (EN "Close search" / AR "إغلاق البحث" `aria-label`, styled in `css/styles.css`). `closeSearch()` hides the panel and clears input + results; Escape closes (both on the input and globally while the panel is open), and clicking a result closes too.
+- **Autofocus / mobile keyboard** — `openSearch()` focuses the input immediately with `focus({ preventScroll: true })` and re-focuses inside `setTimeout(…, 0)`, which pops the on-screen keyboard on iOS/Android instead of leaving the panel dead on first tap.
+- **Harness** — `js/app.js` builds the index once per render ("Search is deliberately indexed once per render"), `test/search.js` covers 9 assertions (normalization EN/AR, query variants `C Class`/`c class`/`C-Class`/`Cclass`, fuzzy `Mercdes`, model-number `A4`, no-match) and is wired into `npm test`.
+
+### 17.2 Build version bump (this change)
+
+PR #42 shipped the code with the asset cache-buster strings still reading `v=20260920a`. This addendum's commit bumps every storefront/admin cache-buster to **`v=20260920b`** (18 occurrences: `index.html` ×4, `admin.html` ×2, and the `public/` + `dist/` mirrors), so the search-upgrade build is identifiable and cache-safe in production. No runtime code changes.
+
+### 17.3 Deployment + production verification
+
+- **Trigger**: PR #42's merge produced production deployments in **all 6 Vercel projects connected to the repo** (created 15:21:31–15:22:59Z), each reporting `Deployment has completed` / `success` via the GitHub deployments API — including the production storefront project `vilocci-b31u`.
+- **Live feature check (post-#42, pre-bump)**: the served `https://vilocci-b31u.vercel.app/js/app.js` contains the new wiring verbatim — `VEL.Search.createIndex(state.data.products, state.data.brands)`, the `#search-close` handler with `closeSearch()`, and `openSearch()`'s double `input.focus({ preventScroll: true })` — confirming the search upgrade itself is **live in production**.
+- **Local check at the bumped commit**: `node test/search.js` — `search tests passed (9 assertions)`.
+- **After this bump's merge**: the same merge-triggered deploy path ships `index.html` referencing `/js/engine.js?v=20260920b`, `/js/search.js?v=20260920b`, `/js/app.js?v=20260920b`; deployment status for the exact merged SHA is recorded through the GitHub deployments API (per-SHA `success` = the `20260920b` tree is what production serves).
