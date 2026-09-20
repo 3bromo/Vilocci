@@ -2637,7 +2637,7 @@
           </div>
           <div class="form-group">
             <label>Free Shipping Threshold (EGP)</label>
-            <input type="number" id="s-free-ship" value="${s.freeShippingThreshold || 0}" min="0">
+            <input type="number" id="s-free-ship" readonly title="Managed by the storefront shipping policy" value="${s.freeShippingThreshold || 0}" min="0">
           </div>
         </div>
         <h4 style="font-size:14px;font-weight:600;margin:24px 0 16px;padding-top:16px;border-top:1px solid var(--border);">Social Media</h4>

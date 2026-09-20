@@ -13,7 +13,7 @@
     "migrate:apply": "node scripts/migrate.js --apply",
     "migrate:sql": "node scripts/migrate.js --print-sql",
     "postinstall": "node data/seed.js",
-    "test": "node test/smoke.js && node test/admin.js && node test/admin_cms.js && node test/admin_packages.js && node test/db_fallback.js && node test/customize.js && node test/customize_nav.js && node test/colors.js && node test/quickadd_mobile.js && node test/admin_brands.js && node test/discount.js && node test/instapay_proof_api.js && node test/nano_coating.js && node test/shapes.js && node test/shapes_admin.js && node test/shape_images.js && node test/shape_storage.js",
+    "test": "node test/smoke.js && node test/admin.js && node test/admin_cms.js && node test/admin_packages.js && node test/db_fallback.js && node test/customize.js && node test/customize_nav.js && node test/colors.js && node test/quickadd_mobile.js && node test/admin_brands.js && node test/discount.js && node test/instapay_proof_api.js && node test/nano_coating.js && node test/shapes.js && node test/shapes_admin.js && node test/shape_images.js && node test/shape_storage.js && node test/storefront_cart.js",
     "test:e2e": "node test/e2e.js",
     "test:phase3": "node test/phase3_flow.js",
     "test:phase4": "node test/phase4_flow.js",

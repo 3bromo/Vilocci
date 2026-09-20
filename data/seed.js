@@ -547,7 +547,7 @@ function buildSettings() {
     logo:{ type:'text', value:'VILOCCI', accent:true },
     contact:{ phone:'+20 100 000 0000', email:'hello@spinto.com', whatstext:'+20 100 000 0000' },
     whatsapp:'+20 100 000 0000', instagram:'spinto', facebook:'spinto', tiktok:'spinto',
-    shippingFee:60, freeShippingThreshold:2000,
+    shippingFee:60, freeShippingThreshold:require('../lib/shipping').FREE_SHIPPING_THRESHOLD,
     returnPolicy:{ days:7, note_en:'7-day return policy on all items.', note_ar:'سياسة إرجاع 7 أيام على جميع المنتجات.' },
     warranty_en:'All Vilocci products are covered by a manufacture warranty.', warranty_ar:'جميع منتجات فيلوتشي مشمولة بضمان المصنع.',
     currency:'EGP', currencySymbol:'EGP',
