@@ -851,7 +851,7 @@
         <div class="field"><label>Contact email</label><input id="s-email" value="${esc(s.contact && s.contact.email || '')}"></div>
         <div class="field"><label>Currency</label><input id="s-currency" value="${sp('currency')}"></div>
         <div class="field"><label>Shipping fee (EGP)</label><input id="s-shipping" type="number" value="${s.shippingFee}"></div>
-        <div class="field"><label>Free shipping threshold (EGP)</label><input id="s-freethreshold" type="number" value="${s.freeShippingThreshold}"></div>
+        <div class="field"><label>Free shipping threshold (EGP)</label><input id="s-freethreshold" readonly title="Managed by the storefront shipping policy" type="number" value="${s.freeShippingThreshold}"></div>
         <div class="field"><label>Return policy days</label><input id="s-return" type="number" value="${s.returnPolicy.days}"></div>
         <div class="field"><label>Return note — EN</label><input id="s-return-en" value="${esc(s.returnPolicy.note_en)}"></div>
         <div class="field"><label>Return note — AR</label><input id="s-return-ar" value="${esc(s.returnPolicy.note_ar)}"></div>

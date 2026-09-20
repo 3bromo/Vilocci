@@ -477,10 +477,7 @@ function bundleDiscountFor(catalog, validItems) {
   return Object.values(bundleApplied).reduce((s, x) => s + x.discount, 0);
 }
 
-function deliveryFeeFor(settings, subtotal) {
-  const freeShipThreshold = settings.freeShippingThreshold || 0;
-  return (settings.shippingFee || 0) && subtotal >= freeShipThreshold ? 0 : (settings.shippingFee || 0);
-}
+const { deliveryFeeFor } = require('./lib/shipping');
 
 // ---------------------------------------------------------------------------
 // ORDERS (guest checkout: COD + existing InstaPay manual transfer)

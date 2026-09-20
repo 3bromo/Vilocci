@@ -179,7 +179,7 @@
 
   // ------------------------------------------------------------------ cart
   function loadCart() { try { state.cart = JSON.parse(localStorage.getItem(CART_KEY)) || []; } catch (e) { state.cart = []; } }
-  function saveCart() { localStorage.setItem(CART_KEY, JSON.stringify(state.cart)); renderCartBadge(); renderCartDrawer(); }
+  function saveCart() { localStorage.setItem(CART_KEY, JSON.stringify(state.cart)); renderCartBadge(); renderCartDrawer(); renderCheckoutTotals(); }
   function cartCount() { return state.cart.reduce((s, i) => s + i.qty, 0); }
 
   function currentFitment() {
@@ -219,10 +219,28 @@
   // fulfills. Coated and un-coated additions of the same variant stay
   // SEPARATE lines, so a merge can never silently change what an existing
   // line costs.
+  const addedButtons = new WeakMap();
+  function confirmAdded(button) {
+    if (!button) return;
+    const previous = addedButtons.get(button);
+    if (previous) clearTimeout(previous.timer);
+    const original = previous ? previous.original : button.innerHTML;
+    button.classList.add('is-added');
+    button.setAttribute('aria-live', 'polite');
+    button.textContent = '✓ ' + (L() === 'ar' ? 'تمت الإضافة' : 'Added');
+    const timer = setTimeout(() => {
+      button.innerHTML = original;
+      button.classList.remove('is-added');
+      addedButtons.delete(button);
+    }, 2400);
+    addedButtons.set(button, { original, timer });
+  }
+
   function addToCart(productId, keyShape, qty, opts) {
     opts = opts || {};
     const prod = product(productId);
     if (!prod) return;
+    const previousCart = JSON.stringify(state.cart);
     const fit = opts.fitment || fitForItem(prod);
     const color = opts.color || null;
     const colorId = color ? (color.id || '') : '';
@@ -233,9 +251,16 @@
     else {
       state.cart.push({ productId, keyShape: keyShape || '', qty: qty || 1, fitment: fit, colorId, color, coating });
     }
-    saveCart();
+    try { saveCart(); } catch (error) {
+      state.cart = JSON.parse(previousCart);
+      renderCartBadge(); renderCartDrawer();
+      notify(L() === 'ar' ? 'تعذرت الإضافة. يرجى المحاولة مجددًا.' : 'Unable to add. Please try again.');
+      return false;
+    }
+    confirmAdded(opts.button);
     if (opts.openCart === true) { openCart(); }
-    notify(pt('add_to_cart'), 'gold');
+    notify(L() === 'ar' ? 'تمت الإضافة' : 'Added', 'gold');
+    return true;
   }
 
   // Cart lines are keyed by product + shape + color + coating — the same
@@ -422,9 +447,10 @@
         ${discountRowHTML(totals)}
         ${coatingRowHTML(totals)}
         <div class="row"><span>${pt('delivery_fee')}</span><span class="mut">${totals.deliveryFee ? VEL.money(totals.deliveryFee) : pt('free')}</span></div>
+        ${shippingProgressHTML(totals)}
         <div class="row total"><span>${pt('total')}</span><span>${VEL.money(totals.total)}</span></div>
       </div>
-      ${saved > 0 ? `<div class="free" style="color:#5b8a54;font-size:12px;font-weight:700">✓ ${pt('you_saved', { n: VEL.money(saved) })}</div>` : ''}`;
+      ${saved > 0 ? `<div class="free" style="color:#5b8a54;font-size:12px;font-weight:700">✓ ${pt('you_saved', { n: Math.round(saved).toLocaleString('en-US') })}</div>` : ''}`;
   }
 
   function renderCheckoutTotals() {
@@ -1611,7 +1637,7 @@
   function staticHTML(kind) {
     const pages = {
       keyguide: { title: 'Key Guide', body: keyGuideHTML() },
-      shipping: { title: pt('shipping'), body: `<p>${VEL.esc(state.data.settings.deliveryNote_en)}</p><p>Free delivery on orders over ${VEL.money(state.data.settings.freeShippingThreshold)}. Delivery fee is ${VEL.money(state.data.settings.shippingFee)} otherwise.</p><p><b>${pt('easy_returns')}:</b> ${VEL.esc(state.data.settings.returnPolicy.note_en)}</p>` },
+      shipping: { title: pt('shipping'), body: `<p>${VEL.esc(state.data.settings.deliveryNote_en)}</p><p>Free delivery on orders of ${VEL.money(state.data.settings.freeShippingThreshold)} or more. Delivery fee is ${VEL.money(state.data.settings.shippingFee)} otherwise.</p><p><b>${pt('easy_returns')}:</b> ${VEL.esc(state.data.settings.returnPolicy.note_en)}</p>` },
       warranty: { title: pt('warranty_page'), body: `<p>${VEL.esc(state.data.settings.warranty_en)}</p><ul><li>Coverage against manufacturing defects</li><li>2-year warranty on Carbon Edition</li><li>1-year warranty on leather, holders and medals</li></ul>` },
       about: { title: pt('about_velocci'), body: `<p>${VEL.esc(state.data.settings.footerAbout_en)}</p><p>VILOCCI was born from a simple belief — that the key you carry every day deserves the same attention to design as the car you love. Every case, holder and medal is engineered with real materials and guaranteed compatibility.</p>` },
       workshop: { title: pt('workshop'), body: `<p>Every Vilocci piece passes through our workshop where craftsmen check the fit, the finish and the feel. From carbon-fibre layup to the final gold bezel, nothing leaves without being tested against a real car key.</p>` }
@@ -1664,6 +1690,23 @@
   }
 
   // ============================================================== CART DRAWER
+  function shippingProgressHTML(totals) {
+    const threshold = state.data.settings.freeShippingThreshold;
+    const progress = Math.max(0, Math.min(100, totals.subtotal / threshold * 100));
+    const unlocked = totals.subtotal >= threshold;
+    const ar = L() === 'ar';
+    const title = unlocked
+      ? (ar ? 'توصيل مجاني يرافق طلبك' : 'Complimentary delivery is yours')
+      : (ar ? 'اختياراتك تقرّبك من التوصيل المجاني' : 'Your selection, closer to complimentary delivery');
+    const detail = unlocked ? (ar ? 'مع تحيات فيلوتشي' : 'With our compliments')
+      : `${VEL.money(totals.subtotal)} / ${VEL.money(threshold)}`;
+    return `<div class="shipping-progress" role="status" aria-live="polite">
+      <div class="shipping-progress-title">${unlocked ? '✓ ' : ''}${title}</div>
+      <div class="shipping-progress-track" role="progressbar" aria-label="${ar ? 'التوصيل المجاني' : 'Complimentary delivery'}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(progress)}"><span style="width:${progress}%"></span></div>
+      <div class="shipping-progress-detail" dir="${unlocked ? (ar ? 'rtl' : 'ltr') : 'ltr'}">${detail}</div>
+    </div>`;
+  }
+
   function renderCartDrawer() {
     const drawer = $('#cart-drawer');
     if (!drawer) return;
@@ -1707,13 +1750,13 @@
       <div class="summary">
         ${bundleActive ? `<div class="bundle-tag">${pt('bundle_applied')}</div>
         <div class="bundle-price-box"><div class="bp-label">${pt('bundle_price')}</div><div class="bp-val"><span class="old">${VEL.money(totals.bundleSubtotal)}</span><span class="bp-arrow">→</span><span class="bp-new">${VEL.money(totals.bundleSubtotal - totals.bundleDiscount)}</span></div></div>
-        <div class="drawer-savebox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 12 12 20 4 12 12 4z"/><path d="M9 12h6"/></svg><div class="txt">${pt('you_saved', { n: VEL.money(totals.bundleDiscount) })}</div></div>` : ''}
+        <div class="drawer-savebox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 12 12 20 4 12 12 4z"/><path d="M9 12h6"/></svg><div class="txt">${pt('you_saved', { n: Math.round(totals.bundleDiscount).toLocaleString('en-US') })}</div></div>` : ''}
         <div class="row"><span>${pt('subtotal')}</span><span>${VEL.money(totals.subtotal)}</span></div>
         <div class="row"><span>${pt('bundle_discount')}</span><span class="disc">${bundleActive ? '− ' + VEL.money(totals.bundleDiscount) : VEL.money(0)}</span></div>
         ${discountRowHTML(totals)}
         ${coatingRowHTML(totals)}
         <div class="row"><span>${pt('delivery_fee')}</span><span class="mut">${totals.deliveryFee ? VEL.money(totals.deliveryFee) : (freeRemaining <= 0 ? pt('free') : VEL.money(totals.deliveryFee))}</span></div>
-        ${sub < free ? `<div class="row"><span class="free">${pt('free_shipping', { n: freeRemaining.toLocaleString('en-US') })}</span></div>` : ''}
+        ${shippingProgressHTML(totals)}
         <div class="row total"><span>${pt('total')}</span><span>${VEL.money(totals.total)}</span></div>
       </div>`;
   }
@@ -2120,7 +2163,7 @@
 
       ${o.bundleDiscount ? `<div class="bundle-tag" style="display:flex;gap:8px;justify-content:center;margin:22px 0 6px">${pt('bundle_applied')}</div>
       <div class="bundle-price-box" style="border:1px dashed var(--gold);border-radius:10px;background:var(--ivory);padding:16px 20px"><div class="bp-label">${pt('bundle_price')}</div><div class="bp-val"><span class="old">${VEL.money(o.subtotal)}</span><span class="bp-arrow">→</span><span class="bp-new">${VEL.money(o.subtotal - o.bundleDiscount)}</span></div></div>
-      <div class="drawer-savebox" style="margin:12px 0 0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 12 12 20 4 12 12 4z"/><path d="M9 12h6"/></svg><div class="txt">${pt('you_saved', { n: VEL.money(o.bundleDiscount) })}</div></div>` : ''}
+      <div class="drawer-savebox" style="margin:12px 0 0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 12 12 20 4 12 12 4z"/><path d="M9 12h6"/></svg><div class="txt">${pt('you_saved', { n: Math.round(o.bundleDiscount).toLocaleString('en-US') })}</div></div>` : ''}
 
       <div class="success-card">
         <h3>${pt('order_items')}</h3>
@@ -2790,10 +2833,10 @@
       if (pcolors.length) {
         const color = pcolors.find(c => c.id === state.productColor[p.id]);
         if (!color) { notify(pt('color_required')); return; }
-        addToCart(p.id, shape, state.productQty, { color, coating });
+        addToCart(p.id, shape, state.productQty, { color, coating, button: $('#addbtn') });
         return;
       }
-      addToCart(p.id, shape, state.productQty, { coating });
+      addToCart(p.id, shape, state.productQty, { coating, button: $('#addbtn') });
     });
 
     // preorder
@@ -2820,11 +2863,11 @@
         if (cartHasProduct(it.id)) return;
         // one-tap set: use the product's FIRST enabled color variant as the
         // default (customers can always change it from the product page)
-        addToCart(it.id, shape ? shape.shape : '', 1, { openCart: false, color: activeColorsOf(it)[0] || null });
-        added = true;
+        const success = addToCart(it.id, shape ? shape.shape : '', 1, { openCart: false, color: activeColorsOf(it)[0] || null });
+        added = success || added;
       });
       if (!added) { notify(pt('empty_cart')); return; }
-      saveCart(); openCart();
+      confirmAdded($('#addset')); openCart();
     });
 
     // option choices on pdp
@@ -2928,7 +2971,7 @@
 
     // cart drawer actions — delegated on the drawer so dynamically-rendered
     // items (qty, remove, cross-sell "add to set") always respond.
-    $$('[data-add]', main()).forEach(b => b.addEventListener('click', (e) => { e.preventDefault(); const p = product(b.getAttribute('data-add')); if (p) openProductQuickAdd(p); }));
+    $$('[data-add]', main()).forEach(b => b.addEventListener('click', (e) => { e.preventDefault(); const p = product(b.getAttribute('data-add')); if (p) openProductQuickAdd(p, b); }));
     const drawer = $('#cart-drawer');
     if (drawer && !drawer.dataset.dlgBound) {
       drawer.dataset.dlgBound = '1';
@@ -2938,7 +2981,7 @@
         const rm = e.target.closest('[data-remove]');
         if (rm) { const [pid, sh, cid, coat] = rm.getAttribute('data-remove').split('|'); removeCartItem(pid, sh, cid, coat === '1'); notify(L() === 'ar' ? 'تمت الإزالة' : 'Item removed'); return; }
         const ab = e.target.closest('[data-addbundle]');
-        if (ab) { const p = product(ab.getAttribute('data-addbundle')); if (!p) return; const shape = (p.keyShapes||[]).find(s=>s.available); addToCart(p.id, shape?shape.shape:'', 1, { color: activeColorsOf(p)[0] || null }); return; }
+        if (ab) { const p = product(ab.getAttribute('data-addbundle')); if (!p) return; const shape = (p.keyShapes||[]).find(s=>s.available); addToCart(p.id, shape?shape.shape:'', 1, { color: activeColorsOf(p)[0] || null, button: ab }); return; }
       });
     }
 
@@ -3042,8 +3085,8 @@
       if (!p) return;
       // products with color variants always go through the picker so the
       // customer chooses a color before the item lands in the cart
-      if (shape && !activeColorsOf(p).length) { addToCart(p.id, shape.shape, 1); }
-      else openProductQuickAdd(p);
+      if (shape && !activeColorsOf(p).length) { addToCart(p.id, shape.shape, 1, { button: b }); }
+      else openProductQuickAdd(p, b);
     }));
   }
 
@@ -3063,7 +3106,7 @@
   // tapping it before both choices are made performs NO add and surfaces the
   // existing localized validation message (pt('select_key_shape') /
   // pt('color_required')), which is the same behaviour the product page uses.
-  function openProductQuickAdd(p) {
+  function openProductQuickAdd(p, sourceButton) {
     // Catalogue-aware: hidden shapes never reach Quick Add (same rule as the
     // product page and the server-side order check).
     const avail = productShapes(p).filter(s => s.available);
@@ -3190,7 +3233,8 @@
       // shape, color AND the coating opt-in travel with the cart item
       // (and on through checkout into the order)
       const coatBox = $m('#qa-coating');
-      addToCart(p.id, chosen, 1, { color, coating: canCoat && !!coatBox && coatBox.checked });
+      if (!addToCart(p.id, chosen, 1, { color, coating: canCoat && !!coatBox && coatBox.checked, button: addBtn })) return;
+      confirmAdded(sourceButton);
       modal.remove();
     });
 

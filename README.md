@@ -290,5 +290,5 @@ Redis/Mongo**) and add the connection string to the environment variables above.
 ## Notes
 - The store is seeded on first boot (non-destructive). Run `npm run seed -- --force`
   to reset to the defaults (brands/products/bundles).
-- Currency is **EGP**. Change `shippingFee`, `freeShippingThreshold` and copy in Admin → Settings.
+- Currency is **EGP**. Change `shippingFee` and copy in Admin → Settings. Complimentary shipping starts at EGP 2,000 (merchandise subtotal, before discounts and add-ons). `lib/shipping.js` owns this policy; public/admin settings and server order pricing use that same value, overriding obsolete stored thresholds.
 - All automotive imagery is original VELOCCI artwork; no trademarked brand assets are copied.

@@ -214,6 +214,8 @@ async function bootStorefront(payload) {
     check('add unlocks once BOTH shape and color are chosen', addBtn.getAttribute('aria-disabled') === 'false');
     sf.click(addBtn);
     await wait(60);
+    check('clicked product card confirms successful addition', /Added/.test(cardBtn.textContent) && cardBtn.classList.contains('is-added'));
+    check('modal button confirms only after successful addition', /Added/.test(addBtn.textContent));
     check('modal closes after a successful add', !sf.doc.querySelector('.modal-overlay.qa-overlay'));
     let cartItems = sf.cart();
     check('cart receives exactly one line', cartItems.length === 1, JSON.stringify(cartItems));

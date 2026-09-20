@@ -2776,3 +2776,11 @@ html[dir="rtl"] .qa-close { right: auto; left: 12px; }
   .qa-modal .color-options.qa-colors { gap: 8px; }
   .qa-modal .color-options.qa-colors .color-opt { min-width: 58px; }
 }
+
+/* Cart confirmations retain each control's existing premium treatment. */
+.is-added { filter: brightness(1.06); }
+.shipping-progress { margin: 16px 0; padding: 14px 0; border-block: 1px solid var(--line, #e7e1d8); }
+.shipping-progress-title { color: var(--gold-deep); font-size: 12px; font-weight: 600; line-height: 1.6; }
+.shipping-progress-track { height: 3px; margin: 10px 0 8px; background: var(--line, #e7e1d8); overflow: hidden; border-radius: 3px; }
+.shipping-progress-track span { display: block; height: 100%; background: var(--gold); border-radius: inherit; }
+.shipping-progress-detail { color: var(--muted); font-size: 11px; }
