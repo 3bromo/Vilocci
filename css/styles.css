@@ -2784,3 +2784,9 @@ html[dir="rtl"] .qa-close { right: auto; left: 12px; }
 .shipping-progress-track { height: 3px; margin: 10px 0 8px; background: var(--line, #e7e1d8); overflow: hidden; border-radius: 3px; }
 .shipping-progress-track span { display: block; height: 100%; background: var(--gold); border-radius: inherit; }
 .shipping-progress-detail { color: var(--muted); font-size: 11px; }
+/* Search close control: opening and closing are separate, explicit actions. */
+.search-close { position:absolute; top:8px; right:10px; border:0; background:transparent; color:var(--muted); font-size:25px; line-height:1; cursor:pointer; padding:2px 6px; }
+.search-close:hover,.search-close:focus { color:var(--gold-deep); outline:none; }
+.search-panel input { padding-right:38px; }
+html[dir="rtl"] .search-close { right:auto; left:10px; }
+html[dir="rtl"] .search-panel input { padding-right:12px; padding-left:38px; }
