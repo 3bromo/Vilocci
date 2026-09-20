@@ -1935,8 +1935,9 @@
         <div class="header-actions">
           <div class="header-search">
             <button class="icon-btn" id="search-btn" aria-label="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg></button>
-            <div class="search-panel hidden" id="search-panel">
-              <input id="search-input" placeholder="${VEL.esc(pt('search'))}...">
+            <div class="search-panel hidden" id="search-panel" role="search">
+              <button class="search-close" id="search-close" type="button" aria-label="${L() === 'ar' ? 'إغلاق البحث' : 'Close search'}">×</button>
+              <input id="search-input" autocomplete="off" placeholder="${VEL.esc(pt('search'))}...">
               <div class="results" id="search-results"></div>
             </div>
           </div>
@@ -3488,15 +3489,22 @@
     $('#drawer-overlay').addEventListener('click', closeCart);
     $('#cart-proceed').addEventListener('click', () => { if (cartCount()) { closeCart(); location.hash = '#/checkout'; } });
 
-    // search
-    $('#search-btn').addEventListener('click', () => $('#search-panel').classList.toggle('hidden'));
-    $('#search-input').addEventListener('input', (e) => {
-      const q = e.target.value.trim().toLowerCase();
-      const res = $('#search-results');
-      if (!q) { res.innerHTML = ''; return; }
-      const matches = state.data.products.filter(p => (p.name_en + ' ' + p.name_ar + ' ' + (p.category||'')).toLowerCase().includes(q)).slice(0, 7);
+    // Search is deliberately indexed once per render: typing only scores the small
+    // in-memory index, rather than normalizing every product on every keystroke.
+    const panel = $('#search-panel'), input = $('#search-input');
+    const searchIndex = VEL.Search.createIndex(state.data.products, state.data.brands);
+    const closeSearch = () => { panel.classList.add('hidden'); input.value = ''; $('#search-results').innerHTML = ''; };
+    const openSearch = (event) => { panel.classList.remove('hidden'); input.focus({ preventScroll: true }); if (event) setTimeout(() => input.focus({ preventScroll: true }), 0); };
+    $('#search-btn').addEventListener('click', openSearch);
+    $('#search-close').addEventListener('click', closeSearch);
+    input.addEventListener('input', (e) => {
+      const matches = VEL.Search.search(searchIndex, e.target.value, 7), res = $('#search-results');
+      if (!e.target.value.trim()) { res.innerHTML = ''; return; }
       res.innerHTML = matches.map(p => `<a class="result" href="#/product/${p.slug}"><img src="${img(p)}"><div><div style="font-size:13px;font-weight:600">${VEL.esc(prodName(p))}</div><div style="font-size:12px;color:var(--gold-deep)">${VEL.money(p.price)}</div></div></a>`).join('') || `<div style="color:var(--muted);padding:8px">${pt('no_results')}</div>`;
     });
+    input.addEventListener('keydown', e => { if (e.key === 'Escape') closeSearch(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !panel.classList.contains('hidden')) closeSearch(); });
+    $('#search-results').addEventListener('click', closeSearch);
 
     // mobile menu
     $('#menu-btn').addEventListener('click', () => { $('#nav-mobile').classList.remove('hidden'); $('#nav-mobile').classList.add('open'); });

@@ -1,0 +1,10 @@
+const assert = require('assert');
+const S = require('../js/search');
+assert.equal(S.normalize(' C_  Class! '), 'c class');
+assert.equal(S.normalize('مُرْسَيْدِس'), 'مرسيدس');
+const products=[{name_en:'C_ Class Key Case',name_ar:'جراب سي كلاس',brandSlug:'mercedes-benz',models:['C-Class'],category:'keycase'},{name_en:'Audi Key Holder',name_ar:'حامل أودي',brandSlug:'audi',models:['A4'],category:'keyholder'}];
+const brands=[{slug:'mercedes-benz',name_en:'Mercedes-Benz',name_ar:'مرسيدس'},{slug:'audi',name_en:'Audi',name_ar:'أودي'}]; const idx=S.createIndex(products,brands);
+for(const q of ['C Class','c class','C-Class','Cclass']) assert.equal(S.search(idx,q)[0],products[0]);
+assert.equal(S.search(idx,'Mercdes')[0],products[0]); assert.equal(S.search(idx,'A4')[0],products[1]); assert.equal(S.search(idx,'zzzxxyy').length,0);
+assert.equal(S.search(idx,'C Class')[0],products[0]);
+console.log('search tests passed (9 assertions)');
