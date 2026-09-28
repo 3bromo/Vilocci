@@ -1012,3 +1012,46 @@ PR #42 shipped the code with the asset cache-buster strings still reading `v=202
 - **Live feature check (post-#42, pre-bump)**: the served `https://vilocci-b31u.vercel.app/js/app.js` contains the new wiring verbatim — `VEL.Search.createIndex(state.data.products, state.data.brands)`, the `#search-close` handler with `closeSearch()`, and `openSearch()`'s double `input.focus({ preventScroll: true })` — confirming the search upgrade itself is **live in production**.
 - **Local check at the bumped commit**: `node test/search.js` — `search tests passed (9 assertions)`.
 - **After this bump's merge**: the same merge-triggered deploy path ships `index.html` referencing `/js/engine.js?v=20260920b`, `/js/search.js?v=20260920b`, `/js/app.js?v=20260920b`; deployment status for the exact merged SHA is recorded through the GitHub deployments API (per-SHA `success` = the `20260920b` tree is what production serves).
+
+---
+
+## 18. Addendum 2026-09-28 — Checkout InstaPay visibility, required-field validation, outside-click search close; GitHub → Vercel integration re-verified (build 20260920b)
+
+### 18.1 Reported symptom and root cause
+
+The operator reported that the storefront/checkout changes "were applied to the GitHub repository but were not being deployed to Vercel". Diagnosed through the GitHub API (this sandbox reaches `api.github.com`, `github.com` and `registry.npmjs.org`; it does **not** reach `*.vercel.app` — every direct HTTPS request fails before the TLS handshake, so all deployment evidence below is read from GitHub's deployments/commit-status APIs rather than by fetching the live pages):
+
+- **Root cause: nothing had been pushed.** At diagnosis time `main` on GitHub was still `a8f3481` (2026-09-20T16:34:31Z), the merge of PR #43, and the working tree holding the checkout/search changes had never been committed or pushed — the session branch `arena/01a0e559-vilocci` did not exist on the remote, and the GitHub commit search API reported **0 commits** in the repository after 2026-09-21. Git's own evidence: `main`'s `js/app.js` was 198 623 bytes with **0** occurrences of `validateCheckoutFields` / `searchOutsideHandler` / `bindCheckoutValidation`, versus 204 846 bytes locally; `css/styles.css` had 0 occurrences of the new error/hidden rules.
+- **The GitHub → Vercel integration was never broken.** For the last real push (PR #43's merge, `a8f3481`) Vercel created deployments in **all 6 connected projects** and every one reported `success` / "Deployment has completed". No failed build or deployment status exists for any SHA in this repository's history; the connection is `vercel[bot]` via the GitHub App, and `main` is the production branch for every project — proven by the `Production – <project>` environments recorded for main's SHAs (as opposed to the `Preview – <project>` environments recorded for branch SHAs).
+- **Therefore no configuration change was needed** — no new project, no domain change, no webhook to repair. The fix was to push the verified work through the repository's normal path.
+
+### 18.2 What shipped (PR #44, branch `arena/01a0e559-vilocci`, merged into `main` as `14f787c` at 2026-09-28T00:31:07Z)
+
+- **Payment screenshot only for InstaPay** — the InstaPay block (exact amount, transfer link, instructions, screenshot upload) is shown only while InstaPay is the selected payment method: Cash on Delivery hides the whole block (`#instapay-cta-box[hidden]`, with `.instapay-cta[hidden] { display: none !important }` because the block's existing `display: block !important` would otherwise win), InstaPay reveals it, switching back hides it again — in place, no reload, no design change. The `Pay with InstaPay` title and the transfer link reveal it through the same radio `change` path, and the file input is `required` only for InstaPay.
+- **Required customer information validated before the order exists** — the four fields the form markup and `POST /api/orders` both require (`fullName`, `phone`, `city`, `address`; `area` and `notes` stay optional) turn red with a short message when empty or, for the phone, malformed (`/^[\d\s+\-()]{6,20}$/`, mirroring the input's own `pattern`). The submit handler returns **before any request is sent**; the red state clears itself as soon as the value is valid and never appears on a field the customer has not submitted. Field names, payload shape, database and API are untouched, and the server keeps its own check.
+- **Search closes on a click/tap outside it** — a capture-phase `pointerdown` on the document (with a `mousedown` fallback when Pointer Events are unavailable) closes the panel and blurs the field, so the X button is never required. Clicks inside the panel — field, results, close button — keep it open; the X button, Escape and "clicking a result closes" behave exactly as before. Works for mouse and touch, desktop and mobile, with no CSS change.
+- **Harness** — `test/checkout_and_search.js` (new, 72 checks, wired into `npm test`) drives the real storefront in jsdom against a real server on a scratch datastore; `test/storefront_ui_browser.js` (new) runs the same scenarios in a real browser at 1280×900 and 390×844; `test/checkout_instapay.js` was updated to the new expected visibility.
+
+### 18.3 Verified locally at the exact merged commit (`a8f937d` / merge `14f787c`)
+
+- `npm test` — **846 checks across 19 suites, 0 failures, exit 0**, including the new 72-check `test/checkout_and_search.js` and every pre-existing suite unchanged (smoke, admin, customize, colours, quick-add, brands, discount, InstaPay proof API, coating, shapes, shape images/storage, storefront cart, search).
+- Covered end to end: COD hides the upload → InstaPay reveals it → back to COD hides it; empty/invalid required field → field red, message shown, **no order posted**; fixed field → red clears, order created and confirmed present in the store through the admin API; search closed by an outside tap and left open by inside clicks (mouse and touch).
+- `js/app.js` parses cleanly (`node --check`), the served stylesheet has balanced braces, and `public/` + `dist/` mirrors are rebuilt and byte-identical to the sources.
+
+### 18.4 Deployment verification (GitHub deployments + commit-status API)
+
+- **Integration fires on push (previews).** Pushing the branch (`a8f937d`) produced Vercel deployments in all 6 projects within seconds — statuses created 00:30:38Z, deployments at 00:30:48–00:30:53Z, environment `Preview – <project>` — all `success`. This is the direct proof that the webhook/integration triggers on every new push.
+- **Production deploys on merge to `main`.** Merging PR #44 moved `main` to **`14f787c`**; Vercel created a `Production – <project>` deployment for that exact SHA in **all 6 projects** (created 00:31:36–00:32:34Z), each reporting `state: success` / `description: "Deployment has completed"`:
+
+| Project | Environment | Result | Deployment URL |
+| --- | --- | --- | --- |
+| `vilocci-b31u` | Production | success | https://vilocci-b31u-7p9dx8rqt-3bromos-projects.vercel.app |
+| `vilocciii3bro` | Production | success | https://vilocciii3bro-l6l4hk8p9-3bromos-projects.vercel.app |
+| `velocciiiii` | Production | success | https://velocciiiii-3bq9d6nqq-3bromos-projects.vercel.app |
+| `vilocci-pvpw` | Production | success | https://vilocci-pvpw-lc3g7emka-3bromos-projects.vercel.app |
+| `vilocci-i54t` | Production | success | https://vilocci-i54t-rnad89gwr-3bromos-projects.vercel.app |
+| `01a07cb5-b190-7e92-ac8e-aefc65395914-4` | Production | success | https://01a07cb5-b190-7e92-ac8e-aefc65395914-4-7zir8of8k.vercel.app |
+
+- **No build failure anywhere.** Every `Vercel – <project>` commit status for `14f787c` resolved to `success` (the statuses pass through `pending` → `success`; a failed build would publish `failure`/`error`, as it does for the repository's other SHAs — there is none).
+- **Served tree check.** Both static roots that Vercel can serve — `public/` and the Vite output `dist/` — contain the shipped code on `main`: `public/js/app.js` and `dist/js/app.js` each carry the new `validateCheckoutFields` / `searchOutsideHandler` wiring (6 occurrences), and both stylesheets carry the new `.field.has-error` / `.instapay-cta[hidden]` rules (3 occurrences).
+- **Not verified from here.** The live pages could not be fetched: `https://*.vercel.app` is unreachable from the agent sandbox (`curl` exits before the TLS handshake, code 000), and this agent has no Vercel account/token, so Vercel's own build-log UI is not readable either. The evidence above — per-SHA production deployments, `success` statuses and the committed static roots — is what the sandbox can prove; a browser check of `https://vilocci-b31u.vercel.app/#/checkout` (COD hides the upload / InstaPay shows it) remains the one manual confirmation available only to the operator.
