@@ -515,7 +515,7 @@ function styleTests() {
   styleTests();
 
   // Scratch datastore so the committed dataset is never mutated by this test.
-  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vilocci-coating-'));
+  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'VELOCE-coating-'));
   const scratchDb = path.join(scratchDir, 'velocci-db.json');
   const source = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'velocci-db.json'), 'utf8'));
   source.discount_codes = [

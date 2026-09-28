@@ -157,7 +157,7 @@ VEL.esc = function (s) {
   });
 };
 VEL.plural = function (n, one, many) { return n === 1 ? one : many; };
-/* VILOCCI storefront search: indexed, normalized relevance search. */
+/* VELOCE storefront search: indexed, normalized relevance search. */
 (function (root) {
   'use strict';
   function normalize(value) {
