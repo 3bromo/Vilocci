@@ -1832,7 +1832,7 @@
         <div class="pay-option-body">
           <a class="pay-instapay-title" href="${safeUrl}" target="_blank" rel="noopener noreferrer" id="instapay-title-link">${instapayTitle}</a>
           <div class="pay-option-desc">${instapayDesc}</div>
-          <div class="instapay-cta" id="instapay-cta-box">
+          <div class="instapay-cta" id="instapay-cta-box" hidden>
             ${instapayDueHTML(totals || cartTotals())}
             <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-gold btn-sm" id="instapay-link-btn">${payBtnText}</a>
             <div class="instapay-hint">${hint}</div>
@@ -2059,6 +2059,10 @@
 
   // ============================================================== ROUTER
   let lastProductSlug = null;
+  // Search's outside-tap listener is kept here so a re-render (language switch)
+  // replaces it instead of stacking a second one on the document.
+  let searchOutsideEvent = 'pointerdown';
+  let searchOutsideHandler = null;
 
   // COLLECTIONS OVERVIEW PAGE — shows all categories
   function collectionsHTML() {
@@ -2995,12 +2999,19 @@
       form.addEventListener('submit', submitCheckout);
       bindDiscount();
       const radioInsta = form.querySelector('input[name="paymentMethod"][value="InstaPay"]');
-      function selectInstapay() { if (radioInsta) radioInsta.checked = true; }
+      // Clicking the InstaPay title or the transfer link selects InstaPay and
+      // tells the block below to appear (the same path the radio itself uses).
+      function selectInstapay() {
+        if (!radioInsta || radioInsta.checked) return;
+        radioInsta.checked = true;
+        radioInsta.dispatchEvent(new Event('change', { bubbles: true }));
+      }
       const titleLink = $('#instapay-title-link');
       const ctaLink = $('#instapay-link-btn');
       if (titleLink) titleLink.addEventListener('click', selectInstapay);
       if (ctaLink) ctaLink.addEventListener('click', selectInstapay);
       bindInstapayProof(form);
+      bindCheckoutValidation(form);
     }
 
     // clear fitment
@@ -3322,11 +3333,18 @@
     if (remove) remove.hidden = !file;
   }
 
+  // The InstaPay block (exact amount, transfer link, instructions and the
+  // payment-screenshot upload) belongs to InstaPay only: it is shown the
+  // moment the InstaPay radio is selected and hidden again — completely —
+  // as soon as Cash on Delivery is selected. Nothing reloads; the radios'
+  // change events drive this, so switching back and forth is instant.
   function syncInstapayProofUI(form) {
     const radio = form && form.querySelector('input[name="paymentMethod"][value="InstaPay"]');
     const input = $('#instapay-proof-input');
     const box = $('#instapay-proof-box');
+    const cta = $('#instapay-cta-box');
     const active = !!(radio && radio.checked);
+    if (cta) cta.hidden = !active;
     if (box) box.classList.toggle('is-active', active);
     if (input) input.required = active;
     if (!active) setInstapayProofError('');
@@ -3387,9 +3405,98 @@
     });
   }
 
+  // ------------------------------------------------------- checkout validation
+  // The customer fields an order cannot be created without. This is exactly
+  // what the form markup marks with `required` and what POST /api/orders
+  // refuses to accept when missing — `area` and `notes` stay optional.
+  const CHECKOUT_REQUIRED = ['fullName', 'phone', 'city', 'address'];
+
+  // Returns the message for a required field, or '' when the value is fine.
+  // The phone rule mirrors the input's own pattern attribute.
+  function checkoutFieldMessage(name, value) {
+    const ar = L() === 'ar';
+    const v = String(value == null ? '' : value).trim();
+    if (!v) {
+      if (name === 'fullName') return ar ? 'الاسم بالكامل مطلوب.' : 'Full name is required.';
+      if (name === 'phone') return ar ? 'رقم الهاتف مطلوب.' : 'Phone number is required.';
+      if (name === 'city') return ar ? 'المدينة مطلوبة.' : 'City is required.';
+      if (name === 'address') return ar ? 'العنوان بالكامل مطلوب.' : 'Full address is required.';
+      return ar ? 'هذا الحقل مطلوب.' : 'This field is required.';
+    }
+    if (name === 'phone' && !/^[\d\s+\-()]{6,20}$/.test(v)) {
+      return ar ? 'أدخل رقم هاتف صحيح.' : 'Enter a valid phone number.';
+    }
+    return '';
+  }
+
+  // Paints (or clears) the red error state of one field: the wrapper goes red
+  // and the message sits under the input until the value is valid again.
+  function setCheckoutFieldError(name, message) {
+    const form = $('#checkout-form');
+    const control = form && form.querySelector(`[name="${name}"]`);
+    if (!control) return;
+    const field = control.closest('.field');
+    if (field) field.classList.toggle('has-error', !!message);
+    control.setAttribute('aria-invalid', message ? 'true' : 'false');
+    if (!field) return;
+    let box = field.querySelector('.field-error');
+    if (!box && message) {
+      box = document.createElement('div');
+      box.className = 'field-error';
+      box.setAttribute('role', 'alert');
+      field.appendChild(box);
+    }
+    if (box) box.textContent = message || '';
+  }
+
+  // Validates every required field. Marks each offending one, brings the first
+  // one into view and returns false so the order is never created. A field
+  // that is filled in correctly is never touched.
+  function validateCheckoutFields(form) {
+    let firstBad = null;
+    CHECKOUT_REQUIRED.forEach((name) => {
+      const control = form.querySelector(`[name="${name}"]`);
+      if (!control) return;
+      const message = checkoutFieldMessage(name, control.value);
+      setCheckoutFieldError(name, message);
+      if (message && !firstBad) firstBad = control;
+    });
+    if (firstBad) {
+      const field = firstBad.closest('.field');
+      if (field && field.scrollIntoView) field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      try { firstBad.focus({ preventScroll: true }); } catch (e) { firstBad.focus(); }
+      return false;
+    }
+    return true;
+  }
+
+  // Re-checks a field the moment the customer edits it, so the red state
+  // disappears by itself once the value is valid — and never appears on a
+  // field the customer has not submitted yet.
+  function bindCheckoutValidation(form) {
+    CHECKOUT_REQUIRED.forEach((name) => {
+      const control = form.querySelector(`[name="${name}"]`);
+      if (!control) return;
+      const revalidate = () => {
+        const field = control.closest('.field');
+        if (!field || !field.classList.contains('has-error')) return;
+        setCheckoutFieldError(name, checkoutFieldMessage(name, control.value));
+      };
+      control.addEventListener('input', revalidate);
+      control.addEventListener('change', revalidate);
+      control.addEventListener('blur', revalidate);
+    });
+  }
+
   async function submitCheckout(e) {
     e.preventDefault();
     const form = e.target;
+
+    // Required customer information is checked before anything is sent: an
+    // incomplete form never reaches POST /api/orders (the server keeps its own
+    // check as the final authority).
+    if (!validateCheckoutFields(form)) return;
+
     const f = new FormData(form);
     const customer = { fullName: f.get('fullName'), phone: f.get('phone'), city: f.get('city'), area: f.get('area'), address: f.get('address'), notes: f.get('notes') };
     const payment = f.get('paymentMethod') || 'Cash on Delivery';
@@ -3493,7 +3600,12 @@
     // in-memory index, rather than normalizing every product on every keystroke.
     const panel = $('#search-panel'), input = $('#search-input');
     const searchIndex = VEL.Search.createIndex(state.data.products, state.data.brands);
-    const closeSearch = () => { panel.classList.add('hidden'); input.value = ''; $('#search-results').innerHTML = ''; };
+    const closeSearch = () => {
+      panel.classList.add('hidden');
+      input.value = '';
+      $('#search-results').innerHTML = '';
+      if (document.activeElement === input) input.blur();   // the closed panel gives up focus
+    };
     const openSearch = (event) => { panel.classList.remove('hidden'); input.focus({ preventScroll: true }); if (event) setTimeout(() => input.focus({ preventScroll: true }), 0); };
     $('#search-btn').addEventListener('click', openSearch);
     $('#search-close').addEventListener('click', closeSearch);
@@ -3505,6 +3617,24 @@
     input.addEventListener('keydown', e => { if (e.key === 'Escape') closeSearch(); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && !panel.classList.contains('hidden')) closeSearch(); });
     $('#search-results').addEventListener('click', closeSearch);
+
+    // Tapping or clicking anywhere outside search closes it — on desktop and on
+    // mobile — so the X button is never required. The panel itself (field,
+    // results, close button, padding) and the header search icon are excluded:
+    // inside the panel the search keeps working, and the icon keeps its
+    // existing "open and focus" behaviour. Capture phase so the check runs
+    // before any handler that could re-render the area.
+    if (searchOutsideHandler) document.removeEventListener(searchOutsideEvent, searchOutsideHandler, true);
+    searchOutsideEvent = ('PointerEvent' in window) ? 'pointerdown' : 'mousedown';
+    searchOutsideHandler = (event) => {
+      if (!panel || panel.classList.contains('hidden')) return;
+      const target = event.target;
+      if (panel.contains(target)) return;
+      const toggle = $('#search-btn');
+      if (toggle && toggle.contains(target)) return;
+      closeSearch();
+    };
+    document.addEventListener(searchOutsideEvent, searchOutsideHandler, true);
 
     // mobile menu
     $('#menu-btn').addEventListener('click', () => { $('#nav-mobile').classList.remove('hidden'); $('#nav-mobile').classList.add('open'); });
