@@ -1,4 +1,4 @@
-/* VILOCCI storefront search: indexed, normalized relevance search. */
+/* VELOCE storefront search: indexed, normalized relevance search. */
 (function (root) {
   'use strict';
   function normalize(value) {

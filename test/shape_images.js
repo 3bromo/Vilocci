@@ -208,7 +208,7 @@ async function bootAdmin(catalog) {
 }
 
 (async function main() {
-  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vilocci-shapeimg-'));
+  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'VELOCE-shapeimg-'));
   const scratchDb = path.join(scratchDir, 'velocci-db.json');
   fs.copyFileSync(path.join(ROOT, 'data', 'velocci-db.json'), scratchDb);
 

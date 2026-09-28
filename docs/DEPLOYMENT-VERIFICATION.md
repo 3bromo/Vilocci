@@ -14,9 +14,9 @@ deployment. It changes **no application code and no data**.
 
 | Surface | URL |
 | --- | --- |
-| Production storefront | https://vilocci-b31u.vercel.app |
-| Admin panel | https://vilocci-b31u.vercel.app/admin |
-| Repository | https://github.com/3bromo/Vilocci |
+| Production storefront | https://VELOCE-b31u.vercel.app |
+| Admin panel | https://VELOCE-b31u.vercel.app/admin |
+| Repository | https://github.com/3bromo/VELOCE |
 
 ---
 
@@ -123,11 +123,11 @@ new **Production** deployment of `main`.
 
 | Item | Value |
 | --- | --- |
-| Repository | https://github.com/3bromo/Vilocci (production branch: `main`) |
+| Repository | https://github.com/3bromo/VELOCE (production branch: `main`) |
 | Previously deployed production commit | `d99be2b` |
 | Vercel team | `3bromos-projects` |
-| Production URL used as reference | https://vilocci-b31u.vercel.app |
-| Vercel projects linked to this repo (each builds `main` into Production) | `vilocci-b31u`, `velocciiiii`, `vilocciii3bro`, `vilocci-i54t`, `vilocci-pvpw`, `01a07cb5-b190-7e92-ac8e-aefc65395914-4` |
+| Production URL used as reference | https://VELOCE-b31u.vercel.app |
+| Vercel projects linked to this repo (each builds `main` into Production) | `VELOCE-b31u`, `velocciiiii`, `VELOCEii3bro`, `VELOCE-i54t`, `VELOCE-pvpw`, `01a07cb5-b190-7e92-ac8e-aefc65395914-4` |
 
 > Every push to `main` currently builds **all six** linked projects. Keeping only
 > one project linked (Vercel → Project → Settings → Git → "Connected Git
@@ -137,7 +137,7 @@ new **Production** deployment of `main`.
 ### 6.2 Vercel environment variables still missing
 
 Live probe of the deployed Production function —
-`GET https://vilocci-b31u.vercel.app/api/admin/diagnose`:
+`GET https://VELOCE-b31u.vercel.app/api/admin/diagnose`:
 
 ```json
 {"rawEnvUrl":"(not set)","sanitizedUrl":"(empty)","urlIsValid":false,"urlHasPath":"",
@@ -266,7 +266,7 @@ GET /api/admin/customize/...       → 401 without an admin token
 
 ### 7.3 NOT verified on production — blocked by missing Supabase credentials
 
-`GET https://vilocci-b31u.vercel.app/api/admin/diagnose` (checked 2026-09-16):
+`GET https://VELOCE-b31u.vercel.app/api/admin/diagnose` (checked 2026-09-16):
 
 ```json
 {"rawEnvUrl":"(not set)","sanitizedUrl":"(empty)","urlIsValid":false,
@@ -308,16 +308,16 @@ storefront showed **no Customize entry at all** — not in the header, not in th
 mobile menu, not in the footer.
 
 **Why the earlier "verified" claim was wrong.** §1 of this document names
-`https://vilocci-b31u.vercel.app` as production. That project runs on the
+`https://VELOCE-b31u.vercel.app` as production. That project runs on the
 **JSON fallback driver**, which *derives* the categories from the products, so
 it reported 3 categories and the nav entry appeared. The real customer-facing
 instance is the Supabase-backed one:
 
 | Project | Driver | `/api/customize/categories` before the fix |
 | --- | --- | --- |
-| `vilocciii3bro.vercel.app` | `postgrest` (Supabase `zbqnkebsmhhemknpazme`) | `{"available":false,"categories":[]}` |
-| `vilocci-b31u.vercel.app` | `json` fallback | 3 categories |
-| `velocciiiii.vercel.app`, `vilocci-pvpw.vercel.app` | `json` fallback | 3 categories |
+| `VELOCEii3bro.vercel.app` | `postgrest` (Supabase `zbqnkebsmhhemknpazme`) | `{"available":false,"categories":[]}` |
+| `VELOCE-b31u.vercel.app` | `json` fallback | 3 categories |
+| `velocciiiii.vercel.app`, `VELOCE-pvpw.vercel.app` | `json` fallback | 3 categories |
 
 Verifying only the JSON-backed project hid the bug completely.
 
@@ -350,9 +350,9 @@ implementation of the page.
 **Verified on production after deploy** (`main` → `29821c0`, 6 Vercel
 projects `success`):
 
-- `GET https://vilocciii3bro.vercel.app/api/customize/categories` →
+- `GET https://VELOCEii3bro.vercel.app/api/customize/categories` →
   `available: true`, Key Cases **59**, Key Holders **29**, Car Medals **29**.
-- `GET https://vilocciii3bro.vercel.app/customize` → 200, the real 5-step flow
+- `GET https://VELOCEii3bro.vercel.app/customize` → 200, the real 5-step flow
   (Choose → Photo → Car info → Your request → Your details) with the three
   categories and their real product counts.
 - Storefront home unchanged: products, brands, fitment, packages, bundles,
@@ -421,11 +421,11 @@ both Customize screens.
 **Verified on PRODUCTION after deploy** (`main` → `d1e73d7`, PR #20, all 6
 Vercel projects `success`):
 
-- `GET https://vilocciii3bro.vercel.app/api/customize/categories` →
+- `GET https://VELOCEii3bro.vercel.app/api/customize/categories` →
   `available: true`, Key Cases **59**, Key Holders **29**, Car Medals **29**.
-- `GET https://vilocciii3bro.vercel.app/customize` → 200, the real 5-step flow
+- `GET https://VELOCEii3bro.vercel.app/customize` → 200, the real 5-step flow
   (Choose → Photo → Car info → Your request → Your details) with the three
-  categories; same on `vilocci-b31u`.
+  categories; same on `VELOCE-b31u`.
 - Live `/js/app.js` serves build `20260917a` with the unconditional
   `navLinks.push([cz('customize'), '#/customize'])`.
 - Live `/css/styles.css` serves the gold-pill `.nav-customize` (desktop) and
@@ -433,7 +433,7 @@ Vercel projects `success`):
 - Live `/js/admin-app.js` serves build `20260917a` with the sidebar
   `customize-settings` + `customize-requests` entries (incl. the new-request
   badge) and the `czDashboardCard()` quick-access card.
-- Live `/admin` (vilocciii3bro) renders the Sign In form — the project is
+- Live `/admin` (VELOCEii3bro) renders the Sign In form — the project is
   Supabase-configured, so the Customize sidebar group and dashboard card are
   reachable after login (rendering + navigation + bindings proven in jsdom
   against the exact live bytes).
@@ -450,16 +450,16 @@ exercised (no admin credentials in the sandbox).
 
 **Provenance — read this first.** This change was requested as "deploy the
 already-completed banner from commit `d8a0a7d` on branch
-`arena/01a0af2f-vilocci`". That commit does not exist and never did:
+`arena/01a0af2f-VELOCE`". That commit does not exist and never did:
 
 - `git cat-file -t d8a0a7d` → *Not a valid object name* (after a full
   `--unshallow` fetch of all 46 commits).
-- GitHub REST `GET /repos/3bromo/Vilocci/commits/d8a0a7d` →
+- GitHub REST `GET /repos/3bromo/VELOCE/commits/d8a0a7d` →
   `422 {"message":"No commit found for SHA: d8a0a7d"}`. Same `422` for
-  `3bromo/Vilocciiii`, `3bromo/Streetpants`, `3bromo/Streetpantss`.
+  `3bromo/VELOCEiii`, `3bromo/Streetpants`, `3bromo/Streetpantss`.
 - No object with that prefix in any of the 18 remote branches or in any of the
   21 `refs/pull/*` refs.
-- `arena/01a0af2f-vilocci` tips at `e6159aa`, already an ancestor of `main`
+- `arena/01a0af2f-VELOCE` tips at `e6159aa`, already an ancestor of `main`
   (`aa3f809`). Its PRs #20/#21 shipped the **nav pill + mobile highlight +
   admin dashboard card** — *not* a homepage banner. Nothing was left to
   cherry-pick.
@@ -520,22 +520,22 @@ and the CSS + cache-buster ship in the served copies.
 
 ## 11. Addendum 2026-09-17 — Customize homepage banner VERIFIED ON PRODUCTION
 
-**Merge.** PR #22 (`arena/01a0af6d-vilocci` → `main`) merged 2026-09-17
+**Merge.** PR #22 (`arena/01a0af6d-VELOCE` → `main`) merged 2026-09-17
 13:18:34 UTC as **`2d92a40`**.
 
 **Vercel Production — all 6 projects `success` on `2d92a40`:**
 
 | Project | State | Updated (UTC) |
 |---|---|---|
-| `vilocci-pvpw` | success | 13:18:51 |
-| `vilocciii3bro` | success | 13:18:52 |
+| `VELOCE-pvpw` | success | 13:18:51 |
+| `VELOCEii3bro` | success | 13:18:52 |
 | `velocciiiii` | success | 13:18:58 |
 | `01a07cb5-…-4` | success | 13:19:11 |
-| `vilocci-b31u` | success | 13:19:26 |
-| `vilocci-i54t` | success | 13:19:40 |
+| `VELOCE-b31u` | success | 13:19:26 |
+| `VELOCE-i54t` | success | 13:19:40 |
 
 **Live homepage — the banner is directly after "Complete Your Set".**
-`GET https://vilocciii3bro.vercel.app/` renders, in this order:
+`GET https://VELOCEii3bro.vercel.app/` renders, in this order:
 
 ```
 Complete Your Set / Packages & Sets … [ADD 3-PIECE SET]
@@ -548,7 +548,7 @@ Tell us exactly what you have in mind and our atelier    ← bespoke-request cop
 
 The CTA's `href` resolves to `#/customize` — the existing route. Nothing
 renders between "Complete Your Set" and the banner (adjacent siblings).
-Identical result on `https://vilocci-b31u.vercel.app/`.
+Identical result on `https://VELOCE-b31u.vercel.app/`.
 
 **Live bundle bytes.**
 
@@ -630,12 +630,12 @@ Deliberate order: migration first, code second — the new code always writes th
 
 - PR #24 merged to `main` as `0862157` (2026-09-17).
 - All **6** linked Vercel projects built Production `success` on `0862157`
-  between 17:52:21Z and 17:53:24Z (`01a07cb5-…-4`, `vilocci-i54t`,
-  `vilocci-pvpw`, `velocciiiii`, `vilocci-b31u`, `vilocciii3bro`).
+  between 17:52:21Z and 17:53:24Z (`01a07cb5-…-4`, `VELOCE-i54t`,
+  `VELOCE-pvpw`, `velocciiiii`, `VELOCE-b31u`, `VELOCEii3bro`).
 
 ### 12.3 Verified on PRODUCTION after the deploy
 
-All observed live on `https://vilocciii3bro.vercel.app` (the Supabase-backed,
+All observed live on `https://VELOCEii3bro.vercel.app` (the Supabase-backed,
 customer-facing instance) unless noted:
 
 1. **Driver healthy, no fallback.** `GET /api/admin/diagnose` →
@@ -670,7 +670,7 @@ customer-facing instance) unless noted:
    brands, hero products, New Arrivals, Complete Your Set, and the PR #23
    Customize banner directly after it); `/api/customize/categories` →
    `available: true` with the same 3 categories. The JSON-fallback instances
-   (e.g. `vilocci-b31u`) serve the same palettes from the bundled store.
+   (e.g. `VELOCE-b31u`) serve the same palettes from the bundled store.
 
 ### 12.4 Verified locally against the exact merged commit
 
@@ -733,12 +733,12 @@ handlers, its CSS and its dead EN/AR dictionary strings are gone.
 
 - PR #30 merged to `main` as `e6e6979` (2026-09-18 11:56:38Z).
 - All **6** linked Vercel projects built Production `success` on `e6e6979`
-  between 11:56:57Z and 11:58:22Z (`vilocci-pvpw`, `velocciiiii`,
-  `vilocci-i54t`, `01a07cb5-…-4`, `vilocciii3bro`, `vilocci-b31u`).
+  between 11:56:57Z and 11:58:22Z (`VELOCE-pvpw`, `velocciiiii`,
+  `VELOCE-i54t`, `01a07cb5-…-4`, `VELOCEii3bro`, `VELOCE-b31u`).
 
 ### 13.3 Verified on PRODUCTION after the deploy
 
-Observed live on `https://vilocciii3bro.vercel.app` (the Supabase-backed,
+Observed live on `https://VELOCEii3bro.vercel.app` (the Supabase-backed,
 customer-facing instance):
 
 1. **Homepage renders fully, no regressions** — the complete SPA boots from the
@@ -793,7 +793,7 @@ customer-facing instance):
 
 - The production Supabase catalog still serves some product names as
   "Spinto …" (e.g. *Spinto Carbon Key Case — Mercedes-Benz* on the live
-  homepage) while the committed JSON dataset says "Vilocci …" since the PR #26
+  homepage) while the committed JSON dataset says "VELOCE …" since the PR #26
   branding revert. Pre-existing production-data state (the JSON → Supabase
   content mapping was never re-run after the revert), unrelated to this
   feature; no product data was modified here.
@@ -828,16 +828,16 @@ Enables full Key Shape management for products in the Admin panel (`js/admin-app
 
 - PR #32 merged to `main` as `fdfae2c` (2026-09-18 13:56:11Z).
 - All **6** linked Vercel projects completed Production builds with `success` on `fdfae2c` between 13:56:27Z and 13:57:27Z:
-  - `vilocci-i54t` (success at 13:56:27Z)
-  - `vilocci-pvpw` (success at 13:56:40Z)
+  - `VELOCE-i54t` (success at 13:56:27Z)
+  - `VELOCE-pvpw` (success at 13:56:40Z)
   - `velocciiiii` (success at 13:56:53Z)
   - `01a07cb5-b190-7e92-ac8e-aefc65395914-4` (success at 13:57:05Z)
-  - `vilocci-b31u` (success at 13:57:16Z)
-  - `vilocciii3bro` (success at 13:57:27Z)
+  - `VELOCE-b31u` (success at 13:57:16Z)
+  - `VELOCEii3bro` (success at 13:57:27Z)
 
 ### 14.3 Verified on PRODUCTION after the deploy
 
-Observed live on `https://vilocciii3bro.vercel.app` (the Supabase-backed, customer-facing instance):
+Observed live on `https://VELOCEii3bro.vercel.app` (the Supabase-backed, customer-facing instance):
 
 1. **Homepage renders fully, no regressions** — full SPA boots cleanly: catalog with all 117 products (Key Cases, Key Holders, Car Medals), Hero products, New Arrivals, Packages & Sets ("Complete Your Set"), and the Bespoke Atelier Customize banner.
 2. **Served `/js/admin-app.js` is the new build** — verified live response starts with `Build 20260918c — Shape management in Products editor (per-shape stock toggle, add/remove, reorder) + Key shapes column in Products table.`
@@ -883,7 +883,7 @@ Adds the GLOBAL key-shape catalogue that build 20260918c's per-product editor pl
 - PR #34 merged to `main` as `7b83400` (2026-09-18 15:12:53Z); feature commit `4ad3267`.
 - The exact merged content built successfully on Vercel: preview deployment of `4ad3267` completed with `success` (project `01a07cb5-b190-7e92-ac8e-aefc65395914-4`, deployment id 6527207011, 15:12:15Z).
 - **Production builds of `7b83400` on all 6 linked projects are QUEUED behind Vercel's account build-rate limit** ("Deployment rate limited — retry in 24 hours"): the build quota for the day was exhausted by the `20260918c` production deploy (§14.2, six projects at 13:56–13:57Z) plus the same day's preview builds. Vercel retries automatically once the window resets; no code change is needed or possible for this limit.
-- Until those deploys land, production serves build `20260918c` unchanged (verified on `vilocci-b31u.vercel.app`).
+- Until those deploys land, production serves build `20260918c` unchanged (verified on `VELOCE-b31u.vercel.app`).
 
 ### 15.3 Migration 007 — operator status
 
@@ -925,14 +925,14 @@ Finishes the Shape Images feature that build 20260919c only half-shipped (the ad
 
 | Project | Deployment id | Production URL |
 | --- | --- | --- |
-| vilocciii3bro | 6540362192 | https://vilocciii3bro-9d0an34u1-3bromos-projects.vercel.app |
+| VELOCEii3bro | 6540362192 | https://VELOCEii3bro-9d0an34u1-3bromos-projects.vercel.app |
 | 01a07cb5-b190-7e92-ac8e-aefc65395914-4 | 6540360549 | https://01a07cb5-b190-7e92-ac8e-aefc65395914-4-e60712nty.vercel.app |
 | velocciiiii | 6540358688 | https://velocciiiii-63mfzc2ww-3bromos-projects.vercel.app |
-| vilocci-pvpw | 6540364137 | https://vilocci-pvpw-l1x38y4yc-3bromos-projects.vercel.app |
-| vilocci-b31u | 6540365834 | https://vilocci-b31u-dpc9vzaau-3bromos-projects.vercel.app |
-| vilocci-i54t | 6540368528 | https://vilocci-i54t-f0ogupoxq-3bromos-projects.vercel.app |
+| VELOCE-pvpw | 6540364137 | https://VELOCE-pvpw-l1x38y4yc-3bromos-projects.vercel.app |
+| VELOCE-b31u | 6540365834 | https://VELOCE-b31u-dpc9vzaau-3bromos-projects.vercel.app |
+| VELOCE-i54t | 6540368528 | https://VELOCE-i54t-f0ogupoxq-3bromos-projects.vercel.app |
 
-### 16.3 Verified ON PRODUCTION (vilocciii3bro.vercel.app, 2026-09-19T11:31Z)
+### 16.3 Verified ON PRODUCTION (VELOCEii3bro.vercel.app, 2026-09-19T11:31Z)
 
 - `GET /api/admin/diagnose?probe=1` (identical with `?shapes=1`) proves the deployed build carries the feature **and** reports the production database/storage state:
 
@@ -971,7 +971,7 @@ Closing it takes ~1 minute, either way:
 2. **Probe script** — from a machine with network access:
 
 ```
-npm run probe:shapes -- --url https://vilocciii3bro.vercel.app --token "<ADMIN_JWT>"
+npm run probe:shapes -- --url https://VELOCEii3bro.vercel.app --token "<ADMIN_JWT>"
 # …then, to go back to the silhouette fallback:  … --remove
 ```
 
@@ -1008,8 +1008,8 @@ PR #42 shipped the code with the asset cache-buster strings still reading `v=202
 
 ### 17.3 Deployment + production verification
 
-- **Trigger**: PR #42's merge produced production deployments in **all 6 Vercel projects connected to the repo** (created 15:21:31–15:22:59Z), each reporting `Deployment has completed` / `success` via the GitHub deployments API — including the production storefront project `vilocci-b31u`.
-- **Live feature check (post-#42, pre-bump)**: the served `https://vilocci-b31u.vercel.app/js/app.js` contains the new wiring verbatim — `VEL.Search.createIndex(state.data.products, state.data.brands)`, the `#search-close` handler with `closeSearch()`, and `openSearch()`'s double `input.focus({ preventScroll: true })` — confirming the search upgrade itself is **live in production**.
+- **Trigger**: PR #42's merge produced production deployments in **all 6 Vercel projects connected to the repo** (created 15:21:31–15:22:59Z), each reporting `Deployment has completed` / `success` via the GitHub deployments API — including the production storefront project `VELOCE-b31u`.
+- **Live feature check (post-#42, pre-bump)**: the served `https://VELOCE-b31u.vercel.app/js/app.js` contains the new wiring verbatim — `VEL.Search.createIndex(state.data.products, state.data.brands)`, the `#search-close` handler with `closeSearch()`, and `openSearch()`'s double `input.focus({ preventScroll: true })` — confirming the search upgrade itself is **live in production**.
 - **Local check at the bumped commit**: `node test/search.js` — `search tests passed (9 assertions)`.
 - **After this bump's merge**: the same merge-triggered deploy path ships `index.html` referencing `/js/engine.js?v=20260920b`, `/js/search.js?v=20260920b`, `/js/app.js?v=20260920b`; deployment status for the exact merged SHA is recorded through the GitHub deployments API (per-SHA `success` = the `20260920b` tree is what production serves).
 
@@ -1021,11 +1021,11 @@ PR #42 shipped the code with the asset cache-buster strings still reading `v=202
 
 The operator reported that the storefront/checkout changes "were applied to the GitHub repository but were not being deployed to Vercel". Diagnosed through the GitHub API (this sandbox reaches `api.github.com`, `github.com` and `registry.npmjs.org`; it does **not** reach `*.vercel.app` — every direct HTTPS request fails before the TLS handshake, so all deployment evidence below is read from GitHub's deployments/commit-status APIs rather than by fetching the live pages):
 
-- **Root cause: nothing had been pushed.** At diagnosis time `main` on GitHub was still `a8f3481` (2026-09-20T16:34:31Z), the merge of PR #43, and the working tree holding the checkout/search changes had never been committed or pushed — the session branch `arena/01a0e559-vilocci` did not exist on the remote, and the GitHub commit search API reported **0 commits** in the repository after 2026-09-21. Git's own evidence: `main`'s `js/app.js` was 198 623 bytes with **0** occurrences of `validateCheckoutFields` / `searchOutsideHandler` / `bindCheckoutValidation`, versus 204 846 bytes locally; `css/styles.css` had 0 occurrences of the new error/hidden rules.
+- **Root cause: nothing had been pushed.** At diagnosis time `main` on GitHub was still `a8f3481` (2026-09-20T16:34:31Z), the merge of PR #43, and the working tree holding the checkout/search changes had never been committed or pushed — the session branch `arena/01a0e559-VELOCE` did not exist on the remote, and the GitHub commit search API reported **0 commits** in the repository after 2026-09-21. Git's own evidence: `main`'s `js/app.js` was 198 623 bytes with **0** occurrences of `validateCheckoutFields` / `searchOutsideHandler` / `bindCheckoutValidation`, versus 204 846 bytes locally; `css/styles.css` had 0 occurrences of the new error/hidden rules.
 - **The GitHub → Vercel integration was never broken.** For the last real push (PR #43's merge, `a8f3481`) Vercel created deployments in **all 6 connected projects** and every one reported `success` / "Deployment has completed". No failed build or deployment status exists for any SHA in this repository's history; the connection is `vercel[bot]` via the GitHub App, and `main` is the production branch for every project — proven by the `Production – <project>` environments recorded for main's SHAs (as opposed to the `Preview – <project>` environments recorded for branch SHAs).
 - **Therefore no configuration change was needed** — no new project, no domain change, no webhook to repair. The fix was to push the verified work through the repository's normal path.
 
-### 18.2 What shipped (PR #44, branch `arena/01a0e559-vilocci`, merged into `main` as `14f787c` at 2026-09-28T00:31:07Z)
+### 18.2 What shipped (PR #44, branch `arena/01a0e559-VELOCE`, merged into `main` as `14f787c` at 2026-09-28T00:31:07Z)
 
 - **Payment screenshot only for InstaPay** — the InstaPay block (exact amount, transfer link, instructions, screenshot upload) is shown only while InstaPay is the selected payment method: Cash on Delivery hides the whole block (`#instapay-cta-box[hidden]`, with `.instapay-cta[hidden] { display: none !important }` because the block's existing `display: block !important` would otherwise win), InstaPay reveals it, switching back hides it again — in place, no reload, no design change. The `Pay with InstaPay` title and the transfer link reveal it through the same radio `change` path, and the file input is `required` only for InstaPay.
 - **Required customer information validated before the order exists** — the four fields the form markup and `POST /api/orders` both require (`fullName`, `phone`, `city`, `address`; `area` and `notes` stay optional) turn red with a short message when empty or, for the phone, malformed (`/^[\d\s+\-()]{6,20}$/`, mirroring the input's own `pattern`). The submit handler returns **before any request is sent**; the red state clears itself as soon as the value is valid and never appears on a field the customer has not submitted. Field names, payload shape, database and API are untouched, and the server keeps its own check.
@@ -1045,13 +1045,13 @@ The operator reported that the storefront/checkout changes "were applied to the 
 
 | Project | Environment | Result | Deployment URL |
 | --- | --- | --- | --- |
-| `vilocci-b31u` | Production | success | https://vilocci-b31u-7p9dx8rqt-3bromos-projects.vercel.app |
-| `vilocciii3bro` | Production | success | https://vilocciii3bro-l6l4hk8p9-3bromos-projects.vercel.app |
+| `VELOCE-b31u` | Production | success | https://VELOCE-b31u-7p9dx8rqt-3bromos-projects.vercel.app |
+| `VELOCEii3bro` | Production | success | https://VELOCEii3bro-l6l4hk8p9-3bromos-projects.vercel.app |
 | `velocciiiii` | Production | success | https://velocciiiii-3bq9d6nqq-3bromos-projects.vercel.app |
-| `vilocci-pvpw` | Production | success | https://vilocci-pvpw-lc3g7emka-3bromos-projects.vercel.app |
-| `vilocci-i54t` | Production | success | https://vilocci-i54t-rnad89gwr-3bromos-projects.vercel.app |
+| `VELOCE-pvpw` | Production | success | https://VELOCE-pvpw-lc3g7emka-3bromos-projects.vercel.app |
+| `VELOCE-i54t` | Production | success | https://VELOCE-i54t-rnad89gwr-3bromos-projects.vercel.app |
 | `01a07cb5-b190-7e92-ac8e-aefc65395914-4` | Production | success | https://01a07cb5-b190-7e92-ac8e-aefc65395914-4-7zir8of8k.vercel.app |
 
 - **No build failure anywhere.** Every `Vercel – <project>` commit status for `14f787c` resolved to `success` (the statuses pass through `pending` → `success`; a failed build would publish `failure`/`error`, as it does for the repository's other SHAs — there is none).
 - **Served tree check.** Both static roots that Vercel can serve — `public/` and the Vite output `dist/` — contain the shipped code on `main`: `public/js/app.js` and `dist/js/app.js` each carry the new `validateCheckoutFields` / `searchOutsideHandler` wiring (6 occurrences), and both stylesheets carry the new `.field.has-error` / `.instapay-cta[hidden]` rules (3 occurrences).
-- **Not verified from here.** The live pages could not be fetched: `https://*.vercel.app` is unreachable from the agent sandbox (`curl` exits before the TLS handshake, code 000), and this agent has no Vercel account/token, so Vercel's own build-log UI is not readable either. The evidence above — per-SHA production deployments, `success` statuses and the committed static roots — is what the sandbox can prove; a browser check of `https://vilocci-b31u.vercel.app/#/checkout` (COD hides the upload / InstaPay shows it) remains the one manual confirmation available only to the operator.
+- **Not verified from here.** The live pages could not be fetched: `https://*.vercel.app` is unreachable from the agent sandbox (`curl` exits before the TLS handshake, code 000), and this agent has no Vercel account/token, so Vercel's own build-log UI is not readable either. The evidence above — per-SHA production deployments, `success` statuses and the committed static roots — is what the sandbox can prove; a browser check of `https://VELOCE-b31u.vercel.app/#/checkout` (COD hides the upload / InstaPay shows it) remains the one manual confirmation available only to the operator.

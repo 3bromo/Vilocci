@@ -177,11 +177,11 @@ async function bootAdmin(catalog) {
 
 (async function main() {
   // Scratch datastores — the committed dataset is never touched.
-  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vilocci-shapes-'));
+  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'VELOCE-shapes-'));
   const scratchDb = path.join(scratchDir, 'velocci-db.json');
   fs.copyFileSync(path.join(ROOT, 'data', 'velocci-db.json'), scratchDb);
   // Legacy store: same dataset WITHOUT the shapes collection (pre-feature).
-  const legacyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vilocci-shapes-legacy-'));
+  const legacyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'VELOCE-shapes-legacy-'));
   const legacyDb = path.join(legacyDir, 'velocci-db.json');
   const legacyData = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'velocci-db.json'), 'utf8'));
   delete legacyData.shapes;

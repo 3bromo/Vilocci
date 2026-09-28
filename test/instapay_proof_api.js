@@ -9,7 +9,7 @@ const { spawn } = require('child_process');
 const ROOT = path.join(__dirname, '..');
 const PORT = 3137;
 const TOKEN = 'instapay-proof-test-token';
-const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vilocci-instapay-'));
+const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'VELOCE-instapay-'));
 const dbFile = path.join(scratchDir, 'velocci-db.json');
 fs.copyFileSync(path.join(ROOT, 'data', 'velocci-db.json'), dbFile);
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
@@ -36,7 +36,7 @@ function waitForServer(child) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('server did not start')), 10000);
     child.stdout.on('data', (chunk) => {
-      if (String(chunk).includes('VILOCCI running')) {
+      if (String(chunk).includes('VELOCE running')) {
         clearTimeout(timer);
         resolve();
       }

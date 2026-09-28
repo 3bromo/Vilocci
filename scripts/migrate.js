@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // ============================================================================
-// VELOCCI / VILOCCI — database migration runner
+// VELOCCI / VELOCE — database migration runner
 // ----------------------------------------------------------------------------
 //   npm run migrate                # DRY RUN (default): prints the whole plan
 //   npm run migrate -- --apply     # applies the SQL migrations, then maps the
@@ -484,7 +484,7 @@ async function upsertChunk(client, table, rows, columns, targets, updates, jsonb
 // print-sql
 // ---------------------------------------------------------------------------
 function printSql() {
-  process.stdout.write('-- VELOCCI / VILOCCI — generated migration bundle\n');
+  process.stdout.write('-- VELOCCI / VELOCE — generated migration bundle\n');
   process.stdout.write(`-- generated ${new Date().toISOString()}\n`);
   process.stdout.write('-- Safe to run repeatedly: no DROP TABLE, no DELETE.\n\n');
   MIGRATIONS.forEach((m) => {
