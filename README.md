@@ -66,6 +66,16 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
 ### Admin panel (`/admin`)
 - **Dashboard** — revenue, orders, products, low-stock alerts, recent orders.
 - **Products** — add / edit / delete; EN + AR names & descriptions, price, old price, discount, images, category, brand, models, years, **key shapes**, inventory, out-of-stock, featured / best seller / new arrival / limited edition / pre-order.
+  **Product images are picked from the device gallery, not typed**: *Upload image* opens the native photo picker
+  (iOS Safari "Photo Library / Take Photo", Android's picker, or the desktop file dialog), shrinks a big phone photo in the
+  browser, uploads it through `POST /api/admin/products/image` and adds the resulting image — with its preview thumbnail —
+  to the gallery. Repeat for as many images as you like (one photo per pick); reorder with ↑ ↓, remove with 🗑, and the
+  first image stays the main one. Files are stored by the project's existing storage system (`lib/storage.js` → the PUBLIC
+  Supabase bucket `product-images`, migration `010`), which returns the durable URL kept in `products.images`; on a local
+  server without Supabase the file is written to `/img/uploads`, and a read-only host without Storage falls back to a small
+  inline data URL, so an upload never dead-ends. Existing images — generated `/img/asset.svg` artwork, pasted public URLs,
+  `/img/uploads` files — are untouched and keep working; pasting a URL is still available behind *Paste an image URL
+  instead* for artwork and external CDNs.
 - **Brands** — add / edit / delete; EN + AR name, slug, description and **logo upload** (or paste a public URL).
   A saved logo is served to the storefront (brand strip, all-brands page, brand page, product pages); brands without one keep the
   shipped `/img/logos/<slug>` file. On read-only hosts (Vercel) an upload that cannot be written to disk is kept with the brand record
@@ -173,6 +183,7 @@ eligibility, cart drawer, checkout, success page, Arabic RTL, stored order).
 | Fitment Finder | storefront `#/fitment` + admin Fitment |
 | Key Shape selector (A/B/C/D, OOS) | product page, `app.js` → `pdpHTML()` |
 | Shape management (key-shape catalogue) | Admin → Shapes · `lib/mapping.js` + migration `007` · `app.js` (every selector) · `server.js` (order rule) |
+| Product image upload (device gallery picker) | Admin → Products → edit → Images · `/api/admin/products/image` · `lib/storage.js` (public `product-images` bucket) + migration `010` · `js/admin-app.js` → `showProductEditor()` |
 | Complete Your Set | product bundle widget + cart upsell |
 | Cart drawer + real-time calc | `app.js` → `renderCartDrawer()` |
 | Nano Ceramic Coating (+EGP 100, Key Holder/Case only) | `app.js` (PDP + Quick Add + totals) · `server.js` (eligibility + re-pricing) · `lib/mapping.js` + migration `006` |

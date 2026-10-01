@@ -77,6 +77,11 @@ app.use('/api/customize/requests', express.json({ limit: '12mb' }));
 // checkout route the same mobile-friendly budget as Customize without
 // increasing the request size accepted by every other API endpoint.
 app.use('/api/orders', express.json({ limit: '12mb' }));
+// Admin product photos come from the device gallery as validated data URLs
+// (a phone photo can be several MB before the browser shrinks it), so this one
+// admin route gets the same mobile-friendly budget. Every other route keeps
+// the smaller global limit below.
+app.use('/api/admin/products/image', express.json({ limit: '12mb' }));
 app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -973,6 +978,74 @@ app.post('/api/admin/upload', requireAdmin, (req, res) => {
     // Serverless filesystems are read-only: the admin can still paste any
     // public image URL, which is the durable option there.
     res.status(507).json({ error: 'File uploads are not writable on this host — paste a public image URL instead.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PRODUCT IMAGES — upload a photo picked from the device gallery
+// ---------------------------------------------------------------------------
+// The Admin product editor's "Upload image" button (Admin → Products → edit →
+// Images) opens the native photo picker and posts the chosen file here as a
+// validated data URL. The response carries the image URL, which the editor adds
+// to the product's gallery; the product row itself is written by the existing
+// Save button (products.images + the normalized product_images children), so an
+// upload also works while the product is still being created.
+//
+// Storage — the SAME mechanism the shape images use, in this order:
+//   1. Supabase Storage, PUBLIC bucket `product-images` → a durable public URL
+//      that renders on any host (this is what production uses).
+//   2. Storage not configured (local JSON store) → the file is written to
+//      /img/uploads and served by the app, exactly like /api/admin/upload.
+//   3. Storage not configured AND the disk is read-only (serverless without the
+//      service-role key) → a small image is returned inline as a data URL, the
+//      same last-resort fallback the brand logo uses, so the admin is never
+//      forced back to pasting URLs.
+// Nothing about existing products changes: every stored image — generated
+// artwork, a pasted public URL, an /img/uploads file or a Supabase URL — keeps
+// working exactly as before, and /api/admin/upload is untouched.
+const PRODUCT_INLINE_MAX_BYTES = 512 * 1024;
+
+app.post('/api/admin/products/image', requireAdmin, async (req, res) => {
+  try {
+    const { dataUrl, productId } = req.body || {};
+    if (typeof dataUrl !== 'string' || !/^data:image\//.test(dataUrl)) {
+      return res.status(400).json({ error: 'The product image must be an uploaded image file.' });
+    }
+    // One validation for every branch below: real image bytes only, never an
+    // SVG (it can carry script) and never above the size budget.
+    const parsed = storage.parseImageDataUrl(dataUrl, 'product image');
+
+    const upload = await storage.uploadProductImage(dataUrl, { productId });
+    if (upload.ok) {
+      return res.json({ ok: true, url: upload.url, storage: 'supabase-storage', bytes: upload.size, mime: upload.mime });
+    }
+    if (upload.reason !== 'not-configured') {
+      // Storage IS configured but refused the file: report it instead of
+      // silently falling back to a URL that would vanish with the instance.
+      return res.status(502).json({ error: `Product image upload failed: ${upload.message}` });
+    }
+
+    try {
+      const dir = path.join(PUBLIC, 'img', 'uploads');
+      fs.mkdirSync(dir, { recursive: true });
+      const fn = 'prod_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7) + '.' + parsed.ext;
+      fs.writeFileSync(path.join(dir, fn), parsed.buffer);
+      return res.json({ ok: true, url: '/img/uploads/' + fn, storage: 'local-disk', bytes: parsed.size, mime: parsed.mime });
+    } catch (diskErr) {
+      if (parsed.size <= PRODUCT_INLINE_MAX_BYTES) {
+        return res.json({ ok: true, url: dataUrl.trim(), storage: 'inline-data-url', bytes: parsed.size, mime: parsed.mime });
+      }
+      return res.status(507).json({
+        error: 'This server cannot store uploaded images (Supabase Storage is not configured and the disk is read-only). '
+          + 'Paste a public image URL instead.',
+        detail: diskErr.message,
+      });
+    }
+  } catch (e) {
+    console.error('[products/image]', e.message);
+    const status = e.code === 'INVALID_IMAGE' || e.code === 'MISSING_IMAGE' || e.code === 'UNSUPPORTED_TYPE'
+      || e.code === 'IMAGE_TOO_LARGE' || e.code === 'EMPTY_IMAGE' || e.code === 'BAD_SIGNATURE' ? 400 : 500;
+    res.status(status).json({ error: e.message || 'Product image upload failed.' });
   }
 });
 

@@ -1235,6 +1235,100 @@
   }
 
   // ------------------------------------------------------------------------
+  // PRODUCT IMAGES — pick a photo from the device gallery, upload it, add it
+  // to the product's gallery. No URL is ever typed: the file travels as a
+  // validated data URL to POST /api/admin/products/image, which stores it in
+  // Supabase Storage (the PUBLIC `product-images` bucket — the same storage
+  // system the shape images use) and answers with the durable URL that the
+  // product row keeps in products.images.
+  //
+  // Mobile: a real <input type="file" accept="image/*"> clicked from the
+  // button's tap handler is what makes iOS Safari offer "Photo Library / Take
+  // Photo / Browse" (and Android the file/photo picker), so the native gallery
+  // is used as-is. iPhone photos are shrunk in the browser before the upload —
+  // a 12 MP HEIC/JPEG is otherwise several MB over a mobile connection.
+  // ------------------------------------------------------------------------
+  const PRODUCT_IMAGE_MAX_EDGE = 1600;
+  const PRODUCT_IMAGE_QUALITY = 0.85;
+  const PRODUCT_IMAGE_SHRINK_ABOVE = 300 * 1024;      // bytes — smaller files go up untouched
+  const PRODUCT_IMAGE_MAX_FILE = 25 * 1024 * 1024;    // raw picker limit, before shrinking
+  const PRODUCT_IMAGE_SHRINK_TIMEOUT = 8000;          // never block an upload on a canvas
+
+  // Re-encodes a raster photo through a canvas (white background — JPEG has no
+  // alpha, and product photos are shown on light surfaces). Resolves with the
+  // ORIGINAL data URL whenever a canvas is unavailable, the image cannot be
+  // decoded, or the re-encode would not actually be smaller, so an upload can
+  // never get stuck or lose quality for no reason.
+  function shrinkDataUrl(dataUrl, maxEdge, quality) {
+    return new Promise((resolve) => {
+      const original = String(dataUrl || '');
+      let settled = false;
+      let timer = null;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        resolve(value || original);
+      };
+      // A browser that never fires img.onload (no canvas, no image decoding)
+      // still uploads the original file instead of hanging the admin.
+      timer = setTimeout(() => finish(original), PRODUCT_IMAGE_SHRINK_TIMEOUT);
+      try {
+        const probe = document.createElement('canvas');
+        if (!probe.getContext) { finish(original); return; }
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const w0 = img.naturalWidth || img.width;
+            const h0 = img.naturalHeight || img.height;
+            if (!w0 || !h0) { finish(original); return; }
+            const scale = Math.min(1, maxEdge / Math.max(w0, h0));
+            const w = Math.max(1, Math.round(w0 * scale));
+            const h = Math.max(1, Math.round(h0 * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { finish(original); return; }
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            const out = canvas.toDataURL('image/jpeg', quality);
+            finish(out && out.length < original.length ? out : original);
+          } catch (e) { finish(original); }
+        };
+        img.onerror = () => finish(original);
+        img.src = original;
+      } catch (e) { finish(original); }
+    });
+  }
+
+  // Reads the picked file and shrinks it when it is worth it.
+  async function productImageDataUrl(file) {
+    const dataUrl = await fileToDataUrl(file);
+    if (!/^data:image\//i.test(String(dataUrl || ''))) throw new Error('That file is not an image.');
+    if ((file.size || 0) > PRODUCT_IMAGE_SHRINK_ABOVE) {
+      return shrinkDataUrl(dataUrl, PRODUCT_IMAGE_MAX_EDGE, PRODUCT_IMAGE_QUALITY);
+    }
+    return dataUrl;
+  }
+
+  // Uploads one picked photo and returns the URL to add to the gallery.
+  // `productId` is optional: a brand-new product has no id yet, and the server
+  // then stores the file under a generated object name.
+  async function uploadProductImageFile(file, productId) {
+    if (!file) throw new Error('No image was selected.');
+    if ((file.size || 0) > PRODUCT_IMAGE_MAX_FILE) {
+      throw new Error(`${file.name || 'That image'} is too large (max ${Math.round(PRODUCT_IMAGE_MAX_FILE / (1024 * 1024))} MB).`);
+    }
+    const dataUrl = await productImageDataUrl(file);
+    const body = { dataUrl };
+    if (productId) body.productId = productId;
+    const { ok, j } = await api('POST', '/api/admin/products/image', body);
+    if (!ok || !j || !j.ok || !j.url) throw new Error((j && j.error) || 'The image could not be uploaded.');
+    return j.url;
+  }
+
+  // ------------------------------------------------------------------------
   // SHAPE IMAGE HEALTH — the state of the feature, straight from the server
   // (/api/admin/diagnose?probe=1 → shapeImages): is key_shapes.image_url there
   // (migration 009), does the public `shape-images` bucket exist and is it
@@ -2943,10 +3037,19 @@
             <div class="editor-section-title">Images</div>
             <div class="form-group">
               <div id="product-images-list"></div>
-              <div style="display:flex;gap:8px;margin-top:8px;">
-                <input id="pf-new-image" placeholder="/img/asset.svg?... or https://..." style="flex:1;">
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-add-image">+ Add image</button>
+              <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap;">
+                <button type="button" class="btn btn-primary btn-sm" id="btn-upload-product-image">📷 Upload image</button>
+                <span id="product-image-upload-status" style="font-size:11px;color:var(--text-muted);"></span>
+                <input type="file" id="pf-image-file" accept="image/*" style="display:none;">
               </div>
+              <p style="font-size:11px;color:var(--text-muted);margin:6px 0 0;">Opens your device's photo gallery — pick a photo and it is uploaded and added to this product automatically. Repeat to add more images, one at a time; the first one is the main image. Save the product to keep them.</p>
+              <details id="product-image-url-box" style="margin-top:8px;">
+                <summary style="cursor:pointer;font-size:11px;color:var(--text-muted);">Paste an image URL instead</summary>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                  <input id="pf-new-image" placeholder="/img/asset.svg?... or https://..." style="flex:1;">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-add-image">+ Add image</button>
+                </div>
+              </details>
               ${libraryImages.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
                 ${libraryImages.slice(0, 12).map(img => `<img src="${esc(img.url)}" data-lib-pick="${esc(img.url)}" title="${esc(img.name || '')}" style="width:52px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border);">`).join('')}
               </div>` : ''}
@@ -3006,17 +3109,23 @@
     const listEl = $('#product-images-list');
     function renderImageList() {
       if (!listEl) return;
-      listEl.innerHTML = images.length ? images.map((url, i) => `
+      listEl.innerHTML = images.length ? images.map((url, i) => {
+        // An inline data URL (the last-resort fallback on a host with neither
+        // Supabase Storage nor a writable disk) would otherwise print kilobytes
+        // of base64 as its caption — the thumbnail already shows the image.
+        const caption = /^data:image\//i.test(url) ? 'Uploaded image (stored with the product)' : url;
+        return `
         <div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--bg);border-radius:8px;margin-bottom:6px;">
           <img src="${esc(url)}" alt="" style="width:48px;height:40px;object-fit:cover;border-radius:6px;background:var(--cream);">
           <div style="flex:1;min-width:0;">
             <div style="font-size:11px;font-weight:600;color:var(--text-muted);">${i === 0 ? 'MAIN IMAGE' : 'Image ' + (i + 1)}</div>
-            <div style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(url)}</div>
+            <div style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(caption)}</div>
           </div>
           <button type="button" class="btn btn-ghost btn-sm" data-img-up="${i}" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
           <button type="button" class="btn btn-ghost btn-sm" data-img-down="${i}" title="Move down" ${i === images.length - 1 ? 'disabled' : ''}>↓</button>
           <button type="button" class="btn btn-ghost btn-sm" data-img-del="${i}" title="Remove">🗑</button>
-        </div>`).join('')
+        </div>`;
+      }).join('')
         : '<p style="font-size:12px;color:var(--text-muted);">No images yet — the storefront falls back to the generated artwork.</p>';
 
       $$('[data-img-del]', listEl).forEach(b => b.addEventListener('click', () => { images.splice(Number(b.dataset.imgDel), 1); renderImageList(); }));
@@ -3036,6 +3145,42 @@
       images.push(clean);
       renderImageList();
     };
+    // ---- upload from the device gallery (native photo picker) ----
+    // One photo at a time: the button opens the device picker, the upload
+    // stores the file (Supabase Storage → public URL) and the result is added
+    // to the gallery above with its preview. No URL is typed anywhere.
+    const imageFileInput = $('#pf-image-file');
+    const uploadImageBtn = $('#btn-upload-product-image');
+    const uploadStatusEl = $('#product-image-upload-status');
+    let imageUploading = false;
+    if (uploadImageBtn && imageFileInput) {
+      uploadImageBtn.addEventListener('click', () => { if (!imageUploading) imageFileInput.click(); });
+      imageFileInput.addEventListener('change', async () => {
+        const file = imageFileInput.files && imageFileInput.files[0];
+        if (!file || imageUploading) return;
+        imageUploading = true;
+        const idleLabel = uploadImageBtn.textContent;
+        uploadImageBtn.disabled = true;
+        uploadImageBtn.textContent = '⏳ Uploading…';
+        if (uploadStatusEl) uploadStatusEl.textContent = `Uploading ${file.name || 'image'}…`;
+        try {
+          const url = await uploadProductImageFile(file, p?.id);
+          addImage(url);
+          if (uploadStatusEl) uploadStatusEl.textContent = 'Uploaded — press Save to keep it on the product.';
+          toast('Image uploaded and added to the product', 'success');
+        } catch (e) {
+          if (uploadStatusEl) uploadStatusEl.textContent = '';
+          toast('Upload failed: ' + e.message, 'error');
+        }
+        imageUploading = false;
+        uploadImageBtn.disabled = false;
+        uploadImageBtn.textContent = idleLabel;
+        // Reset so picking the SAME photo again still fires `change`.
+        imageFileInput.value = '';
+      });
+    }
+
+    // ---- optional: paste a URL (kept for generated artwork / external CDNs) ----
     $('#btn-add-image').addEventListener('click', () => { const i = $('#pf-new-image'); addImage(i.value); i.value = ''; });
     $$('[data-lib-pick]').forEach(el => el.addEventListener('click', () => addImage(el.dataset.libPick)));
 

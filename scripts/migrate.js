@@ -44,6 +44,7 @@ const MIGRATIONS = [
   { version: '007', title: 'Shape management (key_shapes master catalogue: names, order, active)', file: 'supabase/migrations/007_key_shapes.sql' },
   { version: '008', title: 'InstaPay payment verification status (orders.payment_status)', file: 'supabase/migrations/008_instapay_payment_status.sql' },
   { version: '009', title: 'Shape images (key_shapes.image_url — one uploaded visual per shape)', file: 'supabase/migrations/009_shape_images.sql' },
+  { version: '010', title: 'Product image uploads (public product-images storage bucket — no table changes)', file: 'supabase/migrations/010_product_images.sql' },
 ];
 
 const argv = process.argv.slice(2);
