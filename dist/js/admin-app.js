@@ -1,6 +1,26 @@
 /* ==========================================================================
    VELOCE — Admin Dashboard Application
    Professional e-commerce admin panel with Supabase integration.
+   Build 20261001a — Product images from the admin media library: Admin →
+   Products → Edit Product → Images no longer asks for a URL. "🖼️ Add image"
+   opens the site's EXISTING image library (Admin → Website Images, the
+   website_images rows) as a chooser laid over the editor — search it, click a
+   thumbnail and its URL populates the product gallery with a preview. The
+   picker stays open so a product with several images is built one selection at
+   a time (duplicates refused, "✓ added" marks what is in the gallery), then
+   Done returns to the editor with its unsaved gallery intact — it is its own
+   overlay, because showModal() closes the editor underneath. An image that is
+   not in the library yet is added with "📷 Upload a new photo" INSIDE the same
+   picker: device gallery → POST /api/admin/upload (the library's own endpoint)
+   → saved as a website_images row so every other product can reuse it → added
+   to the product; a read-only host (Vercel answers 507) falls back to
+   POST /api/admin/products/image → Supabase Storage (PUBLIC `product-images`
+   bucket, migration 010) and stores that URL in the library too, so an upload
+   never dead-ends. Reorder ↑ ↓ / remove 🗑, the collapsed URL field, every
+   other editor and the storefront are untouched. Adds openImageLibraryPicker(),
+   libraryImages(), uploadImageToLibrary(), addImageToLibrary(), and the client
+   photo compressor (shrinkDataUrl/productImageDataUrl/uploadProductImageFile)
+   that keeps an upload inside Vercel's 4.5 MB body cap.
    Build 20260919c — Shape images, completed end to end: the same controls
    as 20260919b (Admin → Products → Edit Product → Key Shapes and Admin →
    Shapes: image upload / preview / replace / remove, stored in Supabase
