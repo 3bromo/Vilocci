@@ -1055,3 +1055,89 @@ The operator reported that the storefront/checkout changes "were applied to the 
 - **No build failure anywhere.** Every `Vercel – <project>` commit status for `14f787c` resolved to `success` (the statuses pass through `pending` → `success`; a failed build would publish `failure`/`error`, as it does for the repository's other SHAs — there is none).
 - **Served tree check.** Both static roots that Vercel can serve — `public/` and the Vite output `dist/` — contain the shipped code on `main`: `public/js/app.js` and `dist/js/app.js` each carry the new `validateCheckoutFields` / `searchOutsideHandler` wiring (6 occurrences), and both stylesheets carry the new `.field.has-error` / `.instapay-cta[hidden]` rules (3 occurrences).
 - **Not verified from here.** The live pages could not be fetched: `https://*.vercel.app` is unreachable from the agent sandbox (`curl` exits before the TLS handshake, code 000), and this agent has no Vercel account/token, so Vercel's own build-log UI is not readable either. The evidence above — per-SHA production deployments, `success` statuses and the committed static roots — is what the sandbox can prove; a browser check of `https://VELOCE-b31u.vercel.app/#/checkout` (COD hides the upload / InstaPay shows it) remains the one manual confirmation available only to the operator.
+
+## 19. Addendum 2026-10-01 — Product images from the admin media library (build 20261001a): PRs #47 + #48 merged, production verified **live**
+
+### 19.1 What shipped
+
+| PR | Branch commits | Merged into `main` as | Merged at (UTC) |
+| --- | --- | --- | --- |
+| [#47](https://github.com/3bromo/Vilocci/pull/47) — device photo picker, then the **media-library picker**, Storage module, migration `010`, probe, docs | `41b928c`, `d50e5e7` | `86015b8e27a140905050e1a7c1fb3155a5f09a78` | 2026-10-01T18:12:33Z |
+| [#48](https://github.com/3bromo/Vilocci/pull/48) — site cache-buster `?v=20260920b` → `?v=20261001a` so clients actually fetch the new admin bundle | `8e8dfb2` | `17c695157eba96009810156c9ca40dcf63a47143` | 2026-10-01T18:21:13Z |
+
+Admin → Products → add/edit → **Images** no longer asks for a URL: *🖼️ Add
+image* opens the site's existing media library (Admin → *Website Images*, the
+`website_images` rows) as a chooser over the editor; a click populates the
+product gallery with that image's URL and preview, the picker stays open for
+several images, and *📷 Upload a new photo* inside it uploads through the
+library's own `POST /api/admin/upload` (falling back to
+`POST /api/admin/products/image` → Supabase Storage on a read-only host) and
+saves the result **into the same library**. Setup: `PRODUCT-IMAGE-UPLOADS.md`.
+
+### 19.2 Verified locally before merging
+
+* `npm test` — **22 suites, 0 failures**, exit 0, at both merged commits' content
+  (`test/product_images.js` alone: **83 checks**, covering the requested flow end
+  to end: library rows stored/served → Add image opens the library → select →
+  added + previewed → several images → search → Done → remove → Save persists →
+  `/api/admin/data` serves it → storefront gallery displays it; plus the
+  upload-into-library path, the read-only-host Storage fallback and new-product
+  creation).
+* `npm run probe:productimages -- --url http://127.0.0.1:3000 --dev-token … --allow-fallback` — **17/17**.
+* `npm run build` — `js/`, `public/` and `dist/` byte-identical for every changed file.
+
+### 19.3 Vercel production deployments (commit-status + deployments API)
+
+Both merge commits produced a `Production – <project>` deployment in **all 6
+connected Vercel projects**, every one `state: success` / *"Deployment has
+completed"*; the combined commit status is `success` for both.
+
+| Merge SHA | Projects deployed | Result |
+| --- | --- | --- |
+| `86015b8` | `vilocci-b31u`, `vilocci-i54t`, `vilocciii3bro`, `velocciiiii`, `vilocci-pvpw`, `01a07cb5-b190-7e92-ac8e-aefc65395914-4` (created 18:12:53–18:13:58Z) | 6 × success |
+| `17c6951` | the same 6 projects | 6 × success |
+
+### 19.4 Verified on the **live** production URL
+
+Unlike §18.4, the live pages *were* reachable from this agent (the fetch tool
+succeeds where sandbox `curl` returns code 000), so the deployment is confirmed
+from the served bytes, not only from the API:
+
+* **`https://vilocci-b31u.vercel.app/js/admin-app.js?v=20261001a`** — the served
+  bundle opens with `Build 20261001a — Product images from the admin media
+  library …`. The new admin code **is** what production serves.
+* **`https://vilocci-b31u.vercel.app/api/admin/diagnose?products=1`** — the new
+  `productImages` block is live: `migration: 010_product_images.sql`,
+  `endpoint: POST /api/admin/products/image`, `productCount: 117`,
+  `productsWithImage: 117`, `imageCount: 279`, `generatedArtwork: 279`,
+  `uploadedFromStorage: 0`, `storage.configured: false`; `env: production`,
+  `publicDir: /var/task/dist`, `distExists: true`.
+* **`https://vilocci-b31u.vercel.app/admin`** — the panel renders, but stops at
+  **"Authentication Not Configured — Supabase credentials are not set up.
+  Please configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`."**
+* The old `https://veloce-b31u.vercel.app` now answers `404 DEPLOYMENT_NOT_FOUND`
+  (the project was renamed); **`https://vilocci-b31u.vercel.app`** is production.
+
+### 19.5 Still outstanding — production has **no Supabase environment variables** (unchanged since §3.1)
+
+`diagnose` on production reports `rawEnvUrl: "(not set)"`, `anonKeyPresent:
+false`, `serviceKeyPresent: false`, `dataDriver: "json"`, `usingJsonFallback:
+false`. Consequences, and what only the operator can do (this agent has no
+Vercel dashboard access):
+
+1. **Add in Vercel → Project → Settings → Environment Variables** (all
+   environments, then **Redeploy** — variables are baked in at build time):
+   `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+   (and optionally `SUPABASE_DB_URL`, `PRODUCT_IMAGE_BUCKET`). Until then the
+   admin panel cannot be signed into at all, so the new library picker — although
+   deployed — cannot be used on production.
+2. **Create/confirm the admin user** in Supabase (see `PRODUCT-IMAGE-UPLOADS.md`
+   §2) and run `npm run migrate -- --apply` once `SUPABASE_DB_URL` exists, so
+   migration `010` provisions the public `product-images` bucket.
+3. **Data durability:** with `dataDriver: "json"` the store is the bundled seed
+   in serverless memory, so product edits are lost between invocations. The
+   Supabase variables above are what switch it to `postgrest`/`sql`.
+
+Selecting an image that is already in the library needs **no** configuration —
+it only writes a URL into `products.images` — but reaching the editor requires
+item 1.
