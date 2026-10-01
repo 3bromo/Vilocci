@@ -13,9 +13,18 @@ admin screens that manage that content.
 | `supabase-schema.sql` | `001` | Baseline: 15 tables, `is_admin()`, `set_updated_at()`, RLS policies. Idempotent. |
 | `supabase/migrations/002_cms_core.sql` | `002` | CMS core: `order_items`, `product_images`, `product_prices`, normalized `customer_*` columns on `orders`, and the remaining product/brand/bundle/slide/section/promo columns the live storefront actually uses. |
 | `supabase/migrations/003_customize.sql` | `003` | Customize: `customize_requests` (+ admin-only RLS), the `settings['customize']` category-availability row, and the **private** `customize-uploads` storage bucket. |
+| `supabase/migrations/004_product_colors.sql` | `004` | Per-product color variants. |
+| `supabase/migrations/005_instapay_payment_proof.sql` | `005` | Required proof image for manual InstaPay orders. |
+| `supabase/migrations/006_nano_ceramic_coating.sql` | `006` | Nano Ceramic Coating optional extra. |
+| `supabase/migrations/007_key_shapes.sql` | `007` | The global key-shape catalogue (`key_shapes`). |
+| `supabase/migrations/008_instapay_payment_status.sql` | `008` | Separate `payment_status` for admin verification. |
+| `supabase/migrations/009_shape_images.sql` | `009` | `key_shapes.image_url` + the **public** `shape-images` bucket and its policies. |
+| `supabase/migrations/010_product_images.sql` | `010` | Product image uploads: the **public** `product-images` bucket + public-read / admin-write Storage policies. **No table change** — `products.images` and `product_images` already exist. |
 
-Both are additive. `002` never drops a table or a column and never deletes a
-row; policies and triggers are dropped-then-created so the file can be re-run.
+All of them are additive. `002` never drops a table or a column and never deletes
+a row; policies and triggers are dropped-then-created so the file can be re-run,
+and the storage migrations (`003`, `009`, `010`) are guarded by `to_regclass` so
+they no-op on a project without the Storage schema.
 
 Three latent bugs in the baseline are fixed by `002`:
 
@@ -96,6 +105,33 @@ Notable mapping decisions:
 | `json` | neither | the bundled store, unchanged behaviour. |
 
 `GET /api/admin/diagnose` reports which one is active.
+
+### Image uploads (Supabase Storage)
+
+Uploads are separate from the catalog driver: they need a URL **and** the
+service-role key, whatever driver serves the rows.
+
+| Bucket | Visibility | Fed by | Env override |
+| --- | --- | --- | --- |
+| `product-images` | public | Admin → Products → Images → *🖼️ Add image* → *📷 Upload a new photo* | `PRODUCT_IMAGE_BUCKET` |
+| `shape-images` | public | Admin → Shapes / product Key Shapes | `SHAPE_IMAGE_BUCKET` |
+| `customize-uploads` | **private** (signed URLs) | storefront Customize wizard, InstaPay proofs | `CUSTOMIZE_BUCKET` |
+
+`VITE_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` enable them; without both, a
+product photo falls back to `/img/uploads` on a writable host and to a small
+inline data URL on a read-only one (Vercel). `CUSTOMIZE_MAX_IMAGE_BYTES`
+(default 6 MB) caps every validated upload.
+
+Admin → Products picks images from the **media library** (`website_images`) — no
+URL is typed; the library picker is documented, with the full Vercel/Supabase
+setup checklist and verification steps, in **`PRODUCT-IMAGE-UPLOADS.md`**.
+
+`GET /api/admin/diagnose?products=1` adds a `productImages` block: the bucket
+state (`configured` / `exists` / `public` / `objects`) and what the served
+galleries are actually made of (`uploadedFromStorage`, `generatedArtwork`,
+`localUploads`, `inlineDataUrls`, `externalUrls`). `npm run probe:productimages`
+runs the same checks — plus a real upload and a fetch of the stored public URL —
+against a **deployed** store.
 
 ### Fallback when the schema is not applied yet
 
@@ -229,8 +265,15 @@ npm run test:customize # jsdom: the 5-step storefront wizard (only enabled categ
                       # photo preview/replace, duplicate guard, success screen, EN/AR) plus
                       # the two admin screens (ON/OFF + save, list, signed photo, detail,
                       # status, notes, delete) and the root/public/dist copy check. 55 checks.
-npm test              # smoke (39), admin auth (7), admin CMS (36), admin packages (48),
-                      # fallback (36), customize (55) against a local server on :3000.
+npm test              # the 22 headless suites (smoke, admin auth/CMS/packages/brands,
+                      # db fallback, customize, colors, quick-add, discount, InstaPay proof,
+                      # nano coating, shapes, shape images/storage, product images/storage,
+                      # storefront cart, checkout & search) against a local server on :3000.
+
+npm run test:productimages       # product images: the media-library picker flow, uploads,
+                                 # Save persistence and the storefront gallery. 83 checks.
+npm run test:productimagestorage # the Supabase Storage calls behind a product photo. 17 checks.
+npm run probe:productimages      # operator probe against a DEPLOYED store (non-destructive).
 ```
 
 `npm run test:e2e`, `npm run test:phase3` and `npm run test:phase4` drive a real
