@@ -2,3 +2,9 @@ node_modules/
 .env
 *.zip
 .arena-tmp/
+# Images uploaded on a writable (development) host. The durable home for an
+# uploaded photo is Supabase Storage (public `product-images` / `shape-images`
+# buckets) or the Website Images library — local files must never be committed.
+img/uploads/
+public/img/uploads/
+dist/img/uploads/

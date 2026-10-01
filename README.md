@@ -66,6 +66,18 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
 ### Admin panel (`/admin`)
 - **Dashboard** — revenue, orders, products, low-stock alerts, recent orders.
 - **Products** — add / edit / delete; EN + AR names & descriptions, price, old price, discount, images, category, brand, models, years, **key shapes**, inventory, out-of-stock, featured / best seller / new arrival / limited edition / pre-order.
+  **Product images are selected from the admin's image library, not typed**: *🖼️ Add image* opens the **existing media
+  library** (Admin → *Website Images*, the `website_images` rows) as a chooser on top of the editor — search it, click a
+  thumbnail and its URL populates the product gallery with a preview. The picker stays open, so a product with several
+  images is built one selection at a time (duplicates are refused, *✓ added* marks what is already in the gallery);
+  reorder with ↑ ↓, remove with 🗑, first image = main image. An image that is not in the library yet is added with
+  *📷 Upload a new photo* **inside the same picker**: it opens the device gallery (iOS Safari *Photo Library / Take Photo*,
+  Android's picker, the desktop file dialog), shrinks a big phone photo in the browser, uploads it through the library's own
+  `POST /api/admin/upload` — falling back to `POST /api/admin/products/image` → `lib/storage.js` → the PUBLIC Supabase bucket
+  `product-images` (migration `010`) on a read-only host such as Vercel — and **saves it into the library**, so every other
+  product can reuse it. Existing images — generated `/img/asset.svg` artwork, pasted public URLs, `/img/uploads` files —
+  are untouched and keep working, and pasting a URL is still available behind *Paste an image URL instead*. Setup and
+  verification: **`docs/PRODUCT-IMAGE-UPLOADS.md`**.
 - **Brands** — add / edit / delete; EN + AR name, slug, description and **logo upload** (or paste a public URL).
   A saved logo is served to the storefront (brand strip, all-brands page, brand page, product pages); brands without one keep the
   shipped `/img/logos/<slug>` file. On read-only hosts (Vercel) an upload that cannot be written to disk is kept with the brand record
@@ -173,6 +185,7 @@ eligibility, cart drawer, checkout, success page, Arabic RTL, stored order).
 | Fitment Finder | storefront `#/fitment` + admin Fitment |
 | Key Shape selector (A/B/C/D, OOS) | product page, `app.js` → `pdpHTML()` |
 | Shape management (key-shape catalogue) | Admin → Shapes · `lib/mapping.js` + migration `007` · `app.js` (every selector) · `server.js` (order rule) |
+| Product images from the admin media library (+ uploads) | Admin → Products → edit → Images · `js/admin-app.js` → `openImageLibraryPicker()` / `uploadImageToLibrary()` · `website_images` library · `/api/admin/upload` + `/api/admin/products/image` · `lib/storage.js` (public `product-images` bucket) + migration `010` · `docs/PRODUCT-IMAGE-UPLOADS.md` |
 | Complete Your Set | product bundle widget + cart upsell |
 | Cart drawer + real-time calc | `app.js` → `renderCartDrawer()` |
 | Nano Ceramic Coating (+EGP 100, Key Holder/Case only) | `app.js` (PDP + Quick Add + totals) · `server.js` (eligibility + re-pricing) · `lib/mapping.js` + migration `006` |
@@ -190,10 +203,15 @@ eligibility, cart drawer, checkout, success page, Arabic RTL, stored order).
 ## Tests
 
 ```bash
-npm test          # headless storefront + admin suites (jsdom)
-npm run test:e2e  # real-browser purchase flow (Playwright/Chromium)
-npm run shot      # capture screenshots into /shots
+npm test                        # headless storefront + admin suites (jsdom)
+npm run test:productimages      # product images: library picker, uploads, persistence, storefront
+npm run test:productimagestorage# the Supabase Storage calls behind a product photo upload
+npm run probe:productimages     # operator probe: the whole upload flow against a DEPLOYED store
+npm run test:e2e                # real-browser purchase flow (Playwright/Chromium)
+npm run shot                    # capture screenshots into /shots
 ```
+
+`npm test` needs a running server on `:3000` (`npm start`); every other suite spawns its own.
 
 Given a running server (`npm start`), `npm test` validates routing, product page,
 shape selection, add-to-cart, cart drawer, EN/AR switching, the full her-limit flow,
@@ -265,12 +283,27 @@ Or push the folder to a GitHub repo and **Import** it in Vercel.
 ### 3. Environment variables
 Set these in **Project → Settings → Environment Variables** (copy `.env.example`):
 
-| Variable         | Purpose                                    | Default            |
-| ---------------- | ------------------------------------------ | ------------------ |
-| `ADMIN_PASS`     | Password for `/admin`                      | `velocci2026`      |
-| `SESSION_SECRET` | Cookie-signing secret (use a long random)  | `velocci-secret-key` |
-| `PORT`           | HTTP port (Vercel injects this)            | `3000`             |
-| `VELOCCI_DB`     | Optional path to the JSON datastore        | `./data/velocci-db.json` |
+| Variable         | Purpose                                    | Default            | Required |
+| ---------------- | ------------------------------------------ | ------------------ | -------- |
+| `VITE_SUPABASE_URL` | `https://<ref>.supabase.co` — admin login **and** Supabase Storage (product/shape image uploads) | *(empty → JSON store, no admin login)* | **yes** in production |
+| `VITE_SUPABASE_ANON_KEY` | anon/public key — the admin SPA's auth client (safe in the browser, RLS protects data) | *(empty)* | **yes** in production |
+| `SUPABASE_SERVICE_ROLE_KEY` | service-role key — server-side only: writes catalog rows and **uploads images to Storage** | *(empty → uploads fall back to disk/inline)* | **yes** for durable image uploads |
+| `SUPABASE_DB_URL` | direct Postgres URL → transactional `sql` driver; also needed by `npm run migrate:apply` | *(empty → `postgrest` driver)* | optional |
+| `PRODUCT_IMAGE_BUCKET` | bucket for product photos (public, auto-created/verified) | `product-images` | optional |
+| `SHAPE_IMAGE_BUCKET` | bucket for key-shape photos (public, auto-created/verified) | `shape-images` | optional |
+| `CUSTOMIZE_BUCKET` | **private** bucket for customer car photos + payment proofs | `customize-uploads` | optional |
+| `CUSTOMIZE_MAX_IMAGE_BYTES` | per-image byte cap for **every** validated upload (products included) | `6291456` (6 MB) | optional |
+| `CUSTOMIZE_SIGNED_URL_TTL` | lifetime (s) of the admin signed URL for a private photo | `300` | optional |
+| `ADMIN_DEV_TOKEN` | local-only admin bypass for the test suite (inert when a real Supabase project is configured) | *(unset)* | never in production |
+| `PORT`           | HTTP port (Vercel injects this)            | `3000`             | — |
+| `VELOCCI_DB`     | Optional path to the JSON datastore        | `./data/velocci-db.json` | optional |
+| `DATA_DRIVER`    | Force a driver (`json` / `sql` / `postgrest`) | auto-detected     | optional |
+| `ADMIN_PASS`, `SESSION_SECRET` | legacy session fallback (Supabase Auth is the real gate) | `velocci2026`, `velocci-secret-key` | optional |
+
+Copy `.env.example` for the same list with comments. **After changing any variable in Vercel you
+must redeploy** — environment variables are baked in at deploy time. The image-upload half of
+this table (what each variable does for the product-image picker, how to verify it, and what
+each failure means) is documented step by step in **`docs/PRODUCT-IMAGE-UPLOADS.md`**.
 
 ### Data persistence on Vercel
 Vercel's serverless filesystem is **read-only and ephemeral**. The JSON
