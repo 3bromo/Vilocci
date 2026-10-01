@@ -148,13 +148,18 @@ app.get('/api/admin/diagnose', async (req, res) => {
   // ?probe=1 — actually read the catalog so the health state below reflects a
   // real attempt on THIS instance (serverless instances are cold per request).
   // It also reports the Shape Images state (migration 009 column + the public
-  // `shape-images` storage bucket) — the feature's own health check.
+  // `shape-images` storage bucket) and the Product Images state (the public
+  // `product-images` bucket + what the served galleries are made of) — each
+  // feature's own health check.
   let probe = null;
   let shapeImages = null;
-  if (req.query.probe || req.query.shapes) {
+  let productImages = null;
+  let probeCatalog = null;
+  if (req.query.probe || req.query.shapes || req.query.products) {
     const t0 = Date.now();
     try {
       const catalog = await db.getCatalog();
+      probeCatalog = catalog;
       const orders = await db.getOrders({ limit: 1000 });
       probe = {
         ok: true,
@@ -189,6 +194,36 @@ app.get('/api/admin/diagnose', async (req, res) => {
     } catch (e) {
       shapeImages = { error: e.message };
     }
+
+    // Product Images — no schema to check (products.images and product_images
+    // already exist), so the health state is the STORAGE bucket plus what the
+    // served galleries are actually made of: how many images came from an
+    // upload (our public bucket), how many are generated artwork, pasted
+    // external URLs, local /img/uploads files or inline data URLs. Read-only.
+    try {
+      const products = (probeCatalog && probeCatalog.products) || [];
+      const urls = [];
+      products.forEach((p) => (Array.isArray(p.images) ? p.images : []).forEach((u) => { if (u) urls.push(String(u)); }));
+      const count = (fn) => urls.filter(fn).length;
+      const uploaded = count((u) => storage.isProductImageUrl(u));
+      productImages = {
+        migration: '010_product_images.sql',
+        schema: 'no table change — products.images (text[]) + product_images.url already exist',
+        endpoint: 'POST /api/admin/products/image',
+        productCount: products.length,
+        productsWithImage: products.filter((p) => Array.isArray(p.images) && p.images.length).length,
+        imageCount: urls.length,
+        uploadedFromStorage: uploaded,
+        generatedArtwork: count((u) => u.indexOf('/img/asset.svg') === 0),
+        localUploads: count((u) => u.indexOf('/img/uploads/') === 0),
+        inlineDataUrls: count((u) => u.indexOf('data:') === 0),
+        externalUrls: count((u) => /^https?:\/\//i.test(u) && !storage.isProductImageUrl(u)),
+        storage: await storage.productStorageStatus(),
+      };
+      productImages.error = productImages.storage.error || null;
+    } catch (e) {
+      productImages = { error: e.message };
+    }
   }
 
   const detail = db.info();
@@ -211,6 +246,7 @@ app.get('/api/admin/diagnose', async (req, res) => {
   res.json({
     probe,
     shapeImages,
+    productImages,
     issues,
     rawEnvUrl: rawUrl || '(not set)',
     sanitizedUrl: SUPABASE_URL || '(empty)',

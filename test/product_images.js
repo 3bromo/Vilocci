@@ -1,31 +1,39 @@
 'use strict';
 // ============================================================================
-// Product images — the Admin gallery picker (device photo → product)
+// Product images — the Admin image library picker (select, don't type a URL)
 // ----------------------------------------------------------------------------
-// The product editor used to accept images only as a typed URL. It now opens
-// the device's native photo picker, uploads the chosen file through the
-// project's existing storage system and adds the resulting image to the
-// product's gallery:
+// The product editor used to accept images only as a typed URL. "Add image" now
+// opens the admin's EXISTING media library (Admin → Website Images,
+// `website_images`) as a chooser: select an image and its URL populates the
+// product gallery, with a preview, one selection at a time, for as many images
+// as the product needs. A photo that is not in the library yet can be uploaded
+// from the picker — into that same library, so any product can reuse it:
 //
-//   POST /api/admin/products/image   { dataUrl, productId? } → { ok, url }
+//   POST /api/admin/upload            the library's own upload endpoint
+//   POST /api/admin/products/image    Supabase Storage fallback (read-only host)
 //     1. Supabase Storage, PUBLIC bucket `product-images` (production)
 //     2. /img/uploads on a writable host (local development)
-//     3. an inline data URL as the last resort on a read-only host
+//     3. an inline data URL as the last resort
 //
 // This suite drives the REAL server (scratch JSON datastore — the committed
 // dataset is never touched) and the REAL storefront + admin bundles (jsdom):
 //
-//   api        a picked photo uploads, is served back, and is refused when it
-//              is not a real image / not authenticated. No URL is required.
-//   persist    the uploaded URL is saved with the product by the existing Save
-//              flow and is served by /api/data + /api/admin/data.
+//   library    library rows are stored/served by the existing Website Images
+//              endpoints — the picker reads real, persisted data.
+//   picker     Add image opens the library over an editor that stays open;
+//              selecting populates the gallery + preview; several images can be
+//              added one after another; duplicates are refused; search works;
+//              Done closes it; remove still works.
+//   upload     a new photo goes through /api/admin/upload INTO the library (and
+//              falls back to Supabase Storage on a read-only host), then is
+//              added to the product and shown in the picker grid.
+//   persist    Save stores the selected images; /api/data serves them and the
+//              storefront gallery displays them.
+//   api        the upload endpoint validates (no SVG, real bytes, no typed URL)
+//              and requires an admin session.
 //   compat     every pre-existing image (generated artwork, pasted public URL,
 //              /img/uploads file) keeps working untouched.
-//   storefront the uploaded photo renders in the product gallery.
-//   admin ui   the editor exposes a real file input (native gallery on iOS /
-//              Android), previews each image, adds several one at a time, still
-//              removes an image, and posts the gallery on Save — for an
-//              existing product AND for a brand-new one.
+//   new prod   the same picker works while creating a product.
 //   migration  010_product_images.sql ships with the CLI (additive only).
 //
 // Usage: npm run test:productimages
@@ -131,10 +139,14 @@ async function bootStorefront(payload) {
 // Admin panel boot (jsdom). The fetch stub records every call and answers the
 // product-image upload the way the real server does ({ ok, url }).
 // ---------------------------------------------------------------------------
-async function bootAdmin(catalog) {
+async function bootAdmin(catalog, opts = {}) {
   const html = fs.readFileSync(path.join(PUBLIC, 'admin.html'), 'utf8');
   const calls = [];
   let uploadCount = 0;
+  // opts.uploadStatus = 507 simulates a read-only host (Vercel), where the
+  // library's own /api/admin/upload cannot write and the picker must fall back
+  // to Supabase Storage.
+  const uploadStatus = opts.uploadStatus || 200;
   const virtualConsole = new VirtualConsole();
   virtualConsole.on('jsdomError', (e) => {
     if (!/Could not load|Not implemented/.test(e.message)) console.log('  ! page error:', e.message);
@@ -174,6 +186,16 @@ async function bootAdmin(catalog) {
         }
         if (url.indexOf('/api/admin/diagnose') >= 0) {
           return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ probe: { ok: true, servedBy: 'json' }, issues: [] }) });
+        }
+        // The media library's own upload endpoint (Admin → Website Images uses
+        // exactly this call): a writable host answers with a served /img/uploads
+        // URL, a read-only host answers 507.
+        if (url.indexOf('/api/admin/upload') >= 0) {
+          uploadCount += 1;
+          if (uploadStatus !== 200) {
+            return Promise.resolve({ ok: false, status: uploadStatus, json: () => Promise.resolve({ error: 'File uploads are not writable on this host — paste a public image URL instead.' }) });
+          }
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true, url: `/img/uploads/up_lib${uploadCount}.png` }) });
         }
         // The upload endpoint: every picked photo gets its own durable URL,
         // exactly like the real Supabase Storage object name.
@@ -340,128 +362,245 @@ async function bootAdmin(catalog) {
     await http('POST', '/api/admin/save', { collection: 'products', record: Object.assign({}, target, { images: originalImages, main_image: originalImages[0] }) }, { admin: true });
 
     // ------------------------------------------------------------------ 6
-    console.log('\n== 6. Admin panel — the product editor opens the device gallery ==');
-    const adminPayload = (await http('GET', '/api/admin/data', null, { admin: true })).json;
-    const admin = await bootAdmin(adminPayload);
+    console.log('\n== 6. Admin panel — "Add image" opens the existing media library ==');
+    // The library the picker reads IS Admin → Website Images. The committed
+    // dataset ships an empty one, so add two rows through the SAME endpoint that
+    // screen uses and read them back from the server: the picker must offer
+    // real, persisted library images — not a separate, second image system.
+    const libRows = [
+      { id: 'img_lib_test_1', name: 'carbon-key-case.jpg', url: 'https://cdn.test/library/carbon-key-case.jpg', section: 'general', alt: 'Carbon key case' },
+      { id: 'img_lib_test_2', name: 'navy-key-holder.png', url: '/img/uploads/navy-key-holder.png', section: 'general', alt: 'Navy key holder' },
+    ];
+    for (const row of libRows) {
+      const ins = await http('POST', '/api/admin/save', { collection: 'websiteImages', record: row }, { admin: true });
+      check(`the library image "${row.name}" is stored by the existing Website Images endpoint`, ins.ok, JSON.stringify(ins.json).slice(0, 100));
+    }
+    const withLibrary = (await http('GET', '/api/admin/data', null, { admin: true })).json;
+    check('/api/admin/data serves the library the picker reads',
+      libRows.every((r) => (withLibrary.website_images || []).some((x) => x.url === r.url)),
+      JSON.stringify((withLibrary.website_images || []).map((x) => x.url)));
+
+    const admin = await bootAdmin(withLibrary);
     await admin.openProducts();
     const editBtn = admin.doc.querySelector(`[data-edit-product="${target.id}"]`) || admin.doc.querySelector('[data-edit-product]');
     admin.click(editBtn);
     await wait(120);
 
-    const fileInput = admin.doc.querySelector('#pf-image-file');
-    const uploadBtn = admin.doc.querySelector('#btn-upload-product-image');
-    check('the editor has an Upload image button', !!uploadBtn && /upload/i.test(uploadBtn.textContent), uploadBtn && uploadBtn.textContent);
-    check('the editor has a real file input (the native gallery on iOS/Android)',
-      !!fileInput && fileInput.getAttribute('type') === 'file', fileInput && fileInput.outerHTML);
-    check('the file input accepts images', !!fileInput && (fileInput.getAttribute('accept') || '').indexOf('image') >= 0, fileInput && fileInput.getAttribute('accept'));
-    check('the file input is hidden — the button is what the admin taps',
-      !!fileInput && /display:\s*none/.test(fileInput.getAttribute('style') || ''), fileInput && fileInput.getAttribute('style'));
-    check('the editor explains that the picker uploads the photo automatically',
-      /photo gallery/i.test(admin.doc.querySelector('#product-form').textContent), '');
-
-    // Tapping the button must open the picker (iOS Safari needs a real click on
-    // a real <input type="file"> from the tap handler).
-    let pickerOpened = 0;
-    fileInput.click = () => { pickerOpened += 1; };
-    admin.click(uploadBtn);
-    await wait(30);
-    check('tapping Upload image opens the device picker', pickerOpened === 1, String(pickerOpened));
-
-    // Existing images are previewed, and no URL has to be typed for them
+    const addBtn = admin.doc.querySelector('#btn-pick-product-image');
+    check('the product editor has an "Add image" button', !!addBtn && /add image/i.test(addBtn.textContent), addBtn && addBtn.textContent);
+    check('the editor does NOT ask for an image URL (that stays optional and collapsed)',
+      !!admin.doc.querySelector('#product-image-url-box') && admin.doc.querySelector('#product-image-url-box').tagName === 'DETAILS'
+      && admin.doc.querySelector('#product-image-url-box').open === false);
     const rowsBefore = [...admin.doc.querySelectorAll('#product-images-list [data-img-del]')];
-    check('every existing image is listed with its own row', rowsBefore.length === originalImages.length, String(rowsBefore.length));
-    check('every existing image shows a preview thumbnail',
-      admin.doc.querySelectorAll('#product-images-list img').length === originalImages.length,
-      String(admin.doc.querySelectorAll('#product-images-list img').length));
-    check('the first image is still marked MAIN', /MAIN IMAGE/.test(admin.doc.querySelector('#product-images-list').textContent));
-    const urlBox = admin.doc.querySelector('#product-image-url-box');
-    check('pasting a URL is optional and collapsed away (never required)',
-      !!urlBox && urlBox.tagName === 'DETAILS' && urlBox.open === false && !!admin.doc.querySelector('#pf-new-image'),
-      urlBox && urlBox.outerHTML.slice(0, 60));
+    check('every existing product image is listed with its preview', rowsBefore.length === originalImages.length
+      && admin.doc.querySelectorAll('#product-images-list img').length === originalImages.length, String(rowsBefore.length));
+    check('the first existing image is still marked MAIN', /MAIN IMAGE/.test(admin.doc.querySelector('#product-images-list').textContent));
 
-    // Picking a photo uploads it and previews it — one at a time, twice
-    await admin.pickFile(fileInput, 'iphone-photo-1.png', 'image/png');
-    const upCalls = admin.calls.filter((c) => c.url.indexOf('/api/admin/products/image') >= 0);
-    check('picking a photo POSTs it to /api/admin/products/image', upCalls.length === 1
-      && typeof upCalls[0].body.dataUrl === 'string' && upCalls[0].body.dataUrl.indexOf('data:image/png') === 0,
-      JSON.stringify(upCalls.map((c) => c.body && Object.keys(c.body))));
-    check('the upload names the product being edited', upCalls.length === 1 && upCalls[0].body.productId === target.id, JSON.stringify(upCalls[0] && upCalls[0].body && upCalls[0].body.productId));
+    // --- the picker opens, over an editor that stays open ---
+    admin.click(addBtn);
+    await wait(80);
+    const picker = admin.doc.querySelector('#libpicker-grid');
+    check('clicking Add image opens the image library picker', !!picker);
+    check('the picker lists the library images as thumbnails',
+      picker && picker.querySelectorAll('.image-preview-item img').length === libRows.length,
+      String(picker && picker.querySelectorAll('.image-preview-item img').length));
+    check('the picker shows the real library URLs',
+      !!picker && libRows.every((r) => [...picker.querySelectorAll('img')].some((im) => im.getAttribute('src') === r.url)),
+      picker && JSON.stringify([...picker.querySelectorAll('img')].map((i) => i.getAttribute('src'))));
+    check('the picker reports how many images the library holds',
+      /2 images in the library/.test((admin.doc.querySelector('#libpicker-count') || {}).textContent || ''),
+      (admin.doc.querySelector('#libpicker-count') || {}).textContent);
+    check('the product editor stays open underneath the picker (its gallery is not lost)',
+      !!admin.doc.querySelector('#product-form') && !!admin.doc.querySelector('#product-images-list')
+      && admin.doc.querySelectorAll('#product-images-list [data-img-del]').length === originalImages.length);
+
+    // --- select an image → it populates the product gallery ---
+    admin.click(picker.querySelector('.image-preview-item'));
+    await wait(60);
     let rows = [...admin.doc.querySelectorAll('#product-images-list [data-img-del]')];
-    check('the uploaded image is added to the gallery automatically', rows.length === originalImages.length + 1, String(rows.length));
-    const uploadedThumb = [...admin.doc.querySelectorAll('#product-images-list img')].pop();
-    check('the uploaded image is previewed with the returned storage URL',
-      !!uploadedThumb && (uploadedThumb.getAttribute('src') || '').indexOf('/object/public/product-images/products/') >= 0,
-      uploadedThumb && uploadedThumb.getAttribute('src'));
-    check('the existing previews are untouched by the upload',
-      [...admin.doc.querySelectorAll('#product-images-list img')].slice(0, originalImages.length)
-        .every((im, i) => im.getAttribute('src') === originalImages[i]),
+    check('selecting a library image adds it to the product automatically', rows.length === originalImages.length + 1, String(rows.length));
+    check('the selected image is previewed in the product gallery',
+      [...admin.doc.querySelectorAll('#product-images-list img')].some((im) => im.getAttribute('src') === libRows[0].url),
       JSON.stringify([...admin.doc.querySelectorAll('#product-images-list img')].map((i) => i.getAttribute('src'))));
-    check('the file input is reset so the same photo can be picked again', fileInput.value === '', fileInput.value);
-    check('the upload button is usable again after the upload', uploadBtn.disabled === false, String(uploadBtn.disabled));
+    check('the picker marks the image as already added', /added/.test(picker.textContent), picker.textContent.replace(/\s+/g, ' ').slice(0, 80));
+    check('the picker stays open so more images can be added', !!admin.doc.querySelector('#libpicker-grid'));
 
-    await admin.pickFile(fileInput, 'iphone-photo-2.png', 'image/png');
+    // --- multiple product images, one selection at a time ---
+    admin.click(admin.doc.querySelectorAll('#libpicker-grid .image-preview-item')[1]);
+    await wait(60);
     rows = [...admin.doc.querySelectorAll('#product-images-list [data-img-del]')];
-    check('a second photo is added the same way (multiple images, one at a time)',
-      rows.length === originalImages.length + 2
-      && admin.calls.filter((c) => c.url.indexOf('/api/admin/products/image') >= 0).length === 2, String(rows.length));
+    check('a second library image is added the same way (multiple product images)', rows.length === originalImages.length + 2, String(rows.length));
+    check('both selected URLs are in the product gallery',
+      [...admin.doc.querySelectorAll('#product-images-list img')].some((im) => im.getAttribute('src') === libRows[1].url)
+      && [...admin.doc.querySelectorAll('#product-images-list img')].some((im) => im.getAttribute('src') === libRows[0].url));
+    admin.click(admin.doc.querySelectorAll('#libpicker-grid .image-preview-item')[0]);
+    await wait(60);
+    rows = [...admin.doc.querySelectorAll('#product-images-list [data-img-del]')];
+    check('selecting the same image again does not duplicate it', rows.length === originalImages.length + 2, String(rows.length));
+    check('the picker counted exactly the two images added', /2 added to this product/.test((admin.doc.querySelector('#libpicker-count') || {}).textContent || ''),
+      (admin.doc.querySelector('#libpicker-count') || {}).textContent);
 
-    // Removing an image still works — both an uploaded one and an existing one
-    admin.click(admin.doc.querySelector('#product-images-list [data-img-del="' + (rows.length - 1) + '"]'));
+    // --- search inside the picker ---
+    const search = admin.doc.querySelector('#libpicker-search');
+    search.value = 'navy';
+    search.dispatchEvent(new admin.window.Event('input', { bubbles: true }));
     await wait(40);
-    rows = [...admin.doc.querySelectorAll('#product-images-list [data-img-del]')];
-    check('the last uploaded image can be removed again', rows.length === originalImages.length + 1, String(rows.length));
+    check('the library can be searched', admin.doc.querySelectorAll('#libpicker-grid .image-preview-item').length === 1,
+      String(admin.doc.querySelectorAll('#libpicker-grid .image-preview-item').length));
+    search.value = '';
+    search.dispatchEvent(new admin.window.Event('input', { bubbles: true }));
+    await wait(40);
+    check('clearing the search shows the whole library again',
+      admin.doc.querySelectorAll('#libpicker-grid .image-preview-item').length === libRows.length);
 
-    // Save posts the whole gallery — existing URLs plus the uploaded one
+    // --- Done closes the picker, the editor keeps the selection ---
+    admin.click([...admin.doc.querySelectorAll('[data-libpicker-close]')].pop());
+    await wait(60);
+    check('Done closes the picker', !admin.doc.querySelector('#libpicker-grid'));
+    check('the product editor and its gallery survive the picker',
+      !!admin.doc.querySelector('#product-form')
+      && admin.doc.querySelectorAll('#product-images-list [data-img-del]').length === originalImages.length + 2);
+
+    // --- removing an image still works ---
+    admin.click(admin.doc.querySelector(`#product-images-list [data-img-del="${originalImages.length + 1}"]`));
+    await wait(50);
+    rows = [...admin.doc.querySelectorAll('#product-images-list [data-img-del]')];
+    check('an image can still be removed from the product gallery', rows.length === originalImages.length + 1, String(rows.length));
+
+    // --- Save persists the selected library image with the product ---
     admin.click(admin.doc.querySelector('#btn-save-product'));
-    await wait(120);
+    await wait(140);
     const saveCall = admin.calls.filter((c) => c.url.indexOf('/api/admin/save') >= 0 && c.body && c.body.collection === 'products').pop();
-    check('Save posts the product with the uploaded image in its gallery',
+    check('Save posts the product with the library image in its gallery',
       !!saveCall && Array.isArray(saveCall.body.record.images)
       && saveCall.body.record.images.length === originalImages.length + 1
       && originalImages.every((u, i) => saveCall.body.record.images[i] === u)
-      && saveCall.body.record.images[originalImages.length].indexOf('/object/public/product-images/products/') >= 0,
+      && saveCall.body.record.images[originalImages.length] === libRows[0].url,
       JSON.stringify(saveCall && saveCall.body && saveCall.body.record && saveCall.body.record.images));
-    check('main_image follows the first gallery image', !!saveCall && saveCall.body.record.main_image === saveCall.body.record.images[0],
-      saveCall && saveCall.body && saveCall.body.record && saveCall.body.record.main_image);
-    check('the price and the other fields still travel with the save',
-      !!saveCall && saveCall.body.record.price === target.price && saveCall.body.record.brandSlug === target.brandSlug,
-      JSON.stringify(saveCall && saveCall.body && saveCall.body.record && saveCall.body.record.price));
+    check('main_image still follows the first gallery image',
+      !!saveCall && saveCall.body.record.main_image === saveCall.body.record.images[0]);
+    check('the rest of the product form is untouched by the picker',
+      !!saveCall && saveCall.body.record.price === target.price && saveCall.body.record.brandSlug === target.brandSlug
+      && saveCall.body.record.name_en === target.name_en);
     admin.dom.window.close();
 
-    // ------------------------------------------------------------------ 7
-    console.log('\n== 7. Admin panel — creating a NEW product from picked photos ==');
-    const admin2 = await bootAdmin(adminPayload);
-    await admin2.openProducts();
-    const addBtn = admin2.doc.querySelector('#btn-add-product');
-    admin2.click(addBtn);
+    // --- the saved selection really persists and is served publicly ---
+    await http('POST', '/api/admin/save', {
+      collection: 'products',
+      record: Object.assign({}, target, { images: originalImages.concat([libRows[0].url]), main_image: originalImages[0] }),
+    }, { admin: true });
+    pub = (await http('GET', '/api/data')).json;
+    live = pub.products.find((p) => p.id === target.id);
+    check('the server persisted the selected library image on the product',
+      !!live && live.images[live.images.length - 1] === libRows[0].url, JSON.stringify(live && live.images));
+    const domLib = await bootStorefront(pub);
+    domLib.window.location.hash = '#/product/' + target.slug;
+    domLib.window.dispatchEvent(new domLib.window.HashChangeEvent('hashchange'));
     await wait(120);
-    const newFileInput = admin2.doc.querySelector('#pf-image-file');
-    check('the Add Product editor has the same gallery picker', !!newFileInput && !!admin2.doc.querySelector('#btn-upload-product-image'));
-    check('a new product starts with an empty gallery',
-      admin2.doc.querySelectorAll('#product-images-list [data-img-del]').length === 0
-      && /No images yet/.test(admin2.doc.querySelector('#product-images-list').textContent));
-    await admin2.pickFile(newFileInput, 'new-photo.png', 'image/png');
-    const newUp = admin2.calls.filter((c) => c.url.indexOf('/api/admin/products/image') >= 0);
-    check('a photo can be uploaded before the product exists', newUp.length === 1 && !newUp[0].body.productId, JSON.stringify(newUp[0] && newUp[0].body));
-    check('the uploaded photo is the new product\'s first (main) image',
-      admin2.doc.querySelectorAll('#product-images-list [data-img-del]').length === 1
-      && /MAIN IMAGE/.test(admin2.doc.querySelector('#product-images-list').textContent));
-    admin2.doc.querySelector('#product-form [name=name_en]').value = 'Test Uploaded Product';
-    admin2.doc.querySelector('#product-form [name=price]').value = '1500';
-    const catSelect = admin2.doc.querySelector('#product-form [name=category]');
-    if (catSelect && !catSelect.value && catSelect.options.length > 1) catSelect.value = catSelect.options[1].value;
-    const brandSelect = admin2.doc.querySelector('#product-form [name=brandSlug]');
-    if (brandSelect && !brandSelect.value && brandSelect.options.length > 1) brandSelect.value = brandSelect.options[1].value;
-    admin2.click(admin2.doc.querySelector('#btn-save-product'));
-    await wait(140);
-    const createCall = admin2.calls.filter((c) => c.url.indexOf('/api/admin/save') >= 0 && c.body && c.body.collection === 'products').pop();
-    check('creating the product stores the picked photo',
-      !!createCall && createCall.body.record.name_en === 'Test Uploaded Product'
-      && (createCall.body.record.images || []).length === 1
-      && createCall.body.record.images[0].indexOf('/object/public/product-images/products/') >= 0,
-      JSON.stringify(createCall && createCall.body && createCall.body.record && createCall.body.record.images));
-    check('main_image is set from the picked photo', !!createCall && createCall.body.record.main_image === createCall.body.record.images[0]);
+    const libThumb = [...domLib.window.document.querySelectorAll('.thumbs .thumb img')];
+    check('the storefront product gallery displays the selected image',
+      libThumb.some((im) => im.getAttribute('src') === libRows[0].url), JSON.stringify(libThumb.map((i) => i.getAttribute('src'))));
+    domLib.window.close();
+    await http('POST', '/api/admin/save', { collection: 'products', record: Object.assign({}, target, { images: originalImages, main_image: originalImages[0] }) }, { admin: true });
+
+    // ------------------------------------------------------------------ 7
+    console.log('\n== 7. Admin panel — uploading a new photo from the picker feeds the SAME library ==');
+    const admin2 = await bootAdmin(withLibrary);
+    await admin2.openProducts();
+    admin2.click(admin2.doc.querySelector(`[data-edit-product="${target.id}"]`) || admin2.doc.querySelector('[data-edit-product]'));
+    await wait(120);
+    admin2.click(admin2.doc.querySelector('#btn-pick-product-image'));
+    await wait(80);
+    const libFile = admin2.doc.querySelector('#libpicker-file');
+    const libUpload = admin2.doc.querySelector('#libpicker-upload');
+    check('the picker offers "Upload a new photo" for images that are not in the library yet', !!libUpload && /upload/i.test(libUpload.textContent));
+    check('it is a real hidden file input (the device gallery on iOS/Android)',
+      !!libFile && libFile.getAttribute('type') === 'file' && (libFile.getAttribute('accept') || '').indexOf('image') >= 0
+      && /display:\s*none/.test(libFile.getAttribute('style') || ''), libFile && libFile.outerHTML);
+    let devicePickerOpened = 0;
+    libFile.click = () => { devicePickerOpened += 1; };
+    admin2.click(libUpload);
+    await wait(30);
+    check('tapping it opens the device photo picker', devicePickerOpened === 1, String(devicePickerOpened));
+
+    await admin2.pickFile(libFile, 'new-product-photo.png', 'image/png');
+    const libUploadCall = admin2.calls.find((c) => c.url.indexOf('/api/admin/upload') >= 0);
+    check('the photo is uploaded through the library\'s existing endpoint', !!libUploadCall
+      && typeof libUploadCall.body.dataUrl === 'string' && libUploadCall.body.dataUrl.indexOf('data:image/png') === 0,
+      JSON.stringify(libUploadCall && Object.keys(libUploadCall.body || {})));
+    const libInsert = admin2.calls.filter((c) => c.url.indexOf('/api/admin/save') >= 0 && c.body && c.body.collection === 'websiteImages').pop();
+    check('the uploaded photo is saved INTO the media library (reusable by every product)',
+      !!libInsert && libInsert.body.record.url === '/img/uploads/up_lib1.png' && !!libInsert.body.record.id,
+      JSON.stringify(libInsert && libInsert.body && libInsert.body.record));
+    check('the uploaded photo is added to the product gallery automatically',
+      [...admin2.doc.querySelectorAll('#product-images-list img')].some((im) => im.getAttribute('src') === '/img/uploads/up_lib1.png'),
+      JSON.stringify([...admin2.doc.querySelectorAll('#product-images-list img')].map((i) => i.getAttribute('src'))));
+    check('the uploaded photo now appears in the picker grid too',
+      [...admin2.doc.querySelectorAll('#libpicker-grid img')].some((im) => im.getAttribute('src') === '/img/uploads/up_lib1.png'));
+    check('the file input is reset so the same photo can be picked again', libFile.value === '', libFile.value);
     admin2.dom.window.close();
+
+    // Read-only host (Vercel): /api/admin/upload answers 507, so the picker
+    // falls back to Supabase Storage — the admin is never stuck.
+    const admin3 = await bootAdmin(withLibrary, { uploadStatus: 507 });
+    await admin3.openProducts();
+    admin3.click(admin3.doc.querySelector(`[data-edit-product="${target.id}"]`) || admin3.doc.querySelector('[data-edit-product]'));
+    await wait(120);
+    admin3.click(admin3.doc.querySelector('#btn-pick-product-image'));
+    await wait(80);
+    await admin3.pickFile(admin3.doc.querySelector('#libpicker-file'), 'iphone-photo.png', 'image/png');
+    const fallbackCall = admin3.calls.find((c) => c.url.indexOf('/api/admin/products/image') >= 0);
+    check('on a read-only host the upload falls back to Supabase Storage', !!fallbackCall
+      && typeof fallbackCall.body.dataUrl === 'string' && fallbackCall.body.dataUrl.indexOf('data:image/png') === 0,
+      JSON.stringify(admin3.calls.filter((c) => c.url.indexOf('/api/admin/upload') >= 0 || c.url.indexOf('/api/admin/products/image') >= 0).map((c) => c.url)));
+    check('the Storage URL is added to the product gallery',
+      [...admin3.doc.querySelectorAll('#product-images-list img')].some((im) => (im.getAttribute('src') || '').indexOf('/object/public/product-images/products/') >= 0),
+      JSON.stringify([...admin3.doc.querySelectorAll('#product-images-list img')].map((i) => i.getAttribute('src'))));
+    check('the Storage URL is saved into the library as well',
+      admin3.calls.some((c) => c.url.indexOf('/api/admin/save') >= 0 && c.body && c.body.collection === 'websiteImages'
+        && String(c.body.record.url).indexOf('/object/public/product-images/products/') >= 0));
+    admin3.dom.window.close();
+
+    // ------------------------------------------------------------------ 7b
+    console.log('\n== 7b. Admin panel — creating a NEW product from library images ==');
+    const admin4 = await bootAdmin(withLibrary);
+    await admin4.openProducts();
+    admin4.click(admin4.doc.querySelector('#btn-add-product'));
+    await wait(120);
+    check('the Add Product editor has the same Add image button', !!admin4.doc.querySelector('#btn-pick-product-image'));
+    check('a new product starts with an empty gallery',
+      admin4.doc.querySelectorAll('#product-images-list [data-img-del]').length === 0
+      && /No images yet/.test(admin4.doc.querySelector('#product-images-list').textContent));
+    admin4.click(admin4.doc.querySelector('#btn-pick-product-image'));
+    await wait(80);
+    check('the library picker opens for a product that does not exist yet', !!admin4.doc.querySelector('#libpicker-grid')
+      && !!admin4.doc.querySelector('#product-form'));
+    admin4.click(admin4.doc.querySelector('#libpicker-grid .image-preview-item'));
+    await wait(60);
+    check('the selected image becomes the new product\'s first (main) image',
+      admin4.doc.querySelectorAll('#product-images-list [data-img-del]').length === 1
+      && /MAIN IMAGE/.test(admin4.doc.querySelector('#product-images-list').textContent));
+    admin4.click([...admin4.doc.querySelectorAll('[data-libpicker-close]')].pop());
+    await wait(50);
+    admin4.doc.querySelector('#product-form [name=name_en]').value = 'Test Library Product';
+    admin4.doc.querySelector('#product-form [name=price]').value = '1500';
+    const catSelect = admin4.doc.querySelector('#product-form [name=category]');
+    if (catSelect && !catSelect.value && catSelect.options.length > 1) catSelect.value = catSelect.options[1].value;
+    const brandSelect = admin4.doc.querySelector('#product-form [name=brandSlug]');
+    if (brandSelect && !brandSelect.value && brandSelect.options.length > 1) brandSelect.value = brandSelect.options[1].value;
+    admin4.click(admin4.doc.querySelector('#btn-save-product'));
+    await wait(140);
+    const createCall = admin4.calls.filter((c) => c.url.indexOf('/api/admin/save') >= 0 && c.body && c.body.collection === 'products').pop();
+    check('creating the product stores the selected library image',
+      !!createCall && createCall.body.record.name_en === 'Test Library Product'
+      && (createCall.body.record.images || []).length === 1 && createCall.body.record.images[0] === libRows[0].url,
+      JSON.stringify(createCall && createCall.body && createCall.body.record && createCall.body.record.images));
+    check('main_image is set from the selected image', !!createCall && createCall.body.record.main_image === libRows[0].url);
+    admin4.dom.window.close();
+
+    // The library rows this suite added are removed again, so the scratch store
+    // is left as it was found.
+    for (const row of libRows) await http('POST', '/api/admin/delete', { collection: 'websiteImages', id: row.id }, { admin: true });
 
     // ------------------------------------------------------------------ 8
     console.log('\n== 8. Migration 010 ships with the CLI (public bucket + policies) ==');

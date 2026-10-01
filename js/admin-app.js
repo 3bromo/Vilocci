@@ -1253,6 +1253,12 @@
   const PRODUCT_IMAGE_SHRINK_ABOVE = 300 * 1024;      // bytes — smaller files go up untouched
   const PRODUCT_IMAGE_MAX_FILE = 25 * 1024 * 1024;    // raw picker limit, before shrinking
   const PRODUCT_IMAGE_SHRINK_TIMEOUT = 8000;          // never block an upload on a canvas
+  // Vercel caps a serverless request body at 4.5 MB, so a photo that is still
+  // too big after the first shrink is retried once at a smaller size and then
+  // refused with a clear message instead of failing as an opaque 413.
+  const PRODUCT_IMAGE_MAX_UPLOAD = 4 * 1024 * 1024;   // data-URL characters (≈3 MB of image bytes)
+  const PRODUCT_IMAGE_RETRY_EDGE = 1200;
+  const PRODUCT_IMAGE_RETRY_QUALITY = 0.72;
 
   // Re-encodes a raster photo through a canvas (white background — JPEG has no
   // alpha, and product photos are shown on light surfaces). Resolves with the
@@ -1320,12 +1326,221 @@
     if ((file.size || 0) > PRODUCT_IMAGE_MAX_FILE) {
       throw new Error(`${file.name || 'That image'} is too large (max ${Math.round(PRODUCT_IMAGE_MAX_FILE / (1024 * 1024))} MB).`);
     }
-    const dataUrl = await productImageDataUrl(file);
+    let dataUrl = await productImageDataUrl(file);
+    if (dataUrl.length > PRODUCT_IMAGE_MAX_UPLOAD) {
+      // Still too big for the host's request limit: one more, tighter pass.
+      dataUrl = await shrinkDataUrl(dataUrl, PRODUCT_IMAGE_RETRY_EDGE, PRODUCT_IMAGE_RETRY_QUALITY);
+    }
+    if (dataUrl.length > PRODUCT_IMAGE_MAX_UPLOAD) {
+      const mb = Math.round((dataUrl.length * 0.75) / (1024 * 1024) * 10) / 10;
+      throw new Error(`That photo is still about ${mb} MB after compression — this host accepts up to 3 MB per upload. Please pick a smaller photo.`);
+    }
     const body = { dataUrl };
     if (productId) body.productId = productId;
     const { ok, j } = await api('POST', '/api/admin/products/image', body);
     if (!ok || !j || !j.ok || !j.url) throw new Error((j && j.error) || 'The image could not be uploaded.');
     return j.url;
+  }
+
+  // ------------------------------------------------------------------------
+  // THE ADMIN MEDIA LIBRARY — one library, reused everywhere
+  // ------------------------------------------------------------------------
+  // Admin → Website Images (`state.data.website_images`) IS the admin's image
+  // gallery. The product editor opens it as a chooser instead of asking for a
+  // URL, and a photo uploaded from the chooser is saved INTO that same library
+  // (the existing /api/admin/upload + website_images insert the Website Images
+  // screen already uses), so an image uploaded once can be reused by any
+  // product. No second upload system, no second place where images live.
+  const libraryImages = () => (state.data && Array.isArray(state.data.website_images)) ? state.data.website_images : [];
+
+  // Adds an image row to the library (server write + local state), the same way
+  // Admin → Website Images does it. Never throws: a library write that fails
+  // (e.g. no database) must not lose the uploaded image.
+  async function addImageToLibrary(url, name) {
+    const row = { id: uid('img'), name: name || String(url || '').split('/').pop() || 'Uploaded image', url, section: 'general', alt: name || '' };
+    try {
+      await sbInsert('website_images', row);
+      if (!Array.isArray(state.data.website_images)) state.data.website_images = [];
+      state.data.website_images.push(row);
+      return row;
+    } catch (e) {
+      if (!Array.isArray(state.data.website_images)) state.data.website_images = [];
+      if (!state.data.website_images.some((x) => x.url === url)) state.data.website_images.push(row);
+      return row;
+    }
+  }
+
+  // Uploads a picked file into the library and returns its URL.
+  //   1. /api/admin/upload — the library's own upload endpoint (writes
+  //      /img/uploads on a writable host).
+  //   2. /api/admin/products/image — Supabase Storage (public bucket), which is
+  //      the durable path on read-only hosts such as Vercel.
+  // Whichever answered, the URL is stored as a library row so every product can
+  // reuse it later.
+  async function uploadImageToLibrary(file, productId) {
+    if (!file) throw new Error('No image was selected.');
+    if ((file.size || 0) > PRODUCT_IMAGE_MAX_FILE) {
+      throw new Error(`${file.name || 'That image'} is too large (max ${Math.round(PRODUCT_IMAGE_MAX_FILE / (1024 * 1024))} MB).`);
+    }
+    let url = '';
+    let via = '';
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const { ok, j } = await api('POST', '/api/admin/upload', { dataUrl });
+      if (ok && j && j.url) { url = j.url; via = 'library-upload'; }
+    } catch (e) { /* fall through to Storage */ }
+    if (!url) {
+      url = await uploadProductImageFile(file, productId);   // throws with the server's reason
+      via = 'supabase-storage';
+    }
+    const row = await addImageToLibrary(url, file.name);
+    return { url, row, via };
+  }
+
+  // ------------------------------------------------------------------------
+  // IMAGE LIBRARY PICKER — opens the media library as a chooser.
+  // Its own overlay ON PURPOSE: showModal() removes every open overlay, and the
+  // product editor underneath must survive with its unsaved gallery. Uses the
+  // existing .image-preview-grid / .image-preview-item styles — no new CSS, no
+  // redesign. The picker stays open after a selection so several images can be
+  // added one after another; "Done" closes it.
+  // ------------------------------------------------------------------------
+  function openImageLibraryPicker(opts = {}) {
+    const onPick = typeof opts.onPick === 'function' ? opts.onPick : () => {};
+    const onUpload = typeof opts.onUpload === 'function' ? opts.onUpload : uploadImageToLibrary;
+    const alreadySelected = typeof opts.selected === 'function' ? opts.selected : () => [];
+    const title = opts.title || 'Image library';
+    let query = '';
+    let added = 0;
+    let busy = false;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.style.zIndex = '1100';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:720px;">
+        <div class="modal-header">
+          <h3>${esc(title)}</h3>
+          <button class="modal-close" type="button" data-libpicker-close aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <div class="search-box" style="flex:1;min-width:180px;">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="libpicker-search" placeholder="Search the image library…">
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="libpicker-upload">📷 Upload a new photo</button>
+            <input type="file" id="libpicker-file" accept="image/*" style="display:none;">
+          </div>
+          <p id="libpicker-hint" style="font-size:11px;color:var(--text-muted);margin:8px 0 0;">Select an image to add it. The picker stays open, so you can add several images one after another.</p>
+          <div id="libpicker-grid"></div>
+        </div>
+        <div class="modal-footer">
+          <span id="libpicker-count" style="font-size:11px;color:var(--text-muted);margin-right:auto;"></span>
+          <button class="btn btn-secondary" type="button" data-libpicker-close>Done</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const grid = overlay.querySelector('#libpicker-grid');
+    const hint = overlay.querySelector('#libpicker-hint');
+    const countEl = overlay.querySelector('#libpicker-count');
+    const searchEl = overlay.querySelector('#libpicker-search');
+    const uploadBtn = overlay.querySelector('#libpicker-upload');
+    const fileInput = overlay.querySelector('#libpicker-file');
+
+    const matches = (img) => {
+      if (!query) return true;
+      const hay = `${img.name || ''} ${img.alt || ''} ${img.url || ''}`.toLowerCase();
+      return hay.indexOf(query) >= 0;
+    };
+
+    function renderGrid() {
+      const rows = libraryImages().filter(matches);
+      const selected = alreadySelected() || [];
+      if (!rows.length) {
+        grid.innerHTML = `<div class="empty-state" style="padding:26px;">
+            <div class="empty-icon">🖼️</div>
+            <h4>${libraryImages().length ? 'No library image matches that search' : 'The image library is empty'}</h4>
+            <p>${libraryImages().length ? 'Clear the search, or upload a new photo.' : 'Upload your first photo — it is saved in Admin → Website Images and can be reused by every product.'}</p>
+          </div>`;
+      } else {
+        grid.innerHTML = `<div class="image-preview-grid">
+          ${rows.map((img, i) => {
+            const url = String(img.url || '');
+            const inProduct = selected.indexOf(url) >= 0;
+            return `<div class="image-preview-item${inProduct ? ' libpicker-picked' : ''}" data-libpicker-pick="${i}" title="${esc(img.name || url)}" style="cursor:pointer;${inProduct ? 'outline:2px solid var(--spinto-gold,#C8A15A);' : ''}">
+              <img src="${esc(url)}" alt="${esc(img.alt || img.name || '')}">
+              ${inProduct ? '<span style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,.65);color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;">✓ added</span>' : ''}
+            </div>`;
+          }).join('')}
+        </div>`;
+      }
+      const shown = grid.querySelectorAll('[data-libpicker-pick]');
+      shown.forEach((el) => el.addEventListener('click', () => {
+        const img = rows[Number(el.getAttribute('data-libpicker-pick'))];
+        if (!img || !img.url) return;
+        const before = (alreadySelected() || []).length;
+        onPick(String(img.url), img);
+        const after = (alreadySelected() || []).length;
+        if (after > before) {
+          added += 1;
+          toast('Image added to the product', 'success');
+        }
+        renderGrid();
+        renderCount();
+      }));
+    }
+
+    function renderCount() {
+      const total = libraryImages().length;
+      countEl.textContent = `${total} image${total === 1 ? '' : 's'} in the library`
+        + (added ? ` · ${added} added to this product` : '');
+    }
+
+    function close() { overlay.remove(); }
+
+    overlay.querySelectorAll('[data-libpicker-close]').forEach((b) => b.addEventListener('click', close));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    searchEl.addEventListener('input', () => { query = searchEl.value.trim().toLowerCase(); renderGrid(); });
+
+    // Upload a new photo straight into the same library, then use it.
+    uploadBtn.addEventListener('click', () => { if (!busy) fileInput.click(); });
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file || busy) return;
+      busy = true;
+      const label = uploadBtn.textContent;
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = '⏳ Uploading…';
+      hint.textContent = `Uploading ${file.name || 'photo'}…`;
+      try {
+        const res = await onUpload(file);
+        const url = res && (res.url || res);
+        if (!url) throw new Error('The upload returned no image URL.');
+        query = '';
+        if (searchEl) searchEl.value = '';
+        renderGrid();
+        const before = (alreadySelected() || []).length;
+        onPick(String(url), (res && res.row) || { url });
+        if ((alreadySelected() || []).length > before) added += 1;
+        hint.textContent = 'Uploaded and saved to the image library — select it again any time, for any product.';
+        toast('Image uploaded to the library and added to the product', 'success');
+      } catch (e) {
+        hint.textContent = 'Upload failed: ' + e.message;
+        toast('Upload failed: ' + e.message, 'error');
+      }
+      busy = false;
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = label;
+      fileInput.value = '';
+      renderGrid();
+      renderCount();
+    });
+
+    renderGrid();
+    renderCount();
+    return { overlay, close };
   }
 
   // ------------------------------------------------------------------------
@@ -3038,11 +3253,10 @@
             <div class="form-group">
               <div id="product-images-list"></div>
               <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap;">
-                <button type="button" class="btn btn-primary btn-sm" id="btn-upload-product-image">📷 Upload image</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-pick-product-image">🖼️ Add image</button>
                 <span id="product-image-upload-status" style="font-size:11px;color:var(--text-muted);"></span>
-                <input type="file" id="pf-image-file" accept="image/*" style="display:none;">
               </div>
-              <p style="font-size:11px;color:var(--text-muted);margin:6px 0 0;">Opens your device's photo gallery — pick a photo and it is uploaded and added to this product automatically. Repeat to add more images, one at a time; the first one is the main image. Save the product to keep them.</p>
+              <p style="font-size:11px;color:var(--text-muted);margin:6px 0 0;">Opens the admin image library — select an image and it is added to this product automatically (the first image is the main one). The picker stays open, so add as many images as you like, one at a time; you can also upload a new photo into the library from there. Save the product to keep them.</p>
               <details id="product-image-url-box" style="margin-top:8px;">
                 <summary style="cursor:pointer;font-size:11px;color:var(--text-muted);">Paste an image URL instead</summary>
                 <div style="display:flex;gap:8px;margin-top:8px;">
@@ -3145,38 +3359,27 @@
       images.push(clean);
       renderImageList();
     };
-    // ---- upload from the device gallery (native photo picker) ----
-    // One photo at a time: the button opens the device picker, the upload
-    // stores the file (Supabase Storage → public URL) and the result is added
-    // to the gallery above with its preview. No URL is typed anywhere.
-    const imageFileInput = $('#pf-image-file');
-    const uploadImageBtn = $('#btn-upload-product-image');
-    const uploadStatusEl = $('#product-image-upload-status');
-    let imageUploading = false;
-    if (uploadImageBtn && imageFileInput) {
-      uploadImageBtn.addEventListener('click', () => { if (!imageUploading) imageFileInput.click(); });
-      imageFileInput.addEventListener('change', async () => {
-        const file = imageFileInput.files && imageFileInput.files[0];
-        if (!file || imageUploading) return;
-        imageUploading = true;
-        const idleLabel = uploadImageBtn.textContent;
-        uploadImageBtn.disabled = true;
-        uploadImageBtn.textContent = '⏳ Uploading…';
-        if (uploadStatusEl) uploadStatusEl.textContent = `Uploading ${file.name || 'image'}…`;
-        try {
-          const url = await uploadProductImageFile(file, p?.id);
-          addImage(url);
-          if (uploadStatusEl) uploadStatusEl.textContent = 'Uploaded — press Save to keep it on the product.';
-          toast('Image uploaded and added to the product', 'success');
-        } catch (e) {
-          if (uploadStatusEl) uploadStatusEl.textContent = '';
-          toast('Upload failed: ' + e.message, 'error');
-        }
-        imageUploading = false;
-        uploadImageBtn.disabled = false;
-        uploadImageBtn.textContent = idleLabel;
-        // Reset so picking the SAME photo again still fires `change`.
-        imageFileInput.value = '';
+    // ---- add images from the admin media library (no URL typing) ----
+    // The button opens the SAME library Admin → Website Images manages; picking
+    // an image populates the product gallery above (with its preview) straight
+    // away. Uploading a new photo from the picker saves it into that library
+    // too, so it can be reused by any other product.
+    const pickImageBtn = $('#btn-pick-product-image');
+    const pickStatusEl = $('#product-image-upload-status');
+    if (pickImageBtn) {
+      pickImageBtn.addEventListener('click', () => {
+        openImageLibraryPicker({
+          title: 'Add product image',
+          selected: () => images,
+          onPick: (url) => {
+            const before = images.length;
+            addImage(url);
+            if (images.length > before && pickStatusEl) {
+              pickStatusEl.textContent = 'Added — press Save to keep it on the product.';
+            }
+          },
+          onUpload: (file) => uploadImageToLibrary(file, p?.id),
+        });
       });
     }
 
