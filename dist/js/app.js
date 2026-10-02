@@ -561,7 +561,26 @@
 
   // ================================================================ RENDER
   const app = () => $('#app');
-  const img = (p) => (p && p.images && p.images[0]) || '/img/detail_a.png';
+  // Product imagery. The first NON-EMPTY entry of products.images is the main
+  // image; a product without one shows the generated artwork for its category
+  // and brand — the same picture the seed uses — instead of a broken-image icon
+  // (the previous fallback, /img/detail_a.png, is not a file the site ships).
+  // `artwork(p)` is also what every product <img data-fallback> swaps to when
+  // its real source fails to load (a library image that was removed, a Storage
+  // object that is no longer public, an offline CDN), see init().
+  const artwork = (p) => {
+    const type = (p && p.category) ? String(p.category) : 'product';
+    const brandQ = (p && p.brandSlug) ? '&brand=' + encodeURIComponent(p.brandSlug) : '';
+    return '/img/asset.svg?type=' + encodeURIComponent(type) + brandQ;
+  };
+  const img = (p) => {
+    const list = (p && Array.isArray(p.images)) ? p.images : [];
+    const first = list.find((u) => typeof u === 'string' && u.trim());
+    return first ? first.trim() : artwork(p);
+  };
+  // `onerror` fallback attribute for a product <img>: the artwork URL is
+  // attribute-escaped and never contains quotes, so it is safe inside the tag.
+  const imgFallbackAttr = (p) => ` data-fallback="${VEL.esc(artwork(p))}"`;
   const catLabel = (c) => ({ keycase: pt('key_cases'), keyholder: pt('key_holders'), medal: pt('car_medals') }[c] || c);
 
   function productCard(p, opts) {
@@ -577,7 +596,7 @@
     </div>` : '';
     return `<article class="product-card reveal ${opts.fadeClass || ''}" data-slug="${p.slug}">
       <div class="media">
-        <a href="#/product/${p.slug}"><img src="${img(p)}" alt="${VEL.esc(p.name_en)}" loading="lazy"></a>
+        <a href="#/product/${p.slug}"><img src="${img(p)}" alt="${VEL.esc(p.name_en)}" loading="lazy"${imgFallbackAttr(p)}></a>
         ${(p.badge_en && L() === 'en') ? `<span class="badge">${VEL.esc(p.badge_en)}</span>` : (p.badge_ar && L() === 'ar') ? `<span class="badge">${VEL.esc(p.badge_ar)}</span>` : ''}
         ${p.discount ? `<span class="disc">-${p.discount}%</span>` : ''}
         ${deliveryLabel ? `<span class="badge badge-bottom">${deliveryLabel}</span>` : ''}
@@ -1112,8 +1131,8 @@
 
     // Gallery
     const gallery = `<div class="gallery">
-      <div class="thumbs">${p.images.map((im, i) => `<div class="thumb ${i === 0 ? 'active' : ''}" data-thumb="${i}"><img src="${im}" alt=""></div>`).join('')}</div>
-      <div class="main"><img id="gallery-main" src="${img(p)}" alt=""></div>
+      <div class="thumbs">${p.images.map((im, i) => `<div class="thumb ${i === 0 ? 'active' : ''}" data-thumb="${i}"><img src="${VEL.esc(im)}" alt=""${imgFallbackAttr(p)}></div>`).join('')}</div>
+      <div class="main"><img id="gallery-main" src="${img(p)}" alt=""${imgFallbackAttr(p)}></div>
     </div>`;
 
     const tabs = `<div class="pdp-tabs">
@@ -1610,7 +1629,7 @@
     const stock = inStock ? (p.inventory <= 5 ? pt('only_left', { n: p.inventory }) : pt('available')) : pt('out_of_stock');
     return `<article class="product-card reveal fit-card" data-slug="${p.slug}">
       <div class="media">
-        <a href="#/product/${p.slug}"><img src="${img(p)}" alt="${VEL.esc(p.name_en)}" loading="lazy"></a>
+        <a href="#/product/${p.slug}"><img src="${img(p)}" alt="${VEL.esc(p.name_en)}" loading="lazy"${imgFallbackAttr(p)}></a>
         ${p.discount ? `<span class="disc">-${p.discount}%</span>` : ''}
         <span class="stock ${inStock ? 'ok' : 'no'}">${VEL.esc(stock)}</span>
       </div>
@@ -3716,6 +3735,18 @@
       const holder = document.createElement('span');
       holder.innerHTML = VEL.keyShapeSVG(code, opts);
       if (holder.firstChild) img.replaceWith(holder.firstChild);
+    }, true);
+    // A product image that fails to load (product cards, the PDP gallery) is
+    // swapped for the product's generated artwork once — never a broken-image
+    // icon on the card. `data-fallback` is removed first so a failing fallback
+    // cannot loop.
+    document.addEventListener('error', (e) => {
+      const el = e.target;
+      if (!el || el.tagName !== 'IMG' || !el.getAttribute) return;
+      const fallback = el.getAttribute('data-fallback');
+      if (!fallback) return;
+      el.removeAttribute('data-fallback');
+      if (el.getAttribute('src') !== fallback) el.src = fallback;
     }, true);
     setLang(localStorage.getItem(LANG_KEY) || 'en');
     loadCart();
