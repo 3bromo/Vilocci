@@ -82,6 +82,11 @@ app.use('/api/orders', express.json({ limit: '12mb' }));
 // admin route gets the same mobile-friendly budget. Every other route keeps
 // the smaller global limit below.
 app.use('/api/admin/products/image', express.json({ limit: '12mb' }));
+// The media library's own upload endpoint now stores into Supabase Storage,
+// which validates up to the same MAX_BYTES budget as the product photos above —
+// a phone photo encoded as a data URL needs the same headroom, otherwise the
+// global 4 MB parser would reject it before the route ever saw it.
+app.use('/api/admin/upload', express.json({ limit: '12mb' }));
 app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -995,8 +1000,23 @@ app.post('/api/admin/lang', requireAdmin, async (req, res) => {
 });
 
 // Upload an image (base64 data URL) and return a served URL. Used by the
-// Homepage CMS for the hero banner and by product images.
-app.post('/api/admin/upload', requireAdmin, (req, res) => {
+// Homepage CMS for the hero banner, by the admin media library (Website
+// Images) and by product images.
+//
+// Storage — the SAME mechanism the product and shape images use, in this order:
+//   1. Supabase Storage, PUBLIC bucket `product-images` (prefix `library/`) → a
+//      durable public URL that outlives the instance. This is what production
+//      uses: a serverless filesystem is read-only AND ephemeral, so a file
+//      written to /img/uploads could never survive the invocation that wrote
+//      it — the endpoint could only answer 507 there.
+//   2. Storage not configured (local JSON store) → the file is written to
+//      /img/uploads and served by the app, exactly as before.
+//   3. Storage not configured AND the disk is read-only → 507, the previous
+//      answer on such a host. The media-library picker already falls through to
+//      /api/admin/products/image, which has its own inline last resort.
+// The response keeps its original { ok, url } shape; `storage` is added the same
+// way the product-image endpoint reports it, so existing callers are untouched.
+app.post('/api/admin/upload', requireAdmin, async (req, res) => {
   const { dataUrl } = req.body || {};
   if (!dataUrl || !/^data:image\//.test(dataUrl)) return res.status(400).json({ error: 'Invalid image data.' });
   const m = dataUrl.match(/^data:image\/([a-zA-Z0-9.+-]+);base64,(.+)$/);
@@ -1004,12 +1024,34 @@ app.post('/api/admin/upload', requireAdmin, (req, res) => {
   const rawExt = m[1].toLowerCase();
   const ext = rawExt === 'svg+xml' ? 'svg' : rawExt === 'jpeg' ? 'jpg' : rawExt;
   const buf = Buffer.from(m[2], 'base64');
+
+  // 1. Supabase Storage — the durable path, and the only one that works on a
+  //    serverless host.
+  try {
+    const upload = await storage.uploadLibraryImage(dataUrl);
+    if (upload.ok) {
+      return res.json({ ok: true, url: upload.url, storage: 'supabase-storage', bytes: upload.size, mime: upload.mime });
+    }
+    if (upload.reason !== 'not-configured') {
+      // Storage IS configured but refused the file: report it instead of
+      // silently falling back to a URL that would vanish with the instance.
+      return res.status(502).json({ error: `Image upload failed: ${upload.message}` });
+    }
+  } catch (e) {
+    // Storage validates more strictly than this endpoint always has (it refuses
+    // SVG, which can carry script, and files over MAX_BYTES). Anything it
+    // rejects keeps the local-disk behaviour below rather than breaking a flow
+    // that used to work on a writable host.
+    console.warn('[admin/upload] Storage path skipped:', e.message);
+  }
+
+  // 2. / 3. Local disk, then the read-only-host answer.
   try {
     const dir = path.join(PUBLIC, 'img', 'uploads');
     fs.mkdirSync(dir, { recursive: true });
     const fn = 'up_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7) + '.' + ext;
     fs.writeFileSync(path.join(dir, fn), buf);
-    res.json({ ok: true, url: '/img/uploads/' + fn });
+    res.json({ ok: true, url: '/img/uploads/' + fn, storage: 'local-disk' });
   } catch (e) {
     // Serverless filesystems are read-only: the admin can still paste any
     // public image URL, which is the durable option there.
@@ -1038,7 +1080,9 @@ app.post('/api/admin/upload', requireAdmin, (req, res) => {
 //      forced back to pasting URLs.
 // Nothing about existing products changes: every stored image — generated
 // artwork, a pasted public URL, an /img/uploads file or a Supabase URL — keeps
-// working exactly as before, and /api/admin/upload is untouched.
+// working exactly as before. /api/admin/upload above now follows the same
+// Storage-first order (into the `library/` prefix), and this endpoint stays the
+// picker's fallback because it is the one that also has the inline last resort.
 const PRODUCT_INLINE_MAX_BYTES = 512 * 1024;
 
 app.post('/api/admin/products/image', requireAdmin, async (req, res) => {
