@@ -2350,6 +2350,8 @@ html[dir="rtl"] .cf-dd {
   
   /* Gallery mobile */
   .gallery { grid-template-columns: 1fr; gap: 12px; }
+  /* horizontal swipes on the main image change the picture; vertical page scrolling stays native */
+  .gallery .main { touch-action: pan-y; -webkit-user-select: none; user-select: none; }
   .gallery .thumbs { flex-direction: row; overflow-x: auto; gap: 8px; }
   .gallery .thumb img { width: 60px; height: 60px; }
 }

@@ -812,10 +812,12 @@ img { max-width: 100%; height: auto; display: block; }
   transition: all .2s;
   background: #fafbfc;
 }
-.image-upload-zone:hover {
+.image-upload-zone:hover,
+.image-upload-zone.dragover {
   border-color: var(--spinto-gold);
   background: rgba(200,161,90,.04);
 }
+.image-upload-zone.uploading { opacity: .6; cursor: progress; }
 .image-upload-zone .upload-icon {
   font-size: 32px;
   margin-bottom: 8px;

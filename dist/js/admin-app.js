@@ -1,6 +1,12 @@
 /* ==========================================================================
    VELOCE — Admin Dashboard Application
    Professional e-commerce admin panel with Supabase integration.
+   Build 20261002a — Website Images: the toolbar's "📤 Upload Image" button had
+   no handler and did nothing. It now opens the device file picker, the drop
+   zone accepts drag-and-drop as its label promises, and every file is uploaded
+   through uploadImageToLibrary() (Supabase Storage on production, with the
+   product-image Storage endpoint as the read-only-host fallback) and saved as a
+   website_images row — the same path the product editor's picker uses.
    Build 20261001a — Product images from the admin media library: Admin →
    Products → Edit Product → Images no longer asks for a URL. "🖼️ Add image"
    opens the site's EXISTING image library (Admin → Website Images, the
@@ -4578,28 +4584,73 @@
   function bindImages() {
     const zone = $('#upload-zone');
     const input = $('#image-file-input');
+    const uploadBtn = $('#btn-upload-image');
     if (zone && input) {
-      zone.addEventListener('click', () => input.click());
-      input.addEventListener('change', async (e) => {
-        const files = Array.from(e.target.files);
-        for (const file of files) {
-          if (file.size > 5 * 1024 * 1024) { toast(`${file.name} is too large (max 5MB)`, 'error'); continue; }
-          const reader = new FileReader();
-          reader.onload = async () => {
-            try {
-              const { ok, j } = await api('POST', '/api/admin/upload', { dataUrl: reader.result });
-              if (!ok || !j?.url) { toast((j && j.error) || 'Upload failed', 'error'); return; }
-              const imgData = { id: uid('img'), name: file.name, url: j.url, section: 'general', alt: file.name };
-              await sbInsert('website_images', imgData);
-              if (!state.data.website_images) state.data.website_images = [];
-              state.data.website_images.push(imgData);
-              toast('Image uploaded', 'success');
-              render();
-            } catch (err) { toast('Upload failed: ' + err.message, 'error'); }
-          };
-          reader.readAsDataURL(file);
+      // Website Images — upload into the library. The toolbar's "📤 Upload
+      // Image" button, the drop zone (click OR drag-and-drop, as its label
+      // promises) and the hidden file input all feed the same uploader. Every
+      // file goes through uploadImageToLibrary(): /api/admin/upload first
+      // (Supabase Storage on production, /img/uploads on a writable host), with
+      // the product-image Storage endpoint as the fallback on a read-only host,
+      // and the result is saved as a website_images row — exactly what the
+      // product editor's picker does, so the two can never disagree.
+      let uploading = false;
+      const setBusy = (busy, label) => {
+        uploading = busy;
+        if (uploadBtn) {
+          uploadBtn.disabled = busy;
+          uploadBtn.textContent = busy ? (label || '⏳ Uploading…') : '📤 Upload Image';
         }
+        zone.classList.toggle('uploading', busy);
+      };
+      const uploadFiles = async (fileList) => {
+        const files = Array.from(fileList || []).filter((f) => f && /^image\//i.test(f.type || ''));
+        if (!files.length) { toast('Please choose an image file (PNG, JPG, WEBP)', 'error'); return; }
+        if (uploading) { toast('An upload is already in progress', 'error'); return; }
+        setBusy(true);
+        let done = 0;
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          if (file.size > 5 * 1024 * 1024) { toast(`${file.name} is too large (max 5MB)`, 'error'); continue; }
+          if (files.length > 1) setBusy(true, `⏳ Uploading ${i + 1}/${files.length}…`);
+          try {
+            await uploadImageToLibrary(file);
+            done += 1;
+          } catch (err) {
+            toast(`Upload failed for ${file.name}: ${err.message}`, 'error');
+          }
+        }
+        setBusy(false);
+        if (done) toast(done === 1 ? 'Image uploaded to the library' : `${done} images uploaded to the library`, 'success');
+        render();
+      };
+
+      const openPicker = () => { if (!uploading) input.click(); };
+      zone.addEventListener('click', openPicker);
+      if (uploadBtn) uploadBtn.addEventListener('click', openPicker);
+      input.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files || []);
+        input.value = '';                    // the same file can be picked again
+        await uploadFiles(files);
       });
+
+      // drag & drop onto the zone
+      ['dragenter', 'dragover'].forEach((evt) => zone.addEventListener(evt, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.add('dragover');
+      }));
+      ['dragleave', 'dragend'].forEach((evt) => zone.addEventListener(evt, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.remove('dragover');
+      }));
+      zone.addEventListener('drop', async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        zone.classList.remove('dragover');
+        const files = e.dataTransfer && e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
+        await uploadFiles(files);
+      });
+    } else if (uploadBtn) {
+      uploadBtn.addEventListener('click', () => toast('The upload area is not available on this screen', 'error'));
     }
 
     $$('[data-delete-image]').forEach(el => el.addEventListener('click', () => {
