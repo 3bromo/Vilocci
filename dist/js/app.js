@@ -2817,13 +2817,59 @@
       });
     }
 
-    // gallery thumbs
-    $$('[data-thumb]').forEach(t => t.addEventListener('click', () => {
-      const i = t.getAttribute('data-thumb');
-      $$('[data-thumb]').forEach(x => x.classList.remove('active'));
-      t.classList.add('active');
-      const main = $('#gallery-main'); if (main) main.src = state.route.params.srcs ? '' : product(currentSlug()).images[i];
-    }));
+    // gallery — thumbnails + swipe
+    // The main image is switched from the product's OWN image list (looked up
+    // by slug — `product()` takes an id, which is why the thumbnails used to
+    // throw and never change the picture). On touch screens the main image can
+    // also be swiped: left / right moves to the next / previous image (mirrored
+    // in RTL), the matching thumbnail becomes active and is scrolled into view.
+    // Vertical page scrolling over the image is untouched.
+    const galleryProduct = productBySlug(currentSlug());
+    const galleryImages = galleryProduct ? (galleryProduct.images || []).filter((u) => typeof u === 'string' && u.trim()) : [];
+    const galleryThumbs = $$('[data-thumb]');
+    let galleryIndex = Math.max(0, galleryThumbs.findIndex((t) => t.classList.contains('active')));
+    function showGalleryImage(i) {
+      if (!galleryImages.length) return;
+      const n = galleryImages.length;
+      const idx = ((i % n) + n) % n;
+      galleryIndex = idx;
+      const main = $('#gallery-main');
+      if (main) {
+        main.setAttribute('data-fallback', artwork(galleryProduct));
+        main.src = galleryImages[idx];
+      }
+      galleryThumbs.forEach((x) => {
+        const active = Number(x.getAttribute('data-thumb')) === idx;
+        x.classList.toggle('active', active);
+        if (active && typeof x.scrollIntoView === 'function') {
+          try { x.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' }); } catch (e) { /* older engines */ }
+        }
+      });
+    }
+    galleryThumbs.forEach((t) => t.addEventListener('click', () => showGalleryImage(Number(t.getAttribute('data-thumb')) || 0)));
+
+    const galleryMain = $('.gallery .main');
+    if (galleryMain && galleryImages.length > 1) {
+      const SWIPE_MIN = 40;      // px of horizontal travel that counts as a swipe
+      let sx = 0, sy = 0, tracking = false;
+      galleryMain.addEventListener('touchstart', (e) => {
+        if (!e.touches || e.touches.length !== 1) { tracking = false; return; }
+        sx = e.touches[0].clientX; sy = e.touches[0].clientY; tracking = true;
+      }, { passive: true });
+      galleryMain.addEventListener('touchend', (e) => {
+        if (!tracking) return;
+        tracking = false;
+        const t = e.changedTouches && e.changedTouches[0];
+        if (!t) return;
+        const dx = t.clientX - sx;
+        const dy = t.clientY - sy;
+        if (Math.abs(dx) < SWIPE_MIN || Math.abs(dx) <= Math.abs(dy)) return;   // a tap or a vertical scroll
+        const rtl = (document.documentElement.getAttribute('dir') || '').toLowerCase() === 'rtl';
+        const forward = rtl ? dx > 0 : dx < 0;                                   // swipe towards the "next" side
+        showGalleryImage(galleryIndex + (forward ? 1 : -1));
+      }, { passive: true });
+      galleryMain.addEventListener('touchcancel', () => { tracking = false; }, { passive: true });
+    }
 
     // shape select
     $$('[data-shape]').forEach(b => b.addEventListener('click', () => {
