@@ -99,7 +99,8 @@ function stubSupabase() {
   };
 }
 
-async function bootAdmin(fixture) {
+async function bootAdmin(fixture, opts) {
+  const options = opts || {};
   const html = fs.readFileSync(path.join(PUBLIC, 'admin.html'), 'utf8');
   const calls = [];
   const intervals = [];
@@ -133,6 +134,10 @@ async function bootAdmin(fixture) {
         }
         if (url.includes('/api/admin/orders')) {
           return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ orders: fixture.orders }) });
+        }
+        if (options.onSave && url.includes('/api/admin/save')) {
+          const answer = options.onSave(body) || { ok: true };
+          return Promise.resolve({ ok: answer.status >= 200 && answer.status < 300, status: answer.status, json: () => Promise.resolve(answer.json) });
         }
         const orderMatch = url.match(/\/api\/admin\/order\/([^/?]+)/);
         if (orderMatch) {
@@ -288,6 +293,104 @@ const nav = async (doc, view) => { click(doc, `[data-nav="${view}"]`); await wai
   await wait(80);
   const imgSave = calls.filter((c) => c.url.includes('/api/admin/save') && c.body?.collection === 'websiteImages').pop();
   check('image added to the library through the API', !!imgSave && imgSave.body.record.url === '/img/hero2.jpg');
+
+  console.log('\n== ADMIN CMS: product slugs (the products_slug_key failure) ==');
+  // Re-boot a clean panel so the counters below belong to product saves only.
+  const productRun = await bootAdmin(buildFixture());
+  const pdoc = productRun.dom.window.document;
+  const pcalls = productRun.calls;
+  await nav(pdoc, 'products');
+
+  // (a) A slug that already belongs to another product is caught BEFORE the
+  //     request, with a message that names the owner and offers a free slug.
+  click(pdoc, '#btn-add-product');
+  await wait(60);
+  let form = pdoc.querySelector('#product-form');
+  form.querySelector('[name=name_en]').value = 'VELOCCI Carbon Key Case — Mercedes-Benz';
+  form.querySelector('[name=slug]').value = 'mercedes-benz-carbon-key-case';
+  form.querySelector('[name=category]').value = 'keycase';
+  form.querySelector('[name=brandSlug]').value = 'mercedes-benz';
+  click(pdoc, '#btn-save-product');
+  await wait(80);
+  check('a duplicate slug is not sent to the server',
+    !pcalls.some((c) => c.url.includes('/api/admin/save') && c.body?.collection === 'products'));
+  const toastText = Array.from(pdoc.querySelectorAll('.toast')).map((t) => t.textContent).join(' | ');
+  check('the duplicate slug error names the conflicting product',
+    /already used by/.test(toastText) && /mercedes-benz-carbon-key-case/.test(toastText), toastText);
+  check('the duplicate slug error offers a free alternative', new RegExp('mercedes-benz-carbon-key-case-2').test(toastText), toastText);
+  check('the editor stays open so the admin can fix the slug', !!pdoc.querySelector('#product-form'));
+
+  // (b) Leaving the slug empty generates a unique one automatically.
+  form = pdoc.querySelector('#product-form');
+  form.querySelector('[name=name_en]').value = 'VELOCCI Carbon Key Case — Mercedes-Benz';
+  form.querySelector('[name=slug]').value = '';
+  form.querySelector('[name=category]').value = 'keycase';
+  form.querySelector('[name=brandSlug]').value = 'mercedes-benz';
+  click(pdoc, '#btn-save-product');
+  await wait(100);
+  const autoSave = pcalls.filter((c) => c.url.includes('/api/admin/save') && c.body?.collection === 'products').pop();
+  check('an empty slug is filled in with a free one and sent',
+    !!autoSave && /^velocci-carbon-key-case-mercedes-benz(-\d+)?$/.test(autoSave.body.record.slug || ''),
+    autoSave && autoSave.body.record.slug);
+  check('the generated slug is not an existing product\'s slug',
+    !!autoSave && !buildFixture().products.some((p) => p.slug === autoSave.body.record.slug),
+    autoSave && autoSave.body.record.slug);
+
+  // (c) A server-side 409 (a race, or a record the admin form could not see)
+  //     shows the server's message verbatim and never claims success.
+  productRun.dom.window.close();
+  const conflictRun = await bootAdmin(buildFixture(), {
+    onSave: () => ({
+      status: 409,
+      json: {
+        error: 'The slug "audi-key-case" is already used by the product "VELOCCI Key Case — Audi" (id: p_audi). '
+          + 'A product slug is its public URL and must be unique, so nothing was saved. Try "audi-key-case-2".',
+        code: 'DUPLICATE_SLUG',
+        suggestion: 'audi-key-case-2',
+      },
+    }),
+  });
+  const cdoc = conflictRun.dom.window.document;
+  await nav(cdoc, 'products');
+  click(cdoc, '#btn-add-product');
+  await wait(60);
+  const cform = cdoc.querySelector('#product-form');
+  cform.querySelector('[name=name_en]').value = 'Brand new product';
+  cform.querySelector('[name=slug]').value = 'brand-new-product';
+  cform.querySelector('[name=category]').value = 'keycase';
+  cform.querySelector('[name=brandSlug]').value = 'mercedes-benz';
+  click(cdoc, '#btn-save-product');
+  await wait(100);
+  const conflictToast = Array.from(cdoc.querySelectorAll('.toast')).map((t) => t.textContent).join(' | ');
+  check('a server 409 is surfaced to the admin', /already used by/.test(conflictToast), conflictToast);
+  check('the 409 toast suggests the free slug the server proposed', /audi-key-case-2/.test(conflictToast), conflictToast);
+  check('nothing was reported as saved', !/created|updated/i.test(conflictToast), conflictToast);
+
+  console.log('\n== ADMIN CMS: data-source badge ==');
+  const liveBadge = cdoc.querySelector('.source-badge');
+  check('the header states the data source explicitly', !!liveBadge && /LIVE/.test(liveBadge.textContent), liveBadge && liveBadge.textContent);
+  conflictRun.dom.window.close();
+
+  const backupFixture = Object.assign(buildFixture(), {
+    _meta: {
+      driver: 'json', usingJsonFallback: true, writesBlocked: true,
+      remoteState: 'unavailable', remoteError: 'fetch failed',
+      serviceKeyIssue: null, anonKeyIssue: null,
+    },
+  });
+  const backupRun = await bootAdmin(backupFixture);
+  const bdoc = backupRun.dom.window.document;
+  await nav(bdoc, 'products');
+  const backupBadge = bdoc.querySelector('.source-badge');
+  check('while the backup serves, the badge says BACKUP (read-only)',
+    !!backupBadge && /BACKUP/.test(backupBadge.textContent), backupBadge && backupBadge.textContent);
+  check('the banner says the backup is not the live catalogue and cannot be saved',
+    /BACKUP/.test(bdoc.querySelector('.data-banner')?.textContent || '')
+    && /no change can be saved/.test(bdoc.querySelector('.data-banner')?.textContent || ''),
+    bdoc.querySelector('.data-banner')?.textContent);
+  check('the storefront-independent badge never says LIVE while the backup serves',
+    !/LIVE/.test(backupBadge?.textContent || ''));
+  backupRun.dom.window.close();
 
   dom.window.close();
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

@@ -232,9 +232,37 @@
   const collectionOf = (table) => TABLE_TO_COLLECTION[table] || table;
 
   async function apiOrThrow(method, url, body) {
-    const { ok, j } = await api(method, url, body);
-    if (!ok) throw new Error((j && j.error) || `${method} ${url} failed`);
+    const { ok, j, status } = await api(method, url, body);
+    if (!ok) {
+      // Keep the server's machine-readable details (409 DUPLICATE_SLUG, 503
+      // DB_UNAVAILABLE …) so the UI can explain what happened and what to do
+      // instead of showing a bare "failed".
+      const err = new Error((j && j.error) || `${method} ${url} failed`);
+      err.status = status;
+      err.code = (j && j.code) || null;
+      err.suggestion = (j && j.suggestion) || null;
+      err.existingId = (j && j.existingId) || null;
+      throw err;
+    }
     return j;
+  }
+
+  // Slug helpers — the same rules the server enforces (lib/mapping.js), applied
+  // here so a duplicate is caught BEFORE the request is sent.
+  function slugify(value) {
+    return String(value == null ? '' : value)
+      .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80).replace(/-+$/g, '');
+  }
+  function uniqueSlug(base, taken) {
+    const used = new Set((taken || []).map(slugify).filter(Boolean));
+    const root = slugify(base) || 'product';
+    if (!used.has(root)) return root;
+    for (let i = 2; i < 10000; i += 1) {
+      const candidate = root + '-' + i;
+      if (!used.has(candidate)) return candidate;
+    }
+    return root + '-' + Date.now().toString(36);
   }
 
   async function sbInsert(table, row) {
@@ -498,6 +526,14 @@
     return !!(meta && (meta.usingJsonFallback || meta.serviceKeyIssue || meta.anonKeyIssue || meta.remoteState === 'unavailable'));
   }
 
+  // True only while the LIVE database is configured but unreachable, i.e. the
+  // screens below are showing the bundled backup. Admin catalog writes are
+  // refused by the server in that state, so the UI says so up front.
+  function backupIsServing(meta) {
+    const m = meta || state.dataMeta;
+    return !!(m && (m.usingJsonFallback || m.writesBlocked));
+  }
+
   async function loadData() {
     state.loading = true;
     state.dataError = '';
@@ -543,7 +579,9 @@
       }
     } else if (dataIsDegraded(state.dataMeta)) {
       const issues = (d.issues || []).filter(Boolean);
-      msg = 'Heads up — the data below is being served from the bundled JSON fallback, not the live Supabase database.'
+      msg = 'The live Supabase database is not reachable, so the data below is the bundled BACKUP (read-only) — '
+        + 'it is NOT the live catalogue, and no change can be saved until the connection is back. '
+        + 'Nothing here is ever written over production data.'
         + (issues.length ? ' ' + issues.join(' ') : ' Check /api/admin/diagnose for details.');
     }
     if (!msg) return '';
@@ -806,9 +844,24 @@
         <span class="page-title">${titles[state.view] || 'Dashboard'}</span>
       </div>
       <div class="header-actions">
+        ${dataSourceBadge()}
         <span class="admin-email">${state.user?.email || 'Admin'}</span>
       </div>
     </header>`;
+  }
+
+  // Which store is serving this screen? LIVE = the existing production
+  // Supabase project; BACKUP = the bundled JSON copy (read-only, never written
+  // over production). Explicit, always visible — never a silent switch.
+  function dataSourceBadge() {
+    if (!state.data && !state.dataMeta) return '';
+    if (backupIsServing()) {
+      return '<span class="source-badge source-badge-backup" title="Live Supabase is unreachable. This is the bundled backup data, shown read-only; saving is disabled.">● BACKUP — read-only</span>';
+    }
+    if (dataIsDegraded(state.dataMeta)) {
+      return '<span class="source-badge source-badge-warn" title="Connected, but the configuration needs attention — see Details in the banner.">● LIVE — config warning</span>';
+    }
+    return '<span class="source-badge source-badge-live" title="Reading and writing the live Supabase database.">● LIVE database</span>';
   }
 
   function renderPage() {
@@ -3687,13 +3740,44 @@
         available: !!s.available,
       }));
 
+      // ---- slug: unique, stable, never another product's URL -------------
+      // `products.slug` is UNIQUE in Supabase (index products_slug_key) and it
+      // is the product's public URL. Every OTHER product in the catalogue
+      // claims a slug, so it is checked here first:
+      //   * a typed slug that is already taken is refused with a clear message
+      //     (the server refuses it too — this is only the fast path);
+      //   * an empty slug is generated from the name and made unique, so new
+      //     products always get a free one automatically.
+      const typedSlug = val('slug');
+      const takenSlugs = (state.data.products || [])
+        .filter(x => x.id !== p?.id)
+        .map(x => x.slug)
+        .filter(Boolean);
+      let finalSlug;
+      if (typedSlug) {
+        finalSlug = slugify(typedSlug);
+        if (!finalSlug) { toast('That slug has no letters or numbers — use something like "audi-key-case"', 'error'); return; }
+        if (takenSlugs.some(x => slugify(x) === finalSlug)) {
+          const owner = (state.data.products || []).find(x => x.id !== p?.id && slugify(x.slug) === finalSlug);
+          toast(`The slug "${finalSlug}" is already used by ${owner ? ('"' + (owner.name_en || owner.id) + '"') : 'another product'}. `
+            + `Nothing was saved — try "${uniqueSlug(finalSlug, takenSlugs)}".`, 'error');
+          return;
+        }
+      } else if (p && p.slug) {
+        // Editing without touching the slug keeps the existing URL verbatim.
+        finalSlug = p.slug;
+      } else {
+        // Brand-new product with no slug: generate a free one automatically.
+        finalSlug = uniqueSlug(nameEn, takenSlugs);
+      }
+
       const price = numVal('price') || 0;
       const oldPrice = numVal('oldPrice') || null;
       const data = {
         id: p?.id || ('prod_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
         name_en: nameEn,
         name_ar: val('name_ar'),
-        slug: val('slug') || nameEn.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        slug: finalSlug,
         category,
         brandSlug,
         sku: val('sku'),
@@ -3737,7 +3821,15 @@
         closeAllModals();
         render();
       } catch (e) {
-        toast('Failed to save: ' + e.message, 'error');
+        // The server's message is already written for the admin (it names the
+        // conflicting product and suggests a free slug). Never show a raw
+        // Postgres code here, and never claim success.
+        const hint = e.code === 'DUPLICATE_SLUG' && e.suggestion ? ' Try "' + e.suggestion + '".' : '';
+        toast('Failed to save: ' + e.message + hint, 'error');
+        if (e.code === 'DB_UNAVAILABLE') {
+          state.dataError = e.message;
+          render();
+        }
       }
     });
   }

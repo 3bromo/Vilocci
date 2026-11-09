@@ -102,6 +102,8 @@ Default admin password: **`velocci2026`** (override with `ADMIN_PASS` env var).
 
 ### Data & architecture
 - **Single shared JSON datastore** (`data/velocci-db.json`, atomic writes) — the same source powers the storefront and admin. No second database.
+- **Supabase is the only source of truth when it is configured.** The bundled JSON is a *read-only backup*: it serves the storefront and the admin screens only while the live database is unreachable, and admin catalog writes are then **refused** (503, explicit message) instead of being written into the backup. The admin header always states which store is serving (`● LIVE database` / `● BACKUP — read-only`) — see `docs/PRODUCT-SLUG-SYNC.md`.
+- **Product slugs are unique and stable.** `products.slug` is the product's public URL (unique index `products_slug_key`); `products.id` is the identity an edit matches on. A save keeps an existing slug, refuses a slug that belongs to another product (with a suggested free one) and generates a unique slug when the form leaves it empty. Nothing ever merges, renames or deletes a product to resolve a slug conflict.
 - On-the-fly **SVG product artwork** (`/img/asset.svg`) so every product has brand-distinguished, premium imagery and there is never an empty grid. Admin can also supply their own image URLs.
 - **Server-side order validation** — totals, inventory, shapes, bundle discounts, discount codes **and the Nano Ceramic Coating fee/eligibility** are recomputed on the server; the client is never trusted.
 

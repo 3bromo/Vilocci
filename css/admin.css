@@ -1038,6 +1038,28 @@ img { max-width: 100%; height: auto; display: block; }
    Data-source banner — shown while the admin is reading the bundled JSON
    fallback instead of live Supabase data, or when the data load failed.
    -------------------------------------------------------------------------- */
+/* Data-source badge — which store is serving the screens right now.
+   LIVE = the existing production Supabase project; BACKUP = the bundled JSON
+   copy, read-only (admin writes are refused while it is serving). */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.source-badge-live { color: #15803d; background: #dcfce7; border-color: #86efac; }
+.source-badge-backup { color: #b45309; background: #fef3c7; border-color: #fcd34d; }
+.source-badge-warn { color: #b91c1c; background: #fee2e2; border-color: #fca5a5; }
+@media (max-width: 720px) {
+  .source-badge { font-size: 10.5px; padding: 3px 8px; }
+}
+
 .data-banner {
   display: flex;
   align-items: flex-start;

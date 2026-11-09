@@ -159,6 +159,7 @@ app.get('/api/admin/diagnose', async (req, res) => {
   let probe = null;
   let shapeImages = null;
   let productImages = null;
+  let productSlugs = null;
   let probeCatalog = null;
   if (req.query.probe || req.query.shapes || req.query.products) {
     const t0 = Date.now();
@@ -229,6 +230,19 @@ app.get('/api/admin/diagnose', async (req, res) => {
     } catch (e) {
       productImages = { error: e.message };
     }
+
+    // Product slugs — READ-ONLY. `products.slug` is unique in the database, so
+    // a raw duplicate cannot exist; what CAN exist are values that only look
+    // different to Postgres but collapse to the same slug in the admin form
+    // ("Audi Key Case" vs "audi-key-case"), rows with no slug at all, and
+    // products whose slug a stale backup copy reports under another id. Listing
+    // them is how the operator sees the exact records involved without any
+    // write: the report never modifies a row.
+    try {
+      productSlugs = await db.productSlugReport();
+    } catch (e) {
+      productSlugs = { readOnly: true, error: e.message };
+    }
   }
 
   const detail = db.info();
@@ -245,13 +259,22 @@ app.get('/api/admin/diagnose', async (req, res) => {
     issues.push('The Supabase schema has not been applied to this project. '
       + 'Run supabase/full_database_seed.sql in Supabase → SQL Editor (creates every table and loads the existing catalog).');
   } else if (db.health().usingJsonFallback && detail.remoteError) {
-    issues.push(`The remote Supabase store is unreachable (${detail.remoteError}) — the bundled JSON store is serving instead.`);
+    issues.push(`The remote Supabase store is unreachable (${detail.remoteError}) — the bundled JSON store is serving read-only instead, and admin edits are refused until it reconnects.`);
+  }
+  // Slugs that collapse to the same value are the ones that used to fail with
+  // `23505 … products_slug_key`. Read-only finding, nothing is changed here.
+  if (productSlugs && Array.isArray(productSlugs.duplicateSlugs) && productSlugs.duplicateSlugs.length) {
+    const ids = productSlugs.duplicateSlugs
+      .map((d) => d.products.map((p) => `${p.id} ("${p.slug}")`).join(' / '))
+      .join('; ');
+    issues.push(`Some products share a slug once normalized (${ids}) — open one of them and give it a distinct slug. IDs and URLs are unchanged by this report.`);
   }
 
   res.json({
     probe,
     shapeImages,
     productImages,
+    productSlugs,
     issues,
     rawEnvUrl: rawUrl || '(not set)',
     sanitizedUrl: SUPABASE_URL || '(empty)',
@@ -852,6 +875,22 @@ app.post('/api/messages', async (req, res) => {
 // Every write goes through lib/db.js, so the storefront and the admin panel
 // always read the same rows.
 // ---------------------------------------------------------------------------
+// A rejected record is the client's problem (400/409) — it must NOT be reported
+// like a data-source failure. An unreachable live database is a 503, and the
+// admin panel says so explicitly instead of pretending the change was saved.
+function writeFailure(res, e) {
+  const code = (e && (e.code || e.pgCode)) || '';
+  const status = (e && e.status) === 409 || code === 'DUPLICATE_SLUG' ? 409
+    : (e && e.status) === 503 || code === 'DB_UNAVAILABLE' ? 503
+      : 400;
+  res.status(status).json({
+    error: (e && e.message) || 'The change could not be saved.',
+    code: code || undefined,
+    suggestion: (e && e.suggestion) || undefined,
+    existingId: (e && e.existingId) || undefined,
+  });
+}
+
 app.get('/api/admin/data', requireAdmin, async (req, res) => {
   try {
     const data = await db.getAdminData();
@@ -862,6 +901,9 @@ app.get('/api/admin/data', requireAdmin, async (req, res) => {
       _meta: {
         driver: h.activeDriver,
         usingJsonFallback: h.usingJsonFallback,
+        // While the backup is serving, admin catalog writes are refused (they
+        // would not reach the live database) — the dashboard shows this.
+        writesBlocked: h.usingJsonFallback,
         remoteState: h.remoteState,
         remoteError: h.remoteError,
         serviceKeyIssue: db.serviceKeyIssue,
@@ -924,7 +966,7 @@ app.post('/api/admin/save', requireAdmin, async (req, res) => {
     res.json({ ok: true, record: saved });
   } catch (e) {
     console.error('[api/admin/save]', e.message);
-    res.status(400).json({ error: e.message });
+    writeFailure(res, e);
   }
 });
 
@@ -948,12 +990,12 @@ app.post('/api/admin/update', requireAdmin, async (req, res) => {
           const saved = await db.patchRecord(collection, id, updates || {});
           return res.json({ ok: true, record: saved });
         } catch (e2) {
-          return res.status(400).json({ error: e2.message });
+          return writeFailure(res, e2);
         }
       }
       return res.status(503).json({ error: schema.message, detail: e.message, migration: schema });
     }
-    res.status(400).json({ error: e.message });
+    writeFailure(res, e);
   }
 });
 
@@ -963,7 +1005,8 @@ app.post('/api/admin/delete', requireAdmin, async (req, res) => {
     await db.deleteRecord(collection, id);
     res.json({ ok: true });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    console.error('[api/admin/delete]', e.message);
+    writeFailure(res, e);
   }
 });
 
@@ -974,7 +1017,8 @@ app.post('/api/admin/reorder', requireAdmin, async (req, res) => {
     await db.reorder(collection, ids);
     res.json({ ok: true });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    console.error('[api/admin/reorder]', e.message);
+    writeFailure(res, e);
   }
 });
 
@@ -985,7 +1029,8 @@ app.post('/api/admin/settings', requireAdmin, async (req, res) => {
     if (promoBar) await db.savePromoBar(promoBar);
     res.json({ ok: true });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    console.error('[api/admin/settings]', e.message);
+    writeFailure(res, e);
   }
 });
 
@@ -995,7 +1040,8 @@ app.post('/api/admin/lang', requireAdmin, async (req, res) => {
     if (dict) await db.saveLanguages(dict);
     res.json({ ok: true });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    console.error('[api/admin/lang]', e.message);
+    writeFailure(res, e);
   }
 });
 

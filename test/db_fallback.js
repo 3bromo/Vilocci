@@ -86,10 +86,22 @@ const quiet = (fn) => {
   const admin = await quiet(() => db.getAdminData());
   check('admin payload still complete', admin.products.length === 117 && admin.orders.length >= 23,
     `products=${admin.products.length} orders=${admin.orders.length}`);
-  const saved = await quiet(() => db.saveRecord('products', Object.assign({}, admin.products[0], { price: 9999 })));
-  check('admin edits still work on the fallback store', saved && saved.ok !== false, JSON.stringify(saved).slice(0, 160));
+  // Admin CATALOG writes are refused while the backup is serving: writing them
+  // into data/velocci-db.json would look saved in the UI, be lost on the next
+  // request (serverless filesystems are read-only/ephemeral) and could later be
+  // mistaken for production data. The failure is explicit and nothing is
+  // written — the storefront keeps serving the backup read-only.
+  const storeBefore = fs.readFileSync(SCRATCH, 'utf8');
+  let refused = null;
+  try {
+    await quiet(() => db.saveRecord('products', Object.assign({}, admin.products[0], { price: 9999 })));
+  } catch (e) { refused = e; }
+  check('admin catalog writes are refused while the backup is serving',
+    !!(refused && refused.code === 'DB_UNAVAILABLE'), refused && (refused.code + ': ' + refused.message));
+  check('the refusal says nothing was saved', !!(refused && /NOT saved/.test(refused.message)));
+  check('the backup file was not modified by the refused write', fs.readFileSync(SCRATCH, 'utf8') === storeBefore);
   const edited = await db.getCatalog();
-  check('the edit is readable back', edited.products.find((p) => p.id === admin.products[0].id).price === 9999);
+  check('the product still shows its real (backup) price', edited.products.find((p) => p.id === admin.products[0].id).price === admin.products[0].price);
   await quiet(() => db.close());
 
   // -------------------------------------------------------------------------
